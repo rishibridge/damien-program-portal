@@ -21,8 +21,7 @@ async function initPortal() {
     const resp = await fetch('/api/portal-data');
     PORTAL_DATA = await resp.json();
     renderAllViews();
-    // Load initial Executive Summary Q&A preview in Ask tab
-    await executeAskQuestion('What is the executive summary and key takeaways through September 2026?', false, 'instant');
+    renderChatThread();
   } catch (err) {
     console.error('Failed to load portal data:', err);
   }
@@ -929,7 +928,7 @@ function closePatientModal() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   9. ASK BRIDGE AI (GEMINI 2.5 FLASH Q&A) & DATA DEFINITIONS
+   9. ASK BRIDGE AI (NATURAL CONVERSATION) & DATA DEFINITIONS
    ═══════════════════════════════════════════════════════════════════════════ */
 function renderAppendixView() {
   const s9 = PORTAL_DATA.slide9_appendix;
@@ -942,14 +941,19 @@ function renderAppendixView() {
   `).join('');
 }
 
+function clearQaConversation() {
+  QA_HISTORY.length = 0;
+  renderChatThread();
+}
+
 async function handleTopbarAsk(e) {
   e.preventDefault();
   const input = document.getElementById('topbarAskInput');
   const q = input.value.trim();
   if (!q) return;
-  document.getElementById('mainAskInput').value = q;
+  input.value = '';
   switchView('ask');
-  await executeAskQuestion(q, true, 'gemini');
+  await executeAskQuestion(q);
 }
 
 async function handleMainAskSubmit(e) {
@@ -957,147 +961,102 @@ async function handleMainAskSubmit(e) {
   const input = document.getElementById('mainAskInput');
   const q = input.value.trim();
   if (!q) return;
-  await executeAskQuestion(q, true, 'gemini');
+  input.value = '';
+  await executeAskQuestion(q);
 }
 
 async function askPresetQuestion(q) {
-  document.getElementById('mainAskInput').value = q;
-  await executeAskQuestion(q, false, 'gemini');
+  await executeAskQuestion(q);
 }
 
-async function executeAskQuestion(questionText, scrollToResult = false, mode = 'gemini') {
+async function executeAskQuestion(questionText) {
   const submitBtn = document.getElementById('mainAskSubmitBtn');
-  const container = document.getElementById('qaAnswerContainer');
-  if (submitBtn && mode === 'gemini') {
+  if (submitBtn) {
     submitBtn.disabled = true;
-    submitBtn.textContent = '✨ Asking Gemini...';
+    submitBtn.textContent = 'Sending...';
   }
-  if (container && mode === 'gemini') {
-    container.style.opacity = '0.65';
-  }
+
+  renderChatThread(questionText);
+
   try {
     const resp = await fetch('/api/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         question: questionText,
-        history: QA_HISTORY.slice(-6),
-        mode
+        history: QA_HISTORY.slice(-10)
       })
     });
     const ans = await resp.json();
-    if (mode === 'gemini') {
-      QA_HISTORY.push({ question: questionText, headline: ans.headline, answer: ans.answer });
-    }
-    renderQaAnswer(ans);
-    if (scrollToResult) {
-      document.getElementById('qaAnswerContainer').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
+    const replyText = ans.reply || ans.answer || '';
+    QA_HISTORY.push({
+      question: questionText,
+      answer: replyText,
+      aiPowered: ans.aiPowered,
+      aiModel: ans.aiModel
+    });
+    renderChatThread();
   } catch (err) {
     console.error('Ask Bridge AI error:', err);
+    QA_HISTORY.push({
+      question: questionText,
+      answer: 'Sorry, I ran into a connection issue while checking that. Could you try asking again?'
+    });
+    renderChatThread();
   } finally {
     if (submitBtn) {
       submitBtn.disabled = false;
-      submitBtn.textContent = 'Ask Gemini AI';
-    }
-    if (container) {
-      container.style.opacity = '1';
+      submitBtn.textContent = 'Send';
     }
   }
 }
 
 function formatMarkdownText(raw) {
   return String(raw || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/`([^`]+)`/g, '<code style="background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:0.84em">$1</code>');
+    .replace(/`([^`]+)`/g, '<code style="background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:0.86em">$1</code>');
 }
 
-function renderQaAnswer(ans) {
+function renderChatThread(pendingUserQuestion = null) {
   const container = document.getElementById('qaAnswerContainer');
-  const kpisHtml = (ans.kpis || []).map(k => `
-    <div class="kpi" style="cursor:default">
-      <div class="kpi-label">${k.label}</div>
-      <div class="kpi-val" style="font-size:1.35rem">${k.value}</div>
-    </div>
-  `).join('');
+  if (!container) return;
 
-  const tableHtml = ans.table
-    ? `
-      <div class="tbl-wrap" style="margin-top:16px">
-        <table>
-          <thead><tr>${ans.table.headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>
-          <tbody>
-            ${ans.table.rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}
-          </tbody>
-        </table>
-      </div>
-    `
-    : '';
-
-  const chartHtml = ans.chart
-    ? `<div class="chart-box" style="height:260px;margin-top:14px"><canvas id="chartQaDynamic"></canvas></div>`
-    : '';
-
-  const jumpBtnHtml = ans.targetView && ans.targetView !== 'ask'
-    ? `<button class="btn-bridge-outline" onclick="${ans.targetSubtab ? `openWorklistWithFilter('${ans.targetSubtab}')` : `switchView('${ans.targetView}')`}">Open Full Interactive View →</button>`
-    : '';
-
-  const aiBadgeHtml = ans.aiPowered
-    ? `<span class="fuzzy-badge" data-testid="gemini-ai-badge" style="cursor:default">✨ Powered by Google ${ans.aiModel || 'gemini-2.5-flash'}</span>`
-    : `<span class="know-badge" data-testid="gemini-ai-badge">✨ Instant Analytics Summary</span>`;
-
-  const followUpsHtml = Array.isArray(ans.followUpSuggestions) && ans.followUpSuggestions.length > 0
-    ? `
-      <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
-        <div style="font-size:0.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:8px">Suggested Follow-Up Questions</div>
-        <div class="qa-prompt-grid" style="margin-bottom:0">
-          ${ans.followUpSuggestions.map(fq => `<button class="qa-chip" onclick="askPresetQuestion('${escapeAttr(fq)}')">↳ ${fq}</button>`).join('')}
-        </div>
-      </div>
-    `
-    : '';
-
-  container.innerHTML = `
-    <div class="qa-answer-card" data-testid="qa-answer-card">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
-        <div>
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-            ${aiBadgeHtml}
-            <span class="slide-eyebrow" style="margin-bottom:0">${ans.category} · Source: ${ans.sourceCitation}</span>
-          </div>
-          <h3 style="color:var(--bridge-navy-dark);font-size:1.18rem;margin-top:3px" data-testid="qa-answer-headline">${ans.headline}</h3>
-        </div>
-        ${jumpBtnHtml}
-      </div>
-      <div class="qa-narrative" data-testid="qa-answer-narrative">${formatMarkdownText(ans.answer)}</div>
-      <div class="kpi-row-4" style="margin-bottom:10px">${kpisHtml}</div>
-      ${chartHtml}
-      ${tableHtml}
-      ${followUpsHtml}
+  const greetingHtml = `
+    <div class="chat-msg chat-msg-ai">
+      <div class="chat-sender">Bridge AI</div>
+      <div class="chat-bubble">Hi! I have the Damien Center GLP-1 program metrics and all 410 pharmacy worklist records right here. What would you like to look into?</div>
     </div>
   `;
 
-  if (ans.chart) {
-    destroyChart('qaDynamic');
-    const ctx = document.getElementById('chartQaDynamic').getContext('2d');
-    CHARTS.qaDynamic = new Chart(ctx, {
-      type: ans.chart.type || 'bar',
-      data: {
-        labels: ans.chart.labels,
-        datasets: ans.chart.datasets
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          title: { display: true, text: ans.chart.title, color: '#154672', font: { weight: 'bold' } }
-        },
-        scales: {
-          y: { beginAtZero: true }
-        }
-      }
-    });
-  }
+  const turnsHtml = QA_HISTORY.map(turn => `
+    <div class="chat-msg chat-msg-user">
+      <div class="chat-sender">You</div>
+      <div class="chat-bubble">${formatMarkdownText(turn.question)}</div>
+    </div>
+    <div class="chat-msg chat-msg-ai" data-testid="qa-ai-message">
+      <div class="chat-sender">Bridge AI</div>
+      <div class="chat-bubble">${formatMarkdownText(turn.answer)}</div>
+    </div>
+  `).join('');
+
+  const pendingHtml = pendingUserQuestion
+    ? `
+      <div class="chat-msg chat-msg-user">
+        <div class="chat-sender">You</div>
+        <div class="chat-bubble">${formatMarkdownText(pendingUserQuestion)}</div>
+      </div>
+      <div class="chat-msg chat-msg-ai">
+        <div class="chat-sender">Bridge AI</div>
+        <div class="chat-bubble chat-typing">Thinking...</div>
+      </div>
+    `
+    : '';
+
+  container.innerHTML = greetingHtml + turnsHtml + pendingHtml;
+  container.scrollTop = container.scrollHeight;
 }
 
 function escapeAttr(s) {
@@ -1105,3 +1064,4 @@ function escapeAttr(s) {
 }
 
 window.addEventListener('DOMContentLoaded', initPortal);
+

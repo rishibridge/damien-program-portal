@@ -294,17 +294,29 @@ def run_e2e_suite():
             f"violations={slide_ref_violations}"
         )
 
-        # 17. Live Google Gemini 2.5 Flash Q&A ("Ask Bridge AI") Comprehensive Multi-Scenario Testing
+        # 17. Live Google Gemini 2.5 Flash Natural Conversational Q&A ("Ask Bridge AI")
         page.click("button[data-view='ask']")
         page.wait_for_selector("#view-ask.active")
 
+        # Verify initial greeting and that #qaAnswerContainer is a pure chat thread (no KPI cards, charts, or tables)
+        initial_thread = page.locator("#qaAnswerContainer").inner_text()
+        record(
+            "E2E-19.0",
+            "Natural Conversational Chat Thread Initialization (No Forced KPIs, Charts, or Tables)",
+            "What would you like to look into?" in initial_thread
+            and page.locator("#qaAnswerContainer canvas").count() == 0
+            and page.locator("#qaAnswerContainer table").count() == 0
+            and page.locator("#qaAnswerContainer .kpi").count() == 0,
+            "Pure human-like conversation thread verified"
+        )
+
         gemini_qa_scenarios = [
             (
-                "How is Program Proceeds calculated and what is the YTD P&L breakdown?",
+                "Hey there! How is the program doing overall through September, and what are our total YTD program proceeds and pharmacy gross margin?",
                 ["961,691", "1,758,625"]
             ),
             (
-                "Compare EPIC and Paid Media first-fill rates and total YTD pharmacy gross margin.",
+                "How does EPIC compare to Paid Media on first-fill rates and YTD gross margin?",
                 ["77%", "62%", "696,172"]
             ),
             (
@@ -312,11 +324,11 @@ def run_e2e_suite():
                 ["City of Evansville", "Wegovy"]
             ),
             (
-                "How many unlinked fills in Pharmacy Data Fixes were prescribed by Taryn Fields vs Lydia Staiger, and how many unmatched IDs fuzzy-match to active To-Do patients?",
+                "How many unlinked fills in Pharmacy Data Fixes fuzzy-match to active To-Do patients?",
                 ["21"]
             ),
             (
-                "What are the 3 patients on the Pharmacy To-Do list whose medication is Ready – waiting for pickup?",
+                "And who are the 3 patients on the Pharmacy To-Do list whose medication is Ready – waiting for pickup?",
                 ["30862dd4", "a8f44a1e", "9eb5575e"]
             )
         ]
@@ -329,17 +341,31 @@ def run_e2e_suite():
             page.wait_for_timeout(120)
             ans_text = page.locator("#qaAnswerContainer").inner_text()
             is_gemini = resp_json.get("aiPowered") is True and resp_json.get("aiModel") == "gemini-2.5-flash"
-            badge_visible = "Powered by Google gemini-2.5-flash" in ans_text
             tokens_ok = all(tok.lower() in ans_text.lower() for tok in expected_tokens)
             no_slide_ref = not has_slide_or_file_ref(ans_text)
+            no_extra_widgets = (
+                page.locator("#qaAnswerContainer canvas").count() == 0
+                and page.locator("#qaAnswerContainer table").count() == 0
+                and page.locator("#qaAnswerContainer .kpi").count() == 0
+            )
             record(
                 f"E2E-19.{idx}",
-                f"Live Gemini 2.5 Flash Q&A Scenario {idx}: '{question[:52]}...'",
-                is_gemini and badge_visible and tokens_ok and no_slide_ref,
-                f"aiPowered={is_gemini}, badge={badge_visible}, tokens_ok={tokens_ok} ({expected_tokens}), noSlideRef={no_slide_ref}"
+                f"Natural Gemini Conversation Turn {idx}: '{question[:50]}...'",
+                is_gemini and tokens_ok and no_slide_ref and no_extra_widgets,
+                f"aiPowered={is_gemini}, tokens_ok={tokens_ok} ({expected_tokens}), noSlideRef={no_slide_ref}, pureChat={no_extra_widgets}"
             )
 
-        # 18. Global Topbar Ask Bar Navigation & Live Gemini Response
+        # Verify 'New Conversation' button resets the chat thread cleanly
+        page.click("button:has-text('New Conversation')")
+        reset_msg_count = page.locator("#qaAnswerContainer .chat-msg").count()
+        record(
+            "E2E-19.6",
+            "New Conversation Button Resets Chat Thread",
+            reset_msg_count == 1,
+            f"chat messages after reset={reset_msg_count}"
+        )
+
+        # 18. Global Topbar Ask Bar Navigation & Live Gemini Conversational Reply
         page.click("button[data-view='summary']")
         page.fill("#topbarAskInput", "How much did Paid Media return per $1 spent and what was total media spend?")
         with page.expect_response(lambda r: "/api/ask" in r.url and r.status == 200, timeout=30000) as top_resp_info:
@@ -350,11 +376,11 @@ def run_e2e_suite():
         top_ans = page.locator("#qaAnswerContainer").inner_text()
         record(
             "E2E-20",
-            "Global Topbar Ask Bridge AI Search Bar Navigation & Live Gemini Response",
+            "Global Topbar Ask Bridge AI Search Bar Navigation & Live Conversational Reply",
             top_json.get("aiPowered") is True
             and ("4.63" in top_ans or "463%" in top_ans)
             and not has_slide_or_file_ref(top_ans),
-            "Topbar search navigated to Ask view and rendered live Gemini Paid Media ROAS answer with zero slide numbers"
+            "Topbar search navigated to Ask view and rendered natural conversational reply"
         )
 
         # 19. Zero Console / Page Errors
