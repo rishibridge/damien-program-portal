@@ -127,7 +127,7 @@
           <div>
             <div class="bridge-hero-eyebrow">Damien Center GLP-1 Weight Loss Program · Bridge Health Hub · Through September 30, 2026</div>
             <h1>The program is growing and profitable; the opportunity is getting more sign-ups to a first fill.</h1>
-            <p>862 active September members · $961,691 YTD net proceeds · $88.0K in open first-fill prescriptions ready to convert</p>
+            <p>862 active September members · 673 September GLP-1 fills · $371,214 September proceeds ($961,691 YTD)</p>
           </div>
           <div class="bridge-hero-actions">
             <button class="btn-bridge-primary" onclick="switchView('worklist')">First-Fill Worklist (101)</button>
@@ -144,7 +144,7 @@
             <div class="card-hd">
               <div>
                 Active members by month
-                <br /><small>Includes members who cancelled in-month</small>
+                <br /><small>Includes members that cancelled in-month</small>
               </div>
               <span class="know-badge">23 to 862</span>
             </div>
@@ -156,7 +156,7 @@
           <!-- What You Need to Know -->
           <div class="card">
             <div class="card-hd">
-              <span>Key Takeaways</span>
+              <span>What you need to know</span>
               <small>Select any item to view details</small>
             </div>
             <div class="know-list" id="whatYouNeedToKnowList"></div>
@@ -167,8 +167,8 @@
         <div class="card">
           <div class="card-hd">
             <div>
-              Pharmacy Operations &amp; Value at Stake
-              <br /><small>Active patient queues valued at $871 net proceeds per fill ($911 Sep margin less $40 fill cost)</small>
+              First-Fill Worklist Queues
+              <br /><small>Operational queues from the Damien Pharmacy First-Fill Worklist (data through September 30, 2026)</small>
             </div>
             <button class="btn-bridge-outline" onclick="switchView('worklist')">Open Worklist</button>
           </div>
@@ -187,16 +187,16 @@
 
         <div class="kpi-row-4">
           <div class="kpi"><div class="kpi-label">Program proceeds, Sep</div><div class="kpi-val">$371,214</div><div class="kpi-sub">$371K after ad spend (+44.4% vs Aug)</div></div>
-          <div class="kpi"><div class="kpi-label">Program proceeds, YTD</div><div class="kpi-val">$961,691</div><div class="kpi-sub">41.2% of revenue · $473 net / fill</div></div>
-          <div class="kpi"><div class="kpi-label">YTD Pharmacy Revenue</div><div class="kpi-val">$2,336,983</div><div class="kpi-sub">−$578,358 COGS · $1,758,625 margin (75.3%)</div></div>
-          <div class="kpi"><div class="kpi-label">Sep Gross Margin / Fill</div><div class="kpi-val">$911</div><div class="kpi-sub">$871 net proceeds / fill after $40 fill cost</div></div>
+          <div class="kpi"><div class="kpi-label">Program proceeds, YTD</div><div class="kpi-val">$961,691</div><div class="kpi-sub">$962K net after ad spend, fees &amp; fill cost</div></div>
+          <div class="kpi"><div class="kpi-label">Pharmacy revenue, YTD</div><div class="kpi-val">$2,336,983</div><div class="kpi-sub">Across 2,034 completed GLP-1 fills</div></div>
+          <div class="kpi"><div class="kpi-label">Membership fees collected, YTD</div><div class="kpi-val">$44,164</div><div class="kpi-sub">$2,381,147 combined YTD revenue &amp; fees</div></div>
         </div>
 
         <div class="grid-3-2">
           <div class="card">
             <div class="card-hd">
-              <span>Monthly program proceeds</span>
-              <small>After ad spend ($)</small>
+              <span>Monthly program proceeds (after ad spend)</span>
+              <small>Jan – Sep 2026 ($)</small>
             </div>
             <div class="chart-box-tall">
               <canvas id="chartMonthlyProceeds"></canvas>
@@ -205,8 +205,8 @@
 
           <div class="card">
             <div class="card-hd">
-              <span>Year-to-Date P&amp;L Statement</span>
-              <small>2,034 completed GLP-1 fills through Sep 30, 2026</small>
+              <span>Year to date</span>
+              <small>Program financials through September 30, 2026</small>
             </div>
             <div class="tbl-wrap">
               <table id="tableYtdFinancials">
@@ -214,8 +214,6 @@
                   <tr>
                     <th>Line Item</th>
                     <th class="num">YTD Amount</th>
-                    <th class="num">% of Rev</th>
-                    <th class="num">Per Fill</th>
                   </tr>
                 </thead>
                 <tbody id="tbodyYtdFinancials"></tbody>
@@ -229,8 +227,8 @@
         <div class="card">
           <div class="card-hd">
             <div>
-              First-Fill Financial Impact Simulator
-              <br /><small>Model incremental proceeds from converting open prescriptions</small>
+              First-Fill Net Proceeds Simulator
+              <br /><small>Interactive what-if model for converting open prescriptions (using Slide 3's $911 Sep margin/fill less $40 fill cost)</small>
             </div>
             <button class="btn-bridge-outline" onclick="resetFinancialSimulator()">Reset</button>
           </div>
@@ -252,16 +250,16 @@
               </div>
               <div class="sim-control">
                 <label>
-                  <span>Gross Margin per Fill (Sep actual: $911)</span>
+                  <span>Margin per Fill Assumption (Sep actual: $911)</span>
                   <span id="simMarginVal">$911 / fill</span>
                 </label>
-                <input type="range" id="simMarginSlider" min="700" max="1100" step="10" value="911" oninput="updateFinancialSimulator()" />
+                <input type="range" id="simMarginSlider" min="700" max="1100" step="1" value="911" oninput="updateFinancialSimulator()" />
               </div>
             </div>
             <div class="kpi-row" style="margin-bottom:0">
               <div class="kpi"><div class="kpi-label">Incremental Fills</div><div class="kpi-val" id="simOutFills">+75</div><div class="kpi-sub">First fills + refills</div></div>
-              <div class="kpi"><div class="kpi-label">Incremental Gross Margin</div><div class="kpi-val" id="simOutMargin">+$68,325</div><div class="kpi-sub">Before $40/fill cost</div></div>
-              <div class="kpi"><div class="kpi-label">Projected YTD Proceeds</div><div class="kpi-val" id="simOutProceeds">$1,027,016</div><div class="kpi-sub" id="simOutDelta">+$65,325 net lift</div></div>
+              <div class="kpi"><div class="kpi-label">Incremental Net Proceeds</div><div class="kpi-val" id="simOutMargin">+$65,325</div><div class="kpi-sub">After $40 per fill cost</div></div>
+              <div class="kpi"><div class="kpi-label">Projected YTD Proceeds</div><div class="kpi-val" id="simOutProceeds">$1,027,016</div><div class="kpi-sub" id="simOutDelta">+$65,325 net proceeds lift</div></div>
             </div>
           </div>
         </div>
@@ -292,24 +290,23 @@
         <div class="card">
           <div class="card-hd">
             <div>
-              Performance by Source &amp; P&amp;L Reconciliation
-              <br /><small>n = 1,033 YTD Enrolled (1,030 Jan–Sep '26 + 3 pre-'26) · n = 760 Pre-Sep (30d+ follow-up)</small>
+              Enrollment &amp; Fill Performance by Source
+              <br /><small>62% of September enrollments came from EPIC, LHD, and McGohan Brabender</small>
             </div>
-            <span class="know-badge">2,034 Total P&amp;L Fills</span>
+            <span class="know-badge">1,952 Matched Member Fills</span>
           </div>
           <div class="tbl-wrap">
             <table id="tableSources">
               <thead>
                 <tr>
                   <th>Source</th>
-                  <th class="num">Enrolled Sept</th>
+                  <th class="num">Enrolled in Sept</th>
                   <th class="num">Enrolled YTD</th>
-                  <th class="num">Pre-Sep (n)</th>
                   <th class="num">Share</th>
                   <th class="num">Filled 1st Rx</th>
-                  <th class="num">Refilled 1st to 2nd</th>
-                  <th class="num">GLP-1 Fills</th>
-                  <th class="num">Gross Margin</th>
+                  <th class="num">Refilled 1st → 2nd</th>
+                  <th class="num">GLP-1 fills</th>
+                  <th class="num">Gross margin</th>
                   <th>Worklist</th>
                 </tr>
               </thead>
@@ -331,29 +328,10 @@
 
         <div class="kpi-row-4" id="paidMediaKpiRow"></div>
 
-        <!-- CFO Channel Unit Economics & Fee Drag Comparison -->
-        <div class="kpi-row-3" id="paidMediaUnitEconRow" style="margin-bottom:18px">
-          <div class="kpi">
-            <div class="kpi-label">Paid Media CAC / Starter</div>
-            <div class="kpi-val">$584</div>
-            <div class="kpi-sub">243 of 414 started · 171 (41%) unfilled sign-up drag</div>
-          </div>
-          <div class="kpi">
-            <div class="kpi-label">Net Contribution ROAS (After $40/Fill)</div>
-            <div class="kpi-val">4.41x</div>
-            <div class="kpi-sub">$626,921 net pharmacy contribution (786 fills)</div>
-          </div>
-          <div class="kpi">
-            <div class="kpi-label">Broker Channel Cost / Fill (EPIC, LHD, McGohan)</div>
-            <div class="kpi-val">$12.64</div>
-            <div class="kpi-sub">$10,060 commissions across 796 partner fills (77% EPIC 1st fill)</div>
-          </div>
-        </div>
-
         <div class="card">
           <div class="card-hd">
             <span>Media spend vs. cumulative pharmacy gross margin</span>
-            <small>By sign-up month (n = 414 Jan–Sep 2026 sign-ups)</small>
+            <small>By sign-up month (Jan – Sep 2026)</small>
           </div>
           <div class="chart-box">
             <canvas id="chartPaidMediaRoi"></canvas>
@@ -400,8 +378,8 @@
           <div>
             <div class="card">
               <div class="card-hd">
-                <span>Pre-September enrollments (n = 760 patients)</span>
-                <small>At least 30 days since enrollment (excludes 273 Sep sign-ups)</small>
+                <span>Members who enrolled before September (760 patients)</span>
+                <small>At least 30 days since enrollment</small>
               </div>
               <div class="chart-box">
                 <canvas id="chartFunnelBars"></canvas>
@@ -415,7 +393,7 @@
             <h3 style="font-size:0.96rem;font-weight:600;color:var(--text)">Median time between steps</h3>
             <div id="funnelTimingList" style="display:flex;flex-direction:column;gap:10px"></div>
             <div class="footnote-box" style="margin-top:auto">
-              <strong>True Backlog Note:</strong> 85 pre-September patients were prescribed but never filled, and 101 active members are on the Pharmacy To-Do list (<strong>86 truly unfilled</strong> + <strong>15 who already filled</strong> under a 1-character typo ID in Data Fixes).
+              <strong>Funnel &amp; Worklist Note:</strong> Funnel conversion uses the 760 members who enrolled before September (at least 30 days to fill; 85 were prescribed but never filled). Across all active cohorts through September 30, <strong>101 active members</strong> are on the Pharmacy To-Do worklist with an open prescription (including 15 with a possible ID typo match in Pharmacy Data Fixes to verify).
               <div style="margin-top:12px">
                 <button class="btn-bridge-primary" onclick="openWorklistWithFilter('todo')">Open Pharmacy To-Do (101)</button>
               </div>
@@ -436,8 +414,8 @@
         <div class="grid-3-2">
           <div class="card">
             <div class="card-hd">
-              <span>Share of therapy starters still filling</span>
-              <small>n = 670 All-Time Therapy Starters (Fill 1: 670 to Fill 8: 24)</small>
+              <span>Share of patients who started therapy still filling, by fill number</span>
+              <small>Fill 1 (670 patients) through Fill 8 (24 patients)</small>
             </div>
             <div class="chart-box">
               <canvas id="chartRefillPersistence"></canvas>
@@ -448,7 +426,7 @@
           <div class="card">
             <div class="card-hd">
               <span>Refill Continuation by Step</span>
-              <small>45-day right-censored cohort vs. all-time fill counts</small>
+              <small>Patients whose prior fill was at least 45 days before Sep 30, 2026</small>
             </div>
             <div class="tbl-wrap">
               <table id="tableRefillSteps">
@@ -456,9 +434,7 @@
                   <tr>
                     <th>Step</th>
                     <th class="num">Came back</th>
-                    <th class="num">Refilled (45d)</th>
-                    <th class="num">Eligible (45d)</th>
-                    <th class="num">All-Time Fill N</th>
+                    <th class="num">Eligible pts</th>
                   </tr>
                 </thead>
                 <tbody id="tbodyRefillSteps"></tbody>
@@ -476,10 +452,10 @@
         <div class="card">
           <div class="card-hd">
             <div>
-              Member retention by sign-up cohort
-              <br /><small>Share of members still active at the end of each month after joining (M0 = joining month)</small>
+              Member retention by month
+              <br /><small>Share of members in each sign-up cohort still active at the end of each month after joining (M0 = joining month)</small>
             </div>
-            <span class="know-badge">1,030 Joined (Jan–Sep '26)</span>
+            <span class="know-badge">Jan – Sep 2026 Cohorts</span>
           </div>
           <div class="tbl-wrap">
             <table id="tableRetentionMatrix">
@@ -516,9 +492,6 @@
           <div class="timing-panel">
             <h3 style="font-size:0.96rem;font-weight:600;color:var(--text)">September Dispenses (673)</h3>
             <div id="medMixCalloutList" style="display:flex;flex-direction:column;gap:10px"></div>
-            <div class="footnote-box" id="medMixColdChainBox">
-              <strong>Cold-Chain vs. Ambient Fulfillment (Sep):</strong> <strong>417 fills (62.0%)</strong> are refrigerated injectable pens (411 Wegovy Pen + 6 Ozempic, requiring 2°C–8°C cold-chain storage) and <strong>256 fills (38.0%)</strong> are ambient oral Wegovy tablets (1.5mg, 4mg, 9mg, 25mg; require fasting administration counseling).
-            </div>
             <div class="footnote-box" id="medMixNote"></div>
             <div style="margin-top:8px">
               <div style="font-size:0.76rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px">Monthly Dispenses</div>
@@ -670,7 +643,7 @@
                     <th class="num">Fills</th>
                     <th>Last Fill</th>
                     <th class="num">Elapsed</th>
-                    <th>Medication &amp; Clinical Flag</th>
+                    <th>Last Item Filled</th>
                     <th>Source</th>
                     <th>Record</th>
                   </tr>
@@ -686,8 +659,8 @@
           <div class="card">
             <div class="card-hd">
               <div>
-                Unmatched Patient IDs (21 IDs, 31 Fills)
-                <br /><small>1–2 character hex typos matched against active Pharmacy To-Do members</small>
+                Patient IDs that don't match any program member (21 IDs, 31 fills)
+                <br /><small>20 unique IDs on file (Data Note 2) · 21 fills have a possible 1–2 character typo match in Pharmacy To-Do to verify</small>
               </div>
               <button class="btn-bridge-primary" id="btnApplyAllFuzzy" onclick="applyAllFuzzyFixes()">
                 Auto-Reconcile 21 Matches
@@ -714,8 +687,8 @@
           <div class="card">
             <div class="card-hd">
               <div>
-                Fills Missing Patient Alternate ID (55 Worklist Rows: 51 Completed GLP-1 P&amp;L Fills + 4 Ancillary / Non-Completed)
-                <br /><small>Assign 8-character Patient Alternate ID to link back to Hello Alpha records</small>
+                Fills with no Patient Alternate ID (55)
+                <br /><small>51 completed GLP-1 fills through Sep 30 (Data Note 2) + 2 waiting for pickup + 1 Oct 5 fill + 1 non-GLP-1 (Sertraline)</small>
               </div>
               <div>
                 <input type="search" id="fixesNoIdSearch" placeholder="Filter prescriber, payer..." oninput="renderFixesTables()" style="padding:7px 12px;border:1px solid var(--border-strong);border-radius:8px;font-size:0.8rem" />
