@@ -216,16 +216,18 @@ def run_e2e_suite():
         page.click("#wlTabBtn-fixes")
         unmatched_cnt = page.locator("#tbodyFixesUnmatched tr").count()
         noid_cnt = page.locator("#tbodyFixesNoId tr").count()
-        page.click("#btnApplyAllFuzzy")
-        page.wait_for_timeout(400)
+        with page.expect_response(lambda r: "/api/portal-data" in r.url and r.status == 200):
+            page.click("#btnApplyAllFuzzy")
+        page.wait_for_timeout(150)
         # Verify that Corrected patient ID inputs were populated on unmatched rows
         populated_fixes = page.evaluate("""() => {
             return Array.from(document.querySelectorAll('#tbodyFixesUnmatched input.edit-cell-input'))
                 .filter(el => el.value.trim().length > 0).length;
         }""")
         # Reset edits back to clean baseline
-        page.click("button:has-text('Reset Demo Edits')")
-        page.wait_for_timeout(400)
+        with page.expect_response(lambda r: "/api/portal-data" in r.url and r.status == 200):
+            page.click("button:has-text('Reset Demo Edits')")
+        page.wait_for_timeout(150)
         record(
             "E2E-14",
             "Worklist Sheet 3: Pharmacy Data Fixes (31 Unmatched + 55 No ID = 86) & Auto-Reconcile 21 Fuzzy Matches",
@@ -287,8 +289,9 @@ def run_e2e_suite():
 
         for idx, (question, expected_token) in enumerate(qa_scenarios, 1):
             page.fill("#mainAskInput", question)
-            page.click("#mainAskSubmitBtn")
-            page.wait_for_timeout(200)
+            with page.expect_response(lambda r: "/api/ask" in r.url and r.status == 200):
+                page.click("#mainAskSubmitBtn")
+            page.wait_for_timeout(80)
             ans_text = page.locator("#qaAnswerContainer").inner_text()
             record(
                 f"E2E-18.{idx}",
@@ -300,8 +303,10 @@ def run_e2e_suite():
         # Also test Global Topbar Ask Bar from Summary view
         page.click("button[data-view='summary']")
         page.fill("#topbarAskInput", "How much did Paid Media return per $1 spent?")
-        page.click("#topbarAskBtn")
+        with page.expect_response(lambda r: "/api/ask" in r.url and r.status == 200):
+            page.click("#topbarAskBtn")
         page.wait_for_selector("#view-ask.active")
+        page.wait_for_timeout(80)
         top_ans = page.locator("#qaAnswerContainer").inner_text()
         record(
             "E2E-19",
