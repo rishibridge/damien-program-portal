@@ -2,6 +2,26 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 
+// Load local .env if present
+const ENV_FILE_PATH = path.join(__dirname, '.env');
+if (fs.existsSync(ENV_FILE_PATH)) {
+  const lines = fs.readFileSync(ENV_FILE_PATH, 'utf8').split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) continue;
+    const idx = trimmed.indexOf('=');
+    const k = trimmed.slice(0, idx).trim();
+    const v = trimmed.slice(idx + 1).trim();
+    if (k && !process.env[k]) process.env[k] = v;
+  }
+}
+
+function getGeminiApiKey() {
+  return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
+}
+
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -84,6 +104,8 @@ app.get('/api/health', (req, res) => {
     service: 'damien-program-portal',
     preparedBy: 'Bridge Health Hub',
     asOfDate: '2026-09-30',
+    geminiConfigured: Boolean(getGeminiApiKey()),
+    geminiModel: GEMINI_MODEL,
     worklistSummary: summary
   });
 });
@@ -327,7 +349,7 @@ function answerQuestion(rawQuestion) {
       return {
         question: q,
         category: 'Patient & Worklist Lookup',
-        sourceCitation: 'Damien_First_Fill_Worklist_Sep2026.xlsx (All 4 Sheets)',
+        sourceCitation: 'Pharmacy Operations Worklist (All 4 Queues)',
         targetView: 'worklist',
         headline: `Found ${totalHits} record(s) matching "${tok}" across operational worklists`,
         answer: `I searched all 410 operational records across **Pharmacy To-Do**, **Refill Follow-Up**, **Pharmacy Data Fixes**, and **Ended – Never Filled** for \`${tok}\`. Here are the matching records and their recommended next actions:`,
@@ -338,7 +360,7 @@ function answerQuestion(rawQuestion) {
           { label: 'Ended Member Hits', value: String(matchedEnded.length) }
         ],
         table: {
-          headers: ['Sheet', 'Patient ID', 'Priority / Stage', 'Finding / Detail', 'Medication', 'Source / Prescriber', 'Group / Date', 'Status'],
+          headers: ['Queue', 'Patient ID', 'Priority / Stage', 'Finding / Detail', 'Medication', 'Source / Prescriber', 'Group / Date', 'Status'],
           rows: rowsOut
         }
       };
@@ -355,12 +377,12 @@ function answerQuestion(rawQuestion) {
     return {
       question: q,
       category: 'Pharmacy Data Fixes & ID Reconciliation',
-      sourceCitation: 'Slide 9 (Appendix) & Sheet 3: Pharmacy Data Fixes (86 records)',
+      sourceCitation: 'Program Data Notes & Pharmacy Data Fixes Queue (86 records)',
       targetView: 'worklist',
       targetSubtab: 'fixes',
       headline: '86 Unlinked Fills in Pharmacy Data Fixes — 21 Fills Automatically Fuzzy-Matched to Active To-Do Patients',
       answer:
-        `Per **Slide 9 (Appendix)**, **1,952 of 2,034 GLP-1 fills (96%)** matched an Alpha member via the 8-character Patient Alternate ID. In the **Pharmacy Data Fixes** worklist sheet, there are **86 unlinked records**:\n` +
+        `Per **Program Data Definitions**, **1,952 of 2,034 GLP-1 fills (96%)** matched an Alpha member via the 8-character Patient Alternate ID. In the **Pharmacy Data Fixes** worklist, there are **86 unlinked records**:\n` +
         `• **55 fills** have **no Patient Alternate ID** on file.\n` +
         `• **31 fills across 21 Patient IDs** have an ID on file that does not exactly match any program member.\n\n` +
         `**Smart Fuzzy-Match Discovery**: By comparing the 21 unmatched IDs against the **Pharmacy To-Do** list (edit distance ≤ 2), **21 fills across 15 patient IDs** are 1–2 character hex typos of active **Pharmacy To-Do** patients whose Rx was marked *"No transaction on file"* (e.g., \`22d97e56\` → \`22d97e66\`, \`069630f\` → \`0696370f\`, \`cd7dd8d0\` → \`cf7dd8d0\`, \`d95ad4b\` → \`d695ad4b\`).`,
@@ -416,12 +438,12 @@ function answerQuestion(rawQuestion) {
     return {
       question: q,
       category: 'Employer Group Analytics',
-      sourceCitation: 'Damien_First_Fill_Worklist_Sep2026.xlsx (Pharmacy To-Do & Ended – Never Filled)',
+      sourceCitation: 'Pharmacy Operations Worklist (Pharmacy To-Do & Ended – Never Filled)',
       targetView: 'worklist',
       targetSubtab: 'todo',
       headline: `Employer Group Breakdown Across Unfilled & Ended Memberships (${allGroups.length} Named Employer Groups)`,
       answer:
-        `Across the **Pharmacy To-Do** (101 active unfilled patients, 59 with named employer groups) and **Ended – Never Filled** (186 churned members, 40 with named employer groups) sheets, the top employer groups with unfilled prescriptions are **City of Evansville** (${groupCountsTodo['City of Evansville'] || 0} active To-Do, ${groupCountsEnded['City of Evansville'] || 0} ended), **Damien Patient** (${groupCountsTodo['Damien Patient'] || 0} active To-Do, ${groupCountsEnded['Damien Patient'] || 0} ended), **Hamilton Center** (${groupCountsTodo['Hamilton Center'] || 0} active To-Do), and **Harsha Behavioral Health** (${groupCountsTodo['Harsha Behavioral Health'] || 0} active To-Do).`,
+        `Across the **Pharmacy To-Do** (101 active unfilled patients, 59 with named employer groups) and **Ended – Never Filled** (186 churned members, 40 with named employer groups) queues, the top employer groups with unfilled prescriptions are **City of Evansville** (${groupCountsTodo['City of Evansville'] || 0} active To-Do, ${groupCountsEnded['City of Evansville'] || 0} ended), **Damien Patient** (${groupCountsTodo['Damien Patient'] || 0} active To-Do, ${groupCountsEnded['Damien Patient'] || 0} ended), **Hamilton Center** (${groupCountsTodo['Hamilton Center'] || 0} active To-Do), and **Harsha Behavioral Health** (${groupCountsTodo['Harsha Behavioral Health'] || 0} active To-Do).`,
       kpis: [
         { label: 'Named Employer Groups', value: String(allGroups.length) },
         { label: 'To-Do w/ Employer Group', value: '59 / 101 pts' },
@@ -458,7 +480,7 @@ function answerQuestion(rawQuestion) {
     return {
       question: q,
       category: 'Prescriber Analytics (Pharmacy Data Fixes)',
-      sourceCitation: 'Sheet 3: Pharmacy Data Fixes (86 unlinked fills)',
+      sourceCitation: 'Pharmacy Data Fixes Queue (86 unlinked fills)',
       targetView: 'worklist',
       targetSubtab: 'fixes',
       headline: `Unlinked Pharmacy Fills by Prescriber (${sorted.length} Prescribers across 86 Fills)`,
@@ -487,7 +509,7 @@ function answerQuestion(rawQuestion) {
     return {
       question: q,
       category: 'Pharmacy To-Do Operational Worklist',
-      sourceCitation: 'Sheet 1: Pharmacy To-Do (101 active members)',
+      sourceCitation: 'Pharmacy To-Do Queue (101 active members)',
       targetView: 'worklist',
       targetSubtab: 'todo',
       headline: '101 Active Patients Waiting for First Fill — 10 Urgent (Cancellation Pending), 83 High Priority, 8 New',
@@ -530,12 +552,12 @@ function answerQuestion(rawQuestion) {
     return {
       question: q,
       category: 'Ended Memberships – Root-Cause & Win-Back Analysis',
-      sourceCitation: 'Sheet 4: Ended – Never Filled (186 members)',
+      sourceCitation: 'Ended – Never Filled Queue (186 members)',
       targetView: 'worklist',
       targetSubtab: 'ended',
       headline: '186 Ended Memberships Never Reached a First Fill — 74 No Visit, 62 No Rx, 47 Unfilled at Pharmacy, 3 Outside Pharmacy',
       answer:
-        `The **Ended – Never Filled** reference sheet tracks **186 members** whose membership ended without a first fill:\n` +
+        `The **Ended – Never Filled** queue tracks **186 members** whose membership ended without a first fill:\n` +
         `• **No provider visit (74 members / 39.8%)**: Signed up (mostly Paid Media) but never completed an Alpha provider visit.\n` +
         `• **Saw provider, no Rx (62 members / 33.3%)**: Completed a visit but did not receive a GLP-1 prescription.\n` +
         `• **Rx written, not filled (47 members / 25.3%)**: Prescribed to Damien Pharmacy but never completed a fill:\n` +
@@ -575,21 +597,20 @@ function answerQuestion(rawQuestion) {
   // 7. Refill Follow-Up worklist OR Refill Persistence / Retention questions
   if (ql.includes('refill') || ql.includes('35+') || ql.includes('overdue') || ql.includes('27 days') || ql.includes('45 days') || ql.includes('persistence') || ql.includes('retention') || ql.includes('staying') || ql.includes('cohort')) {
     const s7 = portalState.slide7_refill;
-    const s10 = portalState.slide10_retention;
     return {
       question: q,
       category: 'Refill Persistence, Cohort Retention & Overdue Refill Worklist',
-      sourceCitation: 'Slide 7 (Refill Persistence), Slide 10 (Cohort Retention) & Sheet 2: Refill Follow-Up (37 patients)',
+      sourceCitation: 'Refill & Retention Analytics & Refill Follow-Up Queue (37 patients)',
       targetView: 'refill',
       headline: '94% of 1st-Fill Patients Refill (More Than 9 in 10 at Every Step) — 37 Active Patients Currently 35+ Days Overdue',
       answer:
-        `**Therapy Persistence (Slide 7)**:\n` +
+        `**Therapy Persistence**:\n` +
         `• Once patients start therapy, **94% return for Fill 2** (391 eligible patients) and **87.4% are still filling at Fill 3**.\n` +
         `• Step-to-step continuation stays between **85% and 97%** through Fill 8 (counting patients whose prior fill was ≥45 days before Sep 30, 2026; typical gap between fills is **~27 days**).\n` +
         `• Fill counts by number: Fill 1 (**670**), Fill 2 (**494**), Fill 3 (**311**), Fill 4 (**203**), Fill 5 (**118**), Fill 6 (**68**), Fill 7 (**41**), Fill 8 (**24**).\n\n` +
-        `**Member Retention by Month (Slide 10)**:\n` +
+        `**Member Retention by Month**:\n` +
         `• January cohort (20 members) retained **95% at M1**, **70% at M3–M6**, and **65% at M8**; August cohort (276 members) retained **84% at M1**.\n\n` +
-        `**Refill Follow-Up Worklist (Sheet 2)**:\n` +
+        `**Refill Follow-Up Worklist**:\n` +
         `• **37 active members** have gone **36 to 56+ days** since their last fill without a refill (**30 Active**, **7 Active – cancellation pending**; **22 EPIC**, **10 Paid Media**, **4 Other**, **1 Employee**).`,
       kpis: [
         { label: 'Fill 1 → 2 Refill Rate', value: '94% (391 eligible)' },
@@ -621,11 +642,11 @@ function answerQuestion(rawQuestion) {
     return {
       question: q,
       category: 'Program Financials & YTD P&L',
-      sourceCitation: 'Slide 3: Program Financials',
+      sourceCitation: 'Program Financials & P&L',
       targetView: 'financials',
       headline: 'September Program Proceeds Reached $371,214 ($371K) — $961,691 ($962K) Year to Date After Ad Spend & Fees',
       answer:
-        `**YTD Program P&L Through September 30, 2026 (Slide 3)**:\n` +
+        `**YTD Program P&L Through September 30, 2026**:\n` +
         `• **Pharmacy revenue**: **$2,336,983** (across 2,034 total GLP-1 fills)\n` +
         `• **Pharmacy gross margin**: **$1,758,625** (75.3% gross margin; September gross margin per fill = **$911**)\n` +
         `• **Membership fees collected**: **+$44,164**\n` +
@@ -660,11 +681,11 @@ function answerQuestion(rawQuestion) {
     return {
       question: q,
       category: 'Paid Media ROI & Cohort Performance',
-      sourceCitation: 'Slide 5: Is Paid Media Paying Off?',
+      sourceCitation: 'Paid Media ROI & Cohort Analytics',
       targetView: 'paidmedia',
       headline: 'Every $1 of Media Spend Returned $4.63 of Pharmacy Gross Margin (463% ROAS Across 414 Sign-Ups)',
       answer:
-        `**Paid Media Campaign-to-Date Performance (Jan–Sep 2026, Slide 5)**:\n` +
+        `**Paid Media Campaign-to-Date Performance (Jan–Sep 2026)**:\n` +
         `• **Total Media Spend**: **$142,033** ($142K from agency Google + Meta reports)\n` +
         `• **Paid Media Sign-Ups**: **414** members (sign-ups with no referral or coupon code) at **$343 spend per sign-up**\n` +
         `• **Started Therapy**: **243** patients at **$584 spend per patient started**\n` +
@@ -693,11 +714,11 @@ function answerQuestion(rawQuestion) {
     return {
       question: q,
       category: 'Patient Acquisition & Referral Sources',
-      sourceCitation: 'Slide 4: Where Are Patients Coming From?',
+      sourceCitation: 'Patient Acquisition & Partner Channels',
       targetView: 'sources',
       headline: 'EPIC and Broker Partners Drove 62% of September Enrollments (170 of 273 Sign-Ups) With 76%–88% First-Fill Rates',
       answer:
-        `**Enrollment & Conversion by Patient Source (Slide 4)**:\n` +
+        `**Enrollment & Conversion by Patient Source**:\n` +
         `• **EPIC**: **120** enrolled in Sep (**452 YTD**, **44% share**) — **77% filled 1st Rx**, **93% refilled 1st→2nd**, generating **748 GLP-1 fills** and **$696,172 gross margin**.\n` +
         `• **Paid Media**: **93** enrolled in Sep (**417 YTD**, **40% share**) — **62% filled 1st Rx**, **92% refilled**, generating **804 fills** and **$671,400 gross margin**.\n` +
         `• **LHD (new since Aug)**: **43** enrolled in Sep (**54 YTD**, **5% share**) — **76% filled 1st Rx**, **41 fills**, **$39,729 gross margin**.\n` +
@@ -733,11 +754,11 @@ function answerQuestion(rawQuestion) {
     return {
       question: q,
       category: 'Provider Visit & First-Fill Conversion Funnel',
-      sourceCitation: 'Slide 6: Are Patients Seeing a Provider and Filling?',
+      sourceCitation: 'Provider & First-Fill Funnel Analytics',
       targetView: 'funnel',
       headline: '69% of Pre-September Sign-Ups (523 of 760) Filled Their First Prescription — 237 Total Drop-Offs Across 3 Stages',
       answer:
-        `**Pre-September Cohort Conversion Funnel (760 Members Enrolled Before Sep, Slide 6)**:\n` +
+        `**Pre-September Cohort Conversion Funnel (760 Members Enrolled Before Sep)**:\n` +
         `• **Enrolled**: **760 patients (100%)**\n` +
         `• **Saw a provider**: **684 patients (90%)** → **76 lost** (*never completed a provider visit*)\n` +
         `• **Prescribed**: **608 patients (80%)** → **76 lost** (*saw a provider but were not prescribed*)\n` +
@@ -776,11 +797,11 @@ function answerQuestion(rawQuestion) {
     return {
       question: q,
       category: 'Medication Mix & Product Utilization',
-      sourceCitation: 'Slide 8: What Are Patients Filling?',
+      sourceCitation: 'Medication Mix & Utilization Analytics',
       targetView: 'medmix',
       headline: 'Wegovy Pill Reached 38% of All GLP-1 Fills in September (256 of 673 Fills), Up From 0 Before June',
       answer:
-        `**GLP-1 Medication Mix at Damien Pharmacy (Slide 8)**:\n` +
+        `**GLP-1 Medication Mix at Damien Pharmacy**:\n` +
         `• In **September 2026 (673 total fills)**:\n` +
         `   – **Wegovy Pen**: **411 fills (61.1%)**\n` +
         `   – **Wegovy Pill (Tablet)**: **256 fills (38.0%)**\n` +
@@ -822,9 +843,9 @@ function answerQuestion(rawQuestion) {
     return {
       question: q,
       category: 'Program Definitions & Data Reconciliation Rules',
-      sourceCitation: 'Slide 9: Appendix – Definitions and Data Notes',
+      sourceCitation: 'Program Definitions & Data Notes',
       targetView: 'ask',
-      headline: 'Program Definitions, Data Sources & Member-to-Pharmacy Linking Rules (Slide 9)',
+      headline: 'Program Definitions, Data Sources & Member-to-Pharmacy Linking Rules',
       answer: s9.notes.map((n, i) => `${i + 1}. ${n}`).join('\n\n'),
       kpis: [
         { label: 'Member Match Rate', value: '96% (1,952 / 2,034 fills)' },
@@ -833,7 +854,7 @@ function answerQuestion(rawQuestion) {
         { label: 'Refill Eligibility Rule', value: 'Prior fill ≥45d before Sep 30' }
       ],
       table: {
-        headers: ['Rule / Metric Area', 'Official Definition (Slide 9 Appendix)'],
+        headers: ['Rule / Metric Area', 'Official Program Definition'],
         rows: [
           ['Data Sources', 'Alpha membership file (enrollment, visits, Rx, cancellations, billing) + Damien Pharmacy dispense file (fills, revenue, margin). Test accounts excluded.'],
           ['Patient ID Linking', 'First 8 characters of Alpha member ID = Pharmacy Patient Alternate ID. 1,952 of 2,034 fills (96%) matched.'],
@@ -851,7 +872,7 @@ function answerQuestion(rawQuestion) {
   return {
     question: q || 'Executive Summary & Key Takeaways',
     category: 'Executive Program Summary',
-    sourceCitation: 'Slides 1–10 & Damien_First_Fill_Worklist_Sep2026.xlsx',
+    sourceCitation: 'Executive Summary & Pharmacy Operations Worklist',
     targetView: 'summary',
     headline: 'Damien Center GLP-1 Program: 862 Active Members, 673 Sep Fills, $371K Sep Proceeds ($962K YTD)',
     answer:
@@ -878,12 +899,290 @@ function answerQuestion(rawQuestion) {
   };
 }
 
-app.post('/api/ask', (req, res) => {
-  const { question } = req.body || {};
-  const result = answerQuestion(question);
-  res.json(result);
+function countByField(rows, field) {
+  const counts = {};
+  for (const r of rows) {
+    const val = r[field] !== null && r[field] !== undefined && r[field] !== '' ? String(r[field]) : 'Unlisted / None';
+    counts[val] = (counts[val] || 0) + 1;
+  }
+  return counts;
+}
+
+function buildGeminiDataContext(question) {
+  const wl = portalState.worklists;
+  const todoRows = wl.pharmacyTodo.rows;
+  const refillRows = wl.refillFollowup.rows;
+  const noIdRows = wl.pharmacyDataFixes.noIdRows;
+  const unmatchedRows = wl.pharmacyDataFixes.unmatchedRows;
+  const endedRows = wl.endedNeverFilled.rows;
+
+  // Dynamic keyword search across all 410 worklist rows
+  const ql = String(question || '').toLowerCase();
+  const stop = new Set([
+    'what', 'where', 'when', 'which', 'who', 'whom', 'whose', 'why', 'how', 'many', 'much',
+    'show', 'tell', 'give', 'list', 'find', 'search', 'about', 'from', 'with', 'without',
+    'have', 'does', 'were', 'been', 'this', 'that', 'these', 'those', 'their', 'there',
+    'program', 'damien', 'bridge', 'health', 'alpha', 'member', 'members', 'patient', 'patients',
+    'fill', 'fills', 'first', 'refill', 'refills', 'month', 'months', 'september', 'total',
+    'worklist', 'todo', 'to-do', 'status', 'stage', 'source', 'sources', 'prescribed', 'filled',
+    'between', 'the', 'and', 'for', 'are', 'was', 'not', 'all', 'any', 'can', 'you', 'our'
+  ]);
+  const kwTokens = ql.split(/[\s,?;:!()'"]+/).filter(t => t.length >= 3 && !stop.has(t));
+
+  const matchedRecords = [];
+  if (kwTokens.length > 0) {
+    const scanSheet = (sheetName, rows) => {
+      for (const r of rows) {
+        const hay = JSON.stringify(r).toLowerCase();
+        if (kwTokens.some(tok => hay.includes(tok))) {
+          matchedRecords.push({ queue: sheetName, record: r });
+          if (matchedRecords.length >= 35) break;
+        }
+      }
+    };
+    scanSheet('Pharmacy To-Do', todoRows);
+    if (matchedRecords.length < 35) scanSheet('Refill Follow-Up', refillRows);
+    if (matchedRecords.length < 35) scanSheet('Pharmacy Data Fixes (Unmatched ID)', unmatchedRows);
+    if (matchedRecords.length < 35) scanSheet('Pharmacy Data Fixes (No ID)', noIdRows);
+    if (matchedRecords.length < 35) scanSheet('Ended – Never Filled', endedRows);
+  }
+
+  return {
+    meta: portalState.meta,
+    executiveSummary: portalState.slide2_summary,
+    programFinancials: portalState.slide3_financials,
+    patientSources: portalState.slide4_sources,
+    paidMediaRoi: portalState.slide5_paidMedia,
+    conversionFunnel: portalState.slide6_funnel,
+    refillPersistence: portalState.slide7_refill,
+    medicationMix: portalState.slide8_medMix,
+    programDefinitions: portalState.slide9_appendix,
+    cohortRetention: portalState.slide10_retention,
+    worklistSummary: computeWorklistSummary(wl),
+    worklistAggregations: {
+      pharmacyTodo_101_ActivePatients: {
+        byPriority: countByField(todoRows, 'Priority'),
+        byPharmacyFinding: countByField(todoRows, 'Pharmacy finding'),
+        byPatientSource: countByField(todoRows, 'Patient source'),
+        byEmployerGroup: countByField(todoRows, 'Employer group'),
+        byRxMedication: countByField(todoRows, 'Rx medication'),
+        byMembershipStatus: countByField(todoRows, 'Membership status'),
+        byStatus: countByField(todoRows, 'Status'),
+        urgentCancellationPendingPatients: todoRows
+          .filter(r => String(r['Priority'] || '').startsWith('1'))
+          .map(r => ({
+            patientId: r['Pharmacy patient ID'],
+            alphaMemberId: r['Alpha member ID'],
+            priority: r['Priority'],
+            finding: r['Pharmacy finding'],
+            medication: r['Rx medication'],
+            daysSinceSignup: r['Days since sign-up'],
+            daysInStage: r['Days in this stage'],
+            source: r['Patient source'],
+            employerGroup: r['Employer group'],
+            cancellationRequested: r['Cancellation requested'],
+            pharmacyNote: r['Pharmacy note'],
+            status: r['Status']
+          })),
+        readyWaitingForPickupPatients: todoRows
+          .filter(r => r['Pharmacy finding'] === 'Ready – waiting for pickup')
+          .map(r => ({
+            patientId: r['Pharmacy patient ID'],
+            medication: r['Rx medication'],
+            source: r['Patient source'],
+            employerGroup: r['Employer group'],
+            transactionDate: r['Transaction date']
+          }))
+      },
+      refillFollowup_37_OverduePatients: {
+        byMembershipStatus: countByField(refillRows, 'Membership status'),
+        byPatientSource: countByField(refillRows, 'Patient source'),
+        byLastItemFilled: countByField(refillRows, 'Last item filled'),
+        byFillsToDate: countByField(refillRows, 'GLP-1 fills to date'),
+        all37Records: refillRows.map(r => ({
+          patientId: r['Pharmacy patient ID'],
+          membershipStatus: r['Membership status'],
+          fillsToDate: r['GLP-1 fills to date'],
+          lastFill: r['Last fill'],
+          daysSinceLastFill: r['Days since last fill'],
+          lastItemFilled: r['Last item filled'],
+          source: r['Patient source'],
+          cancellationRequested: r['Cancellation requested']
+        }))
+      },
+      pharmacyDataFixes_86_UnlinkedFills: {
+        noIdCount: noIdRows.length,
+        unmatchedCount: unmatchedRows.length,
+        noIdByPrescriber: countByField(noIdRows, 'Prescriber'),
+        noIdByPayer: countByField(noIdRows, 'Payer'),
+        noIdByDispensedItem: countByField(noIdRows, 'Dispensed item'),
+        unmatchedByPrescriber: countByField(unmatchedRows, 'Prescriber'),
+        combinedByPrescriber: countByField([...noIdRows, ...unmatchedRows], 'Prescriber'),
+        all31UnmatchedRecordsWithFuzzySuggestions: unmatchedRows.map(r => ({
+          patientIdOnFile: r['Patient ID on file'],
+          dateFilled: r['Date filled'],
+          dispensedItem: r['Dispensed item'],
+          prescriber: r['Prescriber'],
+          status: r['Transaction status'],
+          correctedPatientId: r['Corrected patient ID'],
+          suggestedFuzzyMatchInTodo: r.suggestedMatch
+        }))
+      },
+      endedNeverFilled_186_ChurnedMembers: {
+        byStage: countByField(endedRows, 'Stage'),
+        byPharmacyFinding: countByField(endedRows, 'Pharmacy finding'),
+        byPatientSource: countByField(endedRows, 'Patient source'),
+        byEmployerGroup: countByField(endedRows, 'Employer group')
+      }
+    },
+    matchingRecordsForQuery: matchedRecords
+  };
+}
+
+async function askGeminiWithFullData(question, history = []) {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) {
+    throw new Error('No GEMINI_API_KEY / GOOGLE_API_KEY configured');
+  }
+
+  const contextData = buildGeminiDataContext(question);
+
+  const systemInstruction = `You are "Bridge AI", the expert healthcare analytics and pharmacy operations copilot built by Bridge Health Hub for the Damien Center GLP-1 Weight Loss Program (data through September 30, 2026).
+
+You have complete access to the official program analytics and operational worklist data:
+1. Program Performance Analytics: Executive Summary, Program Financials & P&L, Patient Acquisition Sources & Broker Partners, Paid Media ROI & Cohorts, Provider & First-Fill Funnel & Step Timing, Refill Persistence Curve, Medication Mix (Wegovy Pen, Wegovy Pill, Ozempic), Program Data Definitions, and Monthly Cohort Retention Matrix (M0–M8).
+2. Pharmacy Operations Worklist (4 operational queues totaling 410 records): "Pharmacy To-Do" (101 active unfilled patients, 25 cols), "Refill Follow-Up" (37 active overdue refill patients 35+ days, 13 cols), "Pharmacy Data Fixes" (55 fills with no Patient Alternate ID + 31 fills across 21 unmatched IDs, of which 21 fills fuzzy-match to active To-Do patients), and "Ended – Never Filled" (186 ended memberships by stage and pharmacy finding).
+
+CRITICAL RULES:
+- Answer ANY question the user asks accurately, thoroughly, and directly using ONLY the exact numbers, patient IDs, employer groups, prescribers, medications, and financial figures from the provided JSON dataset.
+- NEVER mention slide numbers (e.g., do NOT say "Slide 3", "Slide 9", "Slides 1-10") or raw file extensions (.pptx, .xlsx) anywhere in your response, headline, answer, or sourceCitation. Instead, cite the relevant program domain (e.g., "Program Financials & P&L", "Patient Acquisition & Partner Channels", "Paid Media ROI Analytics", "Provider & First-Fill Funnel", "Refill & Retention Analytics", "Medication Mix Analytics", "Program Data Definitions", or "Pharmacy Operations Worklist").
+- Always include exact numbers, percentages, dollar amounts (e.g., $961,691 YTD proceeds, $371,214 Sep proceeds, $4.63 return per $1 media spend / 463% ROAS, 62% broker partner share in Sep, 523 of 760 filled 1st Rx [69%], 94% Fill 1->2 refill rate, 256 Wegovy pill fills [38%] in Sep, etc. when relevant).
+- Return ONLY a valid JSON object matching this exact schema:
+{
+  "category": "Short category label (e.g., 'Program Financials & P&L', 'Patient Lookup', 'Employer Group Analytics', 'Medication Mix', etc.)",
+  "sourceCitation": "Program analytics section or operational worklist queue cited (never mention slide numbers)",
+  "targetView": "Best matching portal view ID from: 'summary' | 'financials' | 'sources' | 'paidmedia' | 'funnel' | 'refill' | 'medmix' | 'worklist' | 'ask'",
+  "targetSubtab": "If targetView is 'worklist', one of: 'todo' | 'refill' | 'fixes' | 'ended', else null",
+  "headline": "Clear, specific 1-sentence executive headline directly answering the user's question with key numbers",
+  "answer": "Detailed, well-structured answer (using bullet points • and **bold** key metrics) directly addressing the user's question",
+  "kpis": [
+    { "label": "Short KPI Label (max 28 chars)", "value": "Exact KPI Value" }
+  ],
+  "chart": {
+    "type": "bar",
+    "title": "Descriptive chart title relevant to the question",
+    "labels": ["Label 1", "Label 2"],
+    "datasets": [
+      { "label": "Series Name", "data": [10, 20], "backgroundColor": "#154672" }
+    ]
+  },
+  "table": {
+    "headers": ["Column 1", "Column 2", "Column 3"],
+    "rows": [
+      ["Row 1 Col 1", "Row 1 Col 2", "Row 1 Col 3"]
+    ]
+  },
+  "followUpSuggestions": [
+    "Relevant follow-up question 1?",
+    "Relevant follow-up question 2?",
+    "Relevant follow-up question 3?"
+  ]
+}
+- Provide 3 to 4 items in "kpis".
+- Always include a relevant "chart" (with numeric "data" array matching "labels" length; use colors "#154672", "#26ABE4", "#10B981", "#F59E0B") and a relevant "table" (with all cells as strings) that supports your answer.`;
+
+  const conversationTurns = [];
+  if (Array.isArray(history)) {
+    for (const h of history.slice(-6)) {
+      if (h && h.question && h.answer) {
+        conversationTurns.push({ role: 'user', parts: [{ text: String(h.question) }] });
+        conversationTurns.push({ role: 'model', parts: [{ text: JSON.stringify({ headline: h.headline, answer: h.answer }) }] });
+      }
+    }
+  }
+
+  const userPrompt = `OFFICIAL PORTAL DATASET CONTEXT (JSON):\n${JSON.stringify(contextData)}\n\nUSER QUESTION:\n${question}`;
+  conversationTurns.push({ role: 'user', parts: [{ text: userPrompt }] });
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+  const payload = {
+    systemInstruction: { parts: [{ text: systemInstruction }] },
+    contents: conversationTurns,
+    generationConfig: {
+      responseMimeType: 'application/json',
+      temperature: 0.1,
+      thinkingConfig: { thinkingBudget: 0 }
+    }
+  };
+
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Gemini API HTTP ${resp.status}: ${errText.slice(0, 300)}`);
+  }
+
+  const data = await resp.json();
+  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!rawText) {
+    throw new Error('Empty response from Gemini API');
+  }
+
+  const parsed = JSON.parse(rawText);
+  return {
+    question,
+    aiPowered: true,
+    aiModel: GEMINI_MODEL,
+    category: parsed.category || 'Gemini AI Program Analysis',
+    sourceCitation: parsed.sourceCitation || 'Damien Program Analytics & Worklist (Sep 2026)',
+    targetView: parsed.targetView || 'summary',
+    targetSubtab: parsed.targetSubtab || null,
+    headline: parsed.headline || 'Analysis Complete',
+    answer: parsed.answer || '',
+    kpis: Array.isArray(parsed.kpis) ? parsed.kpis.slice(0, 4) : [],
+    chart: parsed.chart && Array.isArray(parsed.chart.labels) && Array.isArray(parsed.chart.datasets) ? parsed.chart : null,
+    table: parsed.table && Array.isArray(parsed.table.headers) && Array.isArray(parsed.table.rows)
+      ? {
+          headers: parsed.table.headers.map(String),
+          rows: parsed.table.rows.map(r => (Array.isArray(r) ? r.map(c => (c === null || c === undefined ? '—' : String(c))) : []))
+        }
+      : null,
+    followUpSuggestions: Array.isArray(parsed.followUpSuggestions) ? parsed.followUpSuggestions.slice(0, 3) : []
+  };
+}
+
+app.post('/api/ask', async (req, res) => {
+  const { question, history, mode } = req.body || {};
+  const q = String(question || '').trim() || 'What is the executive summary and key takeaways through September 2026?';
+
+  // Use live Gemini 2.5 Flash whenever API key is configured (unless mode === 'instant' is explicitly requested)
+  if (getGeminiApiKey() && mode !== 'instant') {
+    try {
+      const geminiResult = await askGeminiWithFullData(q, history);
+      return res.json(geminiResult);
+    } catch (err) {
+      console.error('Gemini API error, falling back to deterministic engine:', err.message);
+    }
+  }
+
+  const fallback = answerQuestion(q);
+  res.json({
+    ...fallback,
+    aiPowered: false,
+    aiModel: 'deterministic-fallback',
+    followUpSuggestions: [
+      'How is Program Proceeds calculated and what is the YTD P&L breakdown?',
+      'Which unmatched patient IDs in Pharmacy Data Fixes fuzzy-match active To-Do patients?',
+      'Which employer groups have the most unfilled prescriptions?'
+    ]
+  });
 });
 
 app.listen(PORT, () => {
-  console.log(`Damien Center GLP-1 Program Portal running on http://localhost:${PORT}`);
+  console.log(`Damien Center GLP-1 Program Portal running on http://localhost:${PORT} (Gemini Configured: ${Boolean(getGeminiApiKey())}, Model: ${GEMINI_MODEL})`);
 });
+

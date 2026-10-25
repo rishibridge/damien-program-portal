@@ -5,6 +5,7 @@ let CURRENT_VIEW = 'summary';
 let CURRENT_WL_SUBTAB = 'todo';
 let SOURCES_CHART_MODE = 'count';
 let MEDMIX_CHART_MODE = 'count';
+const QA_HISTORY = [];
 
 const CHARTS = {};
 
@@ -21,7 +22,7 @@ async function initPortal() {
     PORTAL_DATA = await resp.json();
     renderAllViews();
     // Load initial Executive Summary Q&A preview in Ask tab
-    await executeAskQuestion('What is the executive summary and key takeaways through September 2026?', false);
+    await executeAskQuestion('What is the executive summary and key takeaways through September 2026?', false, 'instant');
   } catch (err) {
     console.error('Failed to load portal data:', err);
   }
@@ -928,7 +929,7 @@ function closePatientModal() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   9. ASK BRIDGE AI (NATURAL LANGUAGE Q&A) & SLIDE 9 APPENDIX
+   9. ASK BRIDGE AI (GEMINI 2.5 FLASH Q&A) & DATA DEFINITIONS
    ═══════════════════════════════════════════════════════════════════════════ */
 function renderAppendixView() {
   const s9 = PORTAL_DATA.slide9_appendix;
@@ -936,7 +937,7 @@ function renderAppendixView() {
   list.innerHTML = s9.notes.map((n, i) => `
     <div class="know-item" style="cursor:default">
       <div class="know-item-text"><strong>Note ${i + 1}:</strong> ${n}</div>
-      <span class="know-badge">Slide 9</span>
+      <span class="know-badge">Data Note</span>
     </div>
   `).join('');
 }
@@ -948,7 +949,7 @@ async function handleTopbarAsk(e) {
   if (!q) return;
   document.getElementById('mainAskInput').value = q;
   switchView('ask');
-  await executeAskQuestion(q, true);
+  await executeAskQuestion(q, true, 'gemini');
 }
 
 async function handleMainAskSubmit(e) {
@@ -956,29 +957,59 @@ async function handleMainAskSubmit(e) {
   const input = document.getElementById('mainAskInput');
   const q = input.value.trim();
   if (!q) return;
-  await executeAskQuestion(q, true);
+  await executeAskQuestion(q, true, 'gemini');
 }
 
 async function askPresetQuestion(q) {
   document.getElementById('mainAskInput').value = q;
-  await executeAskQuestion(q, false);
+  await executeAskQuestion(q, false, 'gemini');
 }
 
-async function executeAskQuestion(questionText, scrollToResult = false) {
+async function executeAskQuestion(questionText, scrollToResult = false, mode = 'gemini') {
+  const submitBtn = document.getElementById('mainAskSubmitBtn');
+  const container = document.getElementById('qaAnswerContainer');
+  if (submitBtn && mode === 'gemini') {
+    submitBtn.disabled = true;
+    submitBtn.textContent = '✨ Asking Gemini...';
+  }
+  if (container && mode === 'gemini') {
+    container.style.opacity = '0.65';
+  }
   try {
     const resp = await fetch('/api/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: questionText })
+      body: JSON.stringify({
+        question: questionText,
+        history: QA_HISTORY.slice(-6),
+        mode
+      })
     });
     const ans = await resp.json();
+    if (mode === 'gemini') {
+      QA_HISTORY.push({ question: questionText, headline: ans.headline, answer: ans.answer });
+    }
     renderQaAnswer(ans);
     if (scrollToResult) {
       document.getElementById('qaAnswerContainer').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   } catch (err) {
     console.error('Ask Bridge AI error:', err);
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Ask Gemini AI';
+    }
+    if (container) {
+      container.style.opacity = '1';
+    }
   }
+}
+
+function formatMarkdownText(raw) {
+  return String(raw || '')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code style="background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:0.84em">$1</code>');
 }
 
 function renderQaAnswer(ans) {
@@ -1011,19 +1042,38 @@ function renderQaAnswer(ans) {
     ? `<button class="btn-bridge-outline" onclick="${ans.targetSubtab ? `openWorklistWithFilter('${ans.targetSubtab}')` : `switchView('${ans.targetView}')`}">Open Full Interactive View →</button>`
     : '';
 
+  const aiBadgeHtml = ans.aiPowered
+    ? `<span class="fuzzy-badge" data-testid="gemini-ai-badge" style="cursor:default">✨ Powered by Google ${ans.aiModel || 'gemini-2.5-flash'}</span>`
+    : `<span class="know-badge" data-testid="gemini-ai-badge">✨ Instant Analytics Summary</span>`;
+
+  const followUpsHtml = Array.isArray(ans.followUpSuggestions) && ans.followUpSuggestions.length > 0
+    ? `
+      <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
+        <div style="font-size:0.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:8px">Suggested Follow-Up Questions</div>
+        <div class="qa-prompt-grid" style="margin-bottom:0">
+          ${ans.followUpSuggestions.map(fq => `<button class="qa-chip" onclick="askPresetQuestion('${escapeAttr(fq)}')">↳ ${fq}</button>`).join('')}
+        </div>
+      </div>
+    `
+    : '';
+
   container.innerHTML = `
     <div class="qa-answer-card" data-testid="qa-answer-card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
         <div>
-          <span class="slide-eyebrow">${ans.category} · Source: ${ans.sourceCitation}</span>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+            ${aiBadgeHtml}
+            <span class="slide-eyebrow" style="margin-bottom:0">${ans.category} · Source: ${ans.sourceCitation}</span>
+          </div>
           <h3 style="color:var(--bridge-navy-dark);font-size:1.18rem;margin-top:3px" data-testid="qa-answer-headline">${ans.headline}</h3>
         </div>
         ${jumpBtnHtml}
       </div>
-      <div class="qa-narrative" data-testid="qa-answer-narrative">${ans.answer}</div>
+      <div class="qa-narrative" data-testid="qa-answer-narrative">${formatMarkdownText(ans.answer)}</div>
       <div class="kpi-row-4" style="margin-bottom:10px">${kpisHtml}</div>
       ${chartHtml}
       ${tableHtml}
+      ${followUpsHtml}
     </div>
   `;
 
@@ -1051,7 +1101,7 @@ function renderQaAnswer(ans) {
 }
 
 function escapeAttr(s) {
-  return String(s || '').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return String(s || '').replace(/'/g, '&#39;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 window.addEventListener('DOMContentLoaded', initPortal);
