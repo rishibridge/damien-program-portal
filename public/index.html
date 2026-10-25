@@ -28,7 +28,6 @@
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
           Overview
         </span>
-        <span class="nav-pill">862</span>
       </button>
 
       <button class="nav-btn" data-view="financials" onclick="switchView('financials')">
@@ -36,7 +35,6 @@
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
           Financials
         </span>
-        <span class="nav-pill">$962K</span>
       </button>
 
       <button class="nav-btn" data-view="sources" onclick="switchView('sources')">
@@ -44,7 +42,6 @@
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
           Patient Sources
         </span>
-        <span class="nav-pill">62%</span>
       </button>
 
       <button class="nav-btn" data-view="paidmedia" onclick="switchView('paidmedia')">
@@ -52,7 +49,6 @@
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
           Paid Media
         </span>
-        <span class="nav-pill">4.63x</span>
       </button>
 
       <button class="nav-btn" data-view="funnel" onclick="switchView('funnel')">
@@ -60,7 +56,6 @@
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/></svg>
           First-Fill Funnel
         </span>
-        <span class="nav-pill">69%</span>
       </button>
 
       <button class="nav-btn" data-view="refill" onclick="switchView('refill')">
@@ -68,7 +63,6 @@
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
           Refills &amp; Retention
         </span>
-        <span class="nav-pill">94%</span>
       </button>
 
       <button class="nav-btn" data-view="medmix" onclick="switchView('medmix')">
@@ -76,7 +70,6 @@
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
           Medications
         </span>
-        <span class="nav-pill">673</span>
       </button>
 
       <div class="nav-section-label" style="padding-left:10px;margin-top:8px">Operations</div>
@@ -107,8 +100,8 @@
   <main class="main">
     <header class="topbar">
       <div class="topbar-left">
-        <h2 id="topbarTitle">Damien Center GLP-1 Weight Loss Program</h2>
-        <span class="topbar-sub">Through September 30, 2026</span>
+        <h2 id="topbarTitle">Executive Overview</h2>
+        <span class="topbar-sub">As of September 30, 2026</span>
       </div>
 
       <form class="topbar-ask-bar" onsubmit="handleTopbarAsk(event)">
@@ -120,6 +113,7 @@
         <span class="badge">Damien Center</span>
         <span class="badge">Hello Alpha</span>
         <span class="badge">Damien Pharmacy</span>
+        <button type="button" class="btn-bridge-outline" id="btnOpenDefinitions" style="padding:4px 10px;font-size:0.74rem" onclick="openDefinitionsModal()">Definitions</button>
       </div>
     </header>
 
@@ -131,10 +125,9 @@
       <section id="view-summary" class="view active">
         <div class="bridge-hero">
           <div>
-            <div class="bridge-hero-eyebrow">Bridge Health Hub · Through September 30, 2026</div>
-            <h1>Damien Center GLP-1 Weight Loss Program</h1>
-            <p style="margin-bottom:4px">Program performance through September 30, 2026 · Prepared by Bridge Health Hub</p>
-            <p>The program is growing and profitable; the opportunity is getting more sign-ups to a first fill.</p>
+            <div class="bridge-hero-eyebrow">Damien Center GLP-1 Weight Loss Program · Bridge Health Hub · Through September 30, 2026</div>
+            <h1>The program is growing and profitable; the opportunity is getting more sign-ups to a first fill.</h1>
+            <p>862 active September members · $961,691 YTD net proceeds · $88.0K in open first-fill prescriptions ready to convert</p>
           </div>
           <div class="bridge-hero-actions">
             <button class="btn-bridge-primary" onclick="switchView('worklist')">First-Fill Worklist (101)</button>
@@ -174,8 +167,8 @@
         <div class="card">
           <div class="card-hd">
             <div>
-              Pharmacy Operations Worklist
-              <br /><small>Current patient queues</small>
+              Pharmacy Operations &amp; Value at Stake
+              <br /><small>Active patient queues valued at $871 net proceeds per fill ($911 Sep margin less $40 fill cost)</small>
             </div>
             <button class="btn-bridge-outline" onclick="switchView('worklist')">Open Worklist</button>
           </div>
@@ -194,9 +187,9 @@
 
         <div class="kpi-row-4">
           <div class="kpi"><div class="kpi-label">Program proceeds, Sep</div><div class="kpi-val">$371,214</div><div class="kpi-sub">$371K after ad spend (+44.4% vs Aug)</div></div>
-          <div class="kpi"><div class="kpi-label">Program proceeds, YTD</div><div class="kpi-val">$961,691</div><div class="kpi-sub">$962K net of all fees &amp; media</div></div>
-          <div class="kpi"><div class="kpi-label">YTD Pharmacy Revenue</div><div class="kpi-val">$2,336,983</div><div class="kpi-sub">$1,758,625 gross margin (75.3%)</div></div>
-          <div class="kpi"><div class="kpi-label">Sep Gross Margin / Fill</div><div class="kpi-val">$911</div><div class="kpi-sub">Assumed cost to fill: $40 per fill</div></div>
+          <div class="kpi"><div class="kpi-label">Program proceeds, YTD</div><div class="kpi-val">$961,691</div><div class="kpi-sub">41.2% of revenue · $473 net / fill</div></div>
+          <div class="kpi"><div class="kpi-label">YTD Pharmacy Revenue</div><div class="kpi-val">$2,336,983</div><div class="kpi-sub">−$578,358 COGS · $1,758,625 margin (75.3%)</div></div>
+          <div class="kpi"><div class="kpi-label">Sep Gross Margin / Fill</div><div class="kpi-val">$911</div><div class="kpi-sub">$871 net proceeds / fill after $40 fill cost</div></div>
         </div>
 
         <div class="grid-3-2">
@@ -212,13 +205,18 @@
 
           <div class="card">
             <div class="card-hd">
-              <span>Year-to-Date P&amp;L</span>
-              <small>Through September 30, 2026</small>
+              <span>Year-to-Date P&amp;L Statement</span>
+              <small>2,034 completed GLP-1 fills through Sep 30, 2026</small>
             </div>
             <div class="tbl-wrap">
               <table id="tableYtdFinancials">
                 <thead>
-                  <tr><th>Line Item</th><th class="num">Amount</th></tr>
+                  <tr>
+                    <th>Line Item</th>
+                    <th class="num">YTD Amount</th>
+                    <th class="num">% of Rev</th>
+                    <th class="num">Per Fill</th>
+                  </tr>
                 </thead>
                 <tbody id="tbodyYtdFinancials"></tbody>
               </table>
@@ -293,8 +291,11 @@
 
         <div class="card">
           <div class="card-hd">
-            <span>Performance by Source</span>
-            <small>Through September 30, 2026</small>
+            <div>
+              Performance by Source &amp; P&amp;L Reconciliation
+              <br /><small>n = 1,033 YTD Enrolled (1,030 Jan–Sep '26 + 3 pre-'26) · n = 760 Pre-Sep (30d+ follow-up)</small>
+            </div>
+            <span class="know-badge">2,034 Total P&amp;L Fills</span>
           </div>
           <div class="tbl-wrap">
             <table id="tableSources">
@@ -303,6 +304,7 @@
                   <th>Source</th>
                   <th class="num">Enrolled Sept</th>
                   <th class="num">Enrolled YTD</th>
+                  <th class="num">Pre-Sep (n)</th>
                   <th class="num">Share</th>
                   <th class="num">Filled 1st Rx</th>
                   <th class="num">Refilled 1st to 2nd</th>
@@ -329,10 +331,29 @@
 
         <div class="kpi-row-4" id="paidMediaKpiRow"></div>
 
+        <!-- CFO Channel Unit Economics & Fee Drag Comparison -->
+        <div class="kpi-row-3" id="paidMediaUnitEconRow" style="margin-bottom:18px">
+          <div class="kpi">
+            <div class="kpi-label">Paid Media CAC / Starter</div>
+            <div class="kpi-val">$584</div>
+            <div class="kpi-sub">243 of 414 started · 171 (41%) unfilled sign-up drag</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">Net Contribution ROAS (After $40/Fill)</div>
+            <div class="kpi-val">4.41x</div>
+            <div class="kpi-sub">$626,921 net pharmacy contribution (786 fills)</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">Broker Channel Cost / Fill (EPIC, LHD, McGohan)</div>
+            <div class="kpi-val">$12.64</div>
+            <div class="kpi-sub">$10,060 commissions across 796 partner fills (77% EPIC 1st fill)</div>
+          </div>
+        </div>
+
         <div class="card">
           <div class="card-hd">
             <span>Media spend vs. cumulative pharmacy gross margin</span>
-            <small>By sign-up month</small>
+            <small>By sign-up month (n = 414 Jan–Sep 2026 sign-ups)</small>
           </div>
           <div class="chart-box">
             <canvas id="chartPaidMediaRoi"></canvas>
@@ -379,8 +400,8 @@
           <div>
             <div class="card">
               <div class="card-hd">
-                <span>Pre-September enrollments (760 patients)</span>
-                <small>At least 30 days since enrollment</small>
+                <span>Pre-September enrollments (n = 760 patients)</span>
+                <small>At least 30 days since enrollment (excludes 273 Sep sign-ups)</small>
               </div>
               <div class="chart-box">
                 <canvas id="chartFunnelBars"></canvas>
@@ -394,7 +415,7 @@
             <h3 style="font-size:0.96rem;font-weight:600;color:var(--text)">Median time between steps</h3>
             <div id="funnelTimingList" style="display:flex;flex-direction:column;gap:10px"></div>
             <div class="footnote-box" style="margin-top:auto">
-              85 pre-September patients were prescribed but never filled, and 101 active members are currently on the Pharmacy To-Do worklist.
+              <strong>True Backlog Note:</strong> 85 pre-September patients were prescribed but never filled, and 101 active members are on the Pharmacy To-Do list (<strong>86 truly unfilled</strong> + <strong>15 who already filled</strong> under a 1-character typo ID in Data Fixes).
               <div style="margin-top:12px">
                 <button class="btn-bridge-primary" onclick="openWorklistWithFilter('todo')">Open Pharmacy To-Do (101)</button>
               </div>
@@ -416,7 +437,7 @@
           <div class="card">
             <div class="card-hd">
               <span>Share of therapy starters still filling</span>
-              <small>Fill 1 (670) to Fill 8 (24)</small>
+              <small>n = 670 All-Time Therapy Starters (Fill 1: 670 to Fill 8: 24)</small>
             </div>
             <div class="chart-box">
               <canvas id="chartRefillPersistence"></canvas>
@@ -427,7 +448,7 @@
           <div class="card">
             <div class="card-hd">
               <span>Refill Continuation by Step</span>
-              <small>Prior fill at least 45 days before Sep 30</small>
+              <small>45-day right-censored cohort vs. all-time fill counts</small>
             </div>
             <div class="tbl-wrap">
               <table id="tableRefillSteps">
@@ -435,8 +456,9 @@
                   <tr>
                     <th>Step</th>
                     <th class="num">Came back</th>
-                    <th class="num">Eligible</th>
-                    <th class="num">Patients</th>
+                    <th class="num">Refilled (45d)</th>
+                    <th class="num">Eligible (45d)</th>
+                    <th class="num">All-Time Fill N</th>
                   </tr>
                 </thead>
                 <tbody id="tbodyRefillSteps"></tbody>
@@ -457,7 +479,7 @@
               Member retention by sign-up cohort
               <br /><small>Share of members still active at the end of each month after joining (M0 = joining month)</small>
             </div>
-            <span class="know-badge">1,030 Joined</span>
+            <span class="know-badge">1,030 Joined (Jan–Sep '26)</span>
           </div>
           <div class="tbl-wrap">
             <table id="tableRetentionMatrix">
@@ -494,6 +516,9 @@
           <div class="timing-panel">
             <h3 style="font-size:0.96rem;font-weight:600;color:var(--text)">September Dispenses (673)</h3>
             <div id="medMixCalloutList" style="display:flex;flex-direction:column;gap:10px"></div>
+            <div class="footnote-box" id="medMixColdChainBox">
+              <strong>Cold-Chain vs. Ambient Fulfillment (Sep):</strong> <strong>417 fills (62.0%)</strong> are refrigerated injectable pens (411 Wegovy Pen + 6 Ozempic, requiring 2°C–8°C cold-chain storage) and <strong>256 fills (38.0%)</strong> are ambient oral Wegovy tablets (1.5mg, 4mg, 9mg, 25mg; require fasting administration counseling).
+            </div>
             <div class="footnote-box" id="medMixNote"></div>
             <div style="margin-top:8px">
               <div style="font-size:0.76rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px">Monthly Dispenses</div>
@@ -521,9 +546,12 @@
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn-bridge-outline" onclick="exportCurrentWorklistCsv()">Export CSV</button>
-            <button class="btn-bridge-outline" onclick="resetAllWorklistEdits()">Reset Demo Edits</button>
+            <button class="btn-bridge-outline" id="btnResetWorklistEdits" onclick="resetAllWorklistEdits()">Reset</button>
           </div>
         </div>
+
+        <!-- Executive & CFO Value-at-Stake Strip -->
+        <div class="kpi-row-4" id="worklistValueKpiRow" style="margin-bottom:16px"></div>
 
         <!-- 4 Segmented Control Tabs -->
         <div class="worklist-subtabs">
@@ -590,8 +618,8 @@
                     <th>Status</th>
                     <th>Contacted</th>
                     <th>Notes</th>
-                    <th>Finding</th>
-                    <th>Medication</th>
+                    <th>Finding &amp; Payer</th>
+                    <th>Medication &amp; Rx Date</th>
                     <th class="num">Days</th>
                     <th>Source &amp; Group</th>
                     <th>Record</th>
@@ -642,7 +670,7 @@
                     <th class="num">Fills</th>
                     <th>Last Fill</th>
                     <th class="num">Elapsed</th>
-                    <th>Medication</th>
+                    <th>Medication &amp; Clinical Flag</th>
                     <th>Source</th>
                     <th>Record</th>
                   </tr>
@@ -686,8 +714,8 @@
           <div class="card">
             <div class="card-hd">
               <div>
-                Fills Missing Patient Alternate ID (55 Fills)
-                <br /><small>Assign 8-character Patient Alternate ID</small>
+                Fills Missing Patient Alternate ID (55 Worklist Rows: 51 Completed GLP-1 P&amp;L Fills + 4 Ancillary / Non-Completed)
+                <br /><small>Assign 8-character Patient Alternate ID to link back to Hello Alpha records</small>
               </div>
               <div>
                 <input type="search" id="fixesNoIdSearch" placeholder="Filter prescriber, payer..." oninput="renderFixesTables()" style="padding:7px 12px;border:1px solid var(--border-strong);border-radius:8px;font-size:0.8rem" />
@@ -699,6 +727,7 @@
                   <tr>
                     <th>Date Filled</th>
                     <th>Medication</th>
+                    <th>Category</th>
                     <th>Prescriber</th>
                     <th>Payer</th>
                     <th>Status</th>
@@ -779,7 +808,7 @@
       </section>
 
       <!-- ═══════════════════════════════════════════════════════════════════
-           VIEW 9: ASK BRIDGE AI & DATA DEFINITIONS
+           VIEW 9: ASK BRIDGE AI (PURE CONVERSATION)
            ═══════════════════════════════════════════════════════════════════ -->
       <section id="view-ask" class="view">
         <div class="slide-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px">
@@ -787,7 +816,10 @@
             <div class="slide-eyebrow">Assistant</div>
             <h1 class="slide-headline">Ask Bridge AI</h1>
           </div>
-          <button type="button" class="btn-bridge-outline" onclick="clearQaConversation()">New Conversation</button>
+          <div style="display:flex;gap:8px">
+            <button type="button" class="btn-bridge-outline" onclick="openDefinitionsModal()">Definitions &amp; Data Notes</button>
+            <button type="button" class="btn-bridge-outline" onclick="clearQaConversation()">New Conversation</button>
+          </div>
         </div>
 
         <div class="card chat-shell-card">
@@ -800,21 +832,26 @@
             <button type="submit" class="btn-bridge-primary" id="mainAskSubmitBtn">Send</button>
           </form>
         </div>
-
-        <!-- Program Definitions & Data Notes -->
-        <div class="card">
-          <div class="card-hd">
-            <span>Definitions &amp; Data Notes</span>
-            <small>Program reconciliation rules</small>
-          </div>
-          <div class="know-list" id="appendixNotesList"></div>
-        </div>
       </section>
 
     </div>
   </main>
 
-  <!-- ═══════════ PATIENT 25-COLUMN DETAIL MODAL ═══════════ -->
+  <!-- ═══════════ PROGRAM DEFINITIONS & DATA NOTES MODAL ═══════════ -->
+  <div class="modal-backdrop" id="definitionsModal" onclick="if(event.target===this)closeDefinitionsModal()">
+    <div class="modal-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding-bottom:14px;margin-bottom:14px">
+        <div>
+          <span class="slide-eyebrow">Methodology &amp; Reconciliation</span>
+          <h3 style="color:var(--text);font-size:1.1rem;font-weight:600">Program Definitions &amp; Data Notes</h3>
+        </div>
+        <button class="btn-bridge-outline" id="btnCloseDefinitionsModal" onclick="closeDefinitionsModal()">Close</button>
+      </div>
+      <div class="know-list" id="appendixNotesList"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════ PATIENT DETAIL MODAL ═══════════ -->
   <div class="modal-backdrop" id="patientDetailModal" onclick="if(event.target===this)closePatientModal()">
     <div class="modal-card">
       <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding-bottom:14px">

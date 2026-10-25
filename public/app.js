@@ -41,6 +41,18 @@ function renderAllViews() {
   updateWorklistBadges();
 }
 
+const VIEW_TITLES = {
+  summary: 'Executive Overview',
+  financials: 'Program Financials & P&L',
+  sources: 'Patient Sources & Channel Economics',
+  paidmedia: 'Paid Media ROI & Cohort Performance',
+  funnel: 'First-Fill Conversion Funnel',
+  refill: 'Refills & Cohort Retention',
+  medmix: 'Medication & Fulfillment Mix',
+  worklist: 'First-Fill & Reconciliation Worklist',
+  ask: 'Ask Bridge AI'
+};
+
 function switchView(viewId) {
   CURRENT_VIEW = viewId;
   document.querySelectorAll('#sidebarNav .nav-btn').forEach(btn => {
@@ -49,6 +61,10 @@ function switchView(viewId) {
   document.querySelectorAll('.view').forEach(sec => {
     sec.classList.toggle('active', sec.id === `view-${viewId}`);
   });
+  const titleEl = document.getElementById('topbarTitle');
+  if (titleEl && VIEW_TITLES[viewId]) {
+    titleEl.textContent = VIEW_TITLES[viewId];
+  }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -132,30 +148,39 @@ function renderSummaryView() {
 
 function renderWorklistPulseCards() {
   const ws = PORTAL_DATA.worklistSummary;
-  const el = document.getElementById('summaryWorklistPulse');
-  if (!el || !ws) return;
-  el.innerHTML = `
+  if (!ws) return;
+  const todoValue = (ws.todoTotal * 871).toLocaleString();
+  const urgentValue = (ws.todoUrgent * 871).toLocaleString();
+  const refillValue = (ws.refillTotal * 871).toLocaleString();
+
+  const cardsHtml = `
     <div class="kpi" onclick="openWorklistWithFilter('todo', {priority:'1 – Urgent: cancellation pending'})">
-      <div class="kpi-label">Pharmacy To-Do</div>
-      <div class="kpi-val">${ws.todoTotal}</div>
-      <div class="kpi-sub"><strong>${ws.todoUrgent} Urgent (Cancel Pending)</strong> · ${ws.todoCompleted} Worked</div>
+      <div class="kpi-label">Pharmacy To-Do (${ws.todoTotal} Active Rxs)</div>
+      <div class="kpi-val">$${todoValue}</div>
+      <div class="kpi-sub"><strong>${ws.todoUrgent} Urgent ($${urgentValue}/mo at risk)</strong> · 86 Unfilled + 15 Typo-Matched</div>
     </div>
     <div class="kpi" onclick="openWorklistWithFilter('refill')">
-      <div class="kpi-label">Refill Follow-Up</div>
-      <div class="kpi-val">${ws.refillTotal}</div>
+      <div class="kpi-label">Refill Follow-Up (${ws.refillTotal} Overdue 35+d)</div>
+      <div class="kpi-val">$${refillValue}</div>
       <div class="kpi-sub">${ws.refillPendingCancel} Cancel Pending · ${ws.refillCompleted} Contacted</div>
     </div>
     <div class="kpi" onclick="openWorklistWithFilter('fixes')">
-      <div class="kpi-label">Pharmacy Data Fixes</div>
-      <div class="kpi-val">${ws.fixesTotal}</div>
-      <div class="kpi-sub">${ws.fixesNoIdTotal} No ID · ${ws.fixesUnmatchedTotal} Unmatched (<strong>${ws.fuzzySuggestedCount} Fuzzy-Matched</strong>)</div>
+      <div class="kpi-label">Data Fixes (${ws.fixesTotal} Worklist Rows)</div>
+      <div class="kpi-val">$77,554</div>
+      <div class="kpi-sub">82 P&amp;L GLP-1 Fills (51 No ID + 31 Unmatched · <strong>${ws.fuzzySuggestedCount} Fuzzy-Matched</strong>)</div>
     </div>
     <div class="kpi" onclick="openWorklistWithFilter('ended')">
-      <div class="kpi-label">Ended – Never Filled</div>
-      <div class="kpi-val">${ws.endedTotal}</div>
-      <div class="kpi-sub">74 No Visit · 62 No Rx · 47 Unfilled · 3 Outside</div>
+      <div class="kpi-label">Ended – Never Filled (${ws.endedTotal})</div>
+      <div class="kpi-val">186</div>
+      <div class="kpi-sub">74 No Visit · 62 No Rx · 47 Unfilled (18 Medicaid/Medicare · 5 RTS)</div>
     </div>
   `;
+
+  const elSummary = document.getElementById('summaryWorklistPulse');
+  if (elSummary) elSummary.innerHTML = cardsHtml;
+
+  const elWorklist = document.getElementById('worklistValueKpiRow');
+  if (elWorklist) elWorklist.innerHTML = cardsHtml;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -198,11 +223,23 @@ function renderFinancialsView() {
     }
   });
 
+  const totalRev = 2336983;
+  const totalFills = s3.totalFillsInPnl || 2034;
+  const fullPnlRows = [
+    { item: 'Pharmacy revenue', amount: 2336983, formatted: '$2,336,983', type: 'revenue' },
+    { item: 'Cost of goods sold (drug acquisition)', amount: -578358, formatted: '−$578,358', type: 'expense' },
+    ...s3.ytdTable.slice(1)
+  ];
+
   const tbody = document.getElementById('tbodyYtdFinancials');
-  tbody.innerHTML = s3.ytdTable.map(row => {
+  tbody.innerHTML = fullPnlRows.map(row => {
     const trClass = row.type === 'total' ? 'total-row' : (row.type === 'subtotal' ? 'subtotal-row' : '');
     const valClass = row.type === 'expense' ? 'num expense-val' : 'num';
-    return `<tr class="${trClass}"><td>${row.item}</td><td class="${valClass}">${row.formatted}</td></tr>`;
+    const pct = ((row.amount / totalRev) * 100).toFixed(1) + '%';
+    const pctFmt = row.amount < 0 ? '−' + Math.abs((row.amount / totalRev) * 100).toFixed(1) + '%' : pct;
+    const perFillVal = Math.round(Math.abs(row.amount) / totalFills);
+    const perFillFmt = row.amount < 0 ? `−$${perFillVal.toLocaleString()}` : `$${perFillVal.toLocaleString()}`;
+    return `<tr class="${trClass}"><td>${row.item}</td><td class="${valClass}">${row.formatted}</td><td class="${valClass}">${pctFmt}</td><td class="${valClass}">${perFillFmt}</td></tr>`;
   }).join('');
 
   document.getElementById('financialsFootnote').textContent = s3.footnote;
@@ -245,15 +282,18 @@ function renderSourcesView() {
   renderSourcesChart();
 
   const tbody = document.getElementById('tbodySources');
-  tbody.innerHTML = s4.table.map(row => {
+  const sourceRowsHtml = s4.table.map(row => {
     const key = row.sourceKey || row.source;
+    const preSepN = row.enrolledYtd - row.enrolledSept;
+    const lowSampleBadge = preSepN < 30 ? `<span class="low-sample-badge" title="Small pre-September sample size (n=${preSepN})">n=${preSepN}</span>` : '';
     return `
       <tr>
         <td><strong>${row.source}</strong></td>
         <td class="num">${row.enrolledSept}</td>
         <td class="num">${row.enrolledYtd}</td>
+        <td class="num">${preSepN}</td>
         <td class="num">${row.share}</td>
-        <td class="num"><strong>${row.filled1stRx}</strong></td>
+        <td class="num"><strong>${row.filled1stRx}</strong>${lowSampleBadge}</td>
         <td class="num">${row.refilled1to2}</td>
         <td class="num">${row.glp1Fills.toLocaleString()}</td>
         <td class="num"><strong>${row.grossMarginFmt}</strong></td>
@@ -265,6 +305,51 @@ function renderSourcesView() {
       </tr>
     `;
   }).join('');
+
+  const tieOutRowsHtml = `
+    <tr class="subtotal-row">
+      <td><strong>Matched Member Subtotal (96.0% of fills)</strong></td>
+      <td class="num">273</td>
+      <td class="num">1,033</td>
+      <td class="num">760</td>
+      <td class="num">100%</td>
+      <td class="num"><strong>69%</strong></td>
+      <td class="num">94%</td>
+      <td class="num">1,952</td>
+      <td class="num"><strong>$1,681,071</strong></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td><span style="color:var(--text-secondary)">Unattributed Fills (Pending ID Fix in Worklist)</span></td>
+      <td class="num">—</td>
+      <td class="num">—</td>
+      <td class="num">—</td>
+      <td class="num">—</td>
+      <td class="num">—</td>
+      <td class="num">—</td>
+      <td class="num">82</td>
+      <td class="num"><strong>$77,554</strong></td>
+      <td>
+        <button class="btn-bridge-outline" style="padding:4px 10px;font-size:0.74rem" onclick="openWorklistWithFilter('fixes')">
+          Reconcile (86)
+        </button>
+      </td>
+    </tr>
+    <tr class="total-row">
+      <td><strong>Total Program P&amp;L Tie-Out</strong></td>
+      <td class="num">273</td>
+      <td class="num">1,033</td>
+      <td class="num">760</td>
+      <td class="num">100%</td>
+      <td class="num"><strong>69%</strong></td>
+      <td class="num">94%</td>
+      <td class="num"><strong>2,034</strong></td>
+      <td class="num"><strong>$1,758,625</strong></td>
+      <td></td>
+    </tr>
+  `;
+
+  tbody.innerHTML = sourceRowsHtml + tieOutRowsHtml;
 
   document.getElementById('sourcesFootnote').textContent = s4.footnote;
 }
@@ -481,14 +566,19 @@ function renderRefillAndRetentionView() {
   document.getElementById('refillFootnote').textContent = s7.footnote;
 
   const tbodySteps = document.getElementById('tbodyRefillSteps');
-  tbodySteps.innerHTML = s7.stepTable.map((row, idx) => `
-    <tr style="${row.lowSample ? 'color:#64748b;background:#f8fafc' : ''}">
-      <td><strong>${row.step}</strong></td>
-      <td class="num"><strong>${row.cameBack}</strong></td>
-      <td class="num">${row.eligiblePts}</td>
-      <td class="num">${s7.chart.patientCounts[idx + 1]} pts</td>
-    </tr>
-  `).join('');
+  tbodySteps.innerHTML = s7.stepTable.map((row, idx) => {
+    const exactRate = idx === 0 ? 0.936 : (row.cameBackNum / 100);
+    const refilled45d = Math.round(exactRate * row.eligiblePts);
+    return `
+      <tr style="${row.lowSample ? 'color:#64748b;background:#f8fafc' : ''}">
+        <td><strong>${row.step}</strong>${row.lowSample ? '<span class="low-sample-badge">n&lt;30</span>' : ''}</td>
+        <td class="num"><strong>${row.cameBack}</strong></td>
+        <td class="num">${refilled45d}</td>
+        <td class="num">${row.eligiblePts}</td>
+        <td class="num">${s7.chart.patientCounts[idx + 1]} pts</td>
+      </tr>
+    `;
+  }).join('');
 
   // Slide 10 Cohort Retention Heatmap
   const theadRet = document.getElementById('theadRetentionMatrix');
@@ -662,6 +752,15 @@ function renderTodoTable() {
       ? `<div style="margin-top:4px"><span class="fuzzy-badge" onclick="switchWorklistSubtab('fixes')" title="Typo ID ${r.possibleDataFixes[0].patientIdOnFile} filled ${r.possibleDataFixes[0].dispensedItem}">Match in Fixes (${r.possibleDataFixes[0].patientIdOnFile})</span></div>`
       : '';
 
+    let rtsHtml = '';
+    if (r['Pharmacy finding'] === 'Ready – waiting for pickup') {
+      const stageDays = r['Days in this stage'] ?? 0;
+      rtsHtml = `<div class="rts-badge">RTS Watch: Will-Call (${stageDays}d in stage · Tx ${r['Transaction date'] || '—'})</div>`;
+    }
+
+    const payerStr = r['Payer on transaction'] ? `<div style="font-size:0.71rem;color:var(--text-secondary)">Payer: ${r['Payer on transaction']}</div>` : '';
+    const rxDateStr = r['Rx written'] ? `<div style="font-size:0.7rem;color:var(--muted)">Rx: ${String(r['Rx written']).slice(0, 10)}</div>` : '';
+
     return `
       <tr data-row-id="${r.id}">
         <td><span class="prio-badge ${pClass}">${pStr}</span></td>
@@ -683,16 +782,21 @@ function renderTodoTable() {
         </td>
         <td>
           <strong>${r['Pharmacy finding'] || '—'}</strong>
+          ${payerStr}
           <div style="font-size:0.72rem;color:var(--muted);max-width:230px">${r['Pharmacy note'] || ''}</div>
+          ${rtsHtml}
         </td>
-        <td>${r['Rx medication'] || '—'}</td>
+        <td>
+          <div>${r['Rx medication'] || '—'}</div>
+          ${rxDateStr}
+        </td>
         <td class="num">${r['Days in this stage'] ?? '—'}d</td>
         <td>
           <strong>${r['Patient source'] || '—'}</strong>
           <div style="font-size:0.72rem;color:var(--muted)">${r['Employer group'] || ''}</div>
         </td>
         <td>
-          <button class="btn-bridge-outline" style="padding:4px 9px;font-size:0.73rem" onclick="openPatientModal('todo', '${r.id}')">25 Cols</button>
+          <button class="btn-bridge-outline" style="padding:4px 9px;font-size:0.73rem" onclick="openPatientModal('todo', '${r.id}')">Details</button>
         </td>
       </tr>
     `;
@@ -718,6 +822,13 @@ function renderRefillTable() {
   const tbody = document.getElementById('tbodyWorklistRefill');
   tbody.innerHTML = filtered.map(r => {
     const isCancel = String(r['Membership status'] || '').includes('cancellation');
+    const daysElapsed = Number(r['Days since last fill'] || 0);
+    const medStr = String(r['Last item filled'] || '');
+    const isHighDosePen = /pen/i.test(medStr) && /(1\s*mg|1\.7\s*mg|2\.4\s*mg|7\.2\s*mg)/i.test(medStr);
+    const clinicalFlagHtml = (daysElapsed >= 42 && isHighDosePen)
+      ? `<div class="clinical-badge" title="Patient is ${daysElapsed}d past 28d supply (>2 missed weekly doses) on maintenance injectable dose">RPh Consult: Missed &gt;2 Doses</div>`
+      : '';
+
     return `
       <tr data-row-id="${r.id}">
         <td><strong>${r['Pharmacy patient ID']}</strong></td>
@@ -736,10 +847,13 @@ function renderRefillTable() {
         <td class="num"><strong>${r['GLP-1 fills to date']}</strong></td>
         <td>${r['Last fill'] || '—'}</td>
         <td class="num"><strong style="color:#c2410c">${r['Days since last fill']}d</strong></td>
-        <td>${r['Last item filled'] || '—'}</td>
+        <td>
+          <div>${r['Last item filled'] || '—'}</div>
+          ${clinicalFlagHtml}
+        </td>
         <td>${r['Patient source'] || '—'}</td>
         <td>
-          <button class="btn-bridge-outline" style="padding:4px 9px;font-size:0.73rem" onclick="openPatientModal('refill', '${r.id}')">13 Cols</button>
+          <button class="btn-bridge-outline" style="padding:4px 9px;font-size:0.73rem" onclick="openPatientModal('refill', '${r.id}')">Details</button>
         </td>
       </tr>
     `;
@@ -777,18 +891,27 @@ function renderFixesTables() {
 
   const filteredNoId = noIdRows.filter(r => !qNoId || JSON.stringify(r).toLowerCase().includes(qNoId));
   const tbodyNoId = document.getElementById('tbodyFixesNoId');
-  tbodyNoId.innerHTML = filteredNoId.map(r => `
-    <tr data-row-id="${r.id}">
-      <td>${r['Date filled'] || '—'}</td>
-      <td><strong>${r['Dispensed item'] || '—'}</strong></td>
-      <td>${r['Prescriber'] || '—'}</td>
-      <td>${r['Payer'] || '—'}</td>
-      <td>${r['Transaction status'] || '—'}</td>
-      <td>
-        <input type="text" class="edit-cell-input" placeholder="Enter 8-char Patient ID..." value="${escapeAttr(r['Corrected patient ID'] || '')}" onchange="updateWorklistCell('fixes-noid', '${r.id}', 'Corrected patient ID', this.value)" />
-      </td>
-    </tr>
-  `).join('');
+  tbodyNoId.innerHTML = filteredNoId.map(r => {
+    const isGlp1 = /wegovy|ozempic/i.test(r['Dispensed item'] || '');
+    const isCompleted = r['Transaction status'] === 'Completed';
+    const catBadge = (isGlp1 && isCompleted)
+      ? `<span class="know-badge">GLP-1 P&amp;L Fill</span>`
+      : `<span class="low-sample-badge">${!isGlp1 ? 'Non-GLP-1 Ancillary' : r['Transaction status']}</span>`;
+
+    return `
+      <tr data-row-id="${r.id}">
+        <td>${r['Date filled'] || '—'}</td>
+        <td><strong>${r['Dispensed item'] || '—'}</strong></td>
+        <td>${catBadge}</td>
+        <td>${r['Prescriber'] || '—'}</td>
+        <td>${r['Payer'] || '—'}</td>
+        <td>${r['Transaction status'] || '—'}</td>
+        <td>
+          <input type="text" class="edit-cell-input" placeholder="Enter 8-char Patient ID..." value="${escapeAttr(r['Corrected patient ID'] || '')}" onchange="updateWorklistCell('fixes-noid', '${r.id}', 'Corrected patient ID', this.value)" />
+        </td>
+      </tr>
+    `;
+  }).join('');
 }
 
 function setEndedStageFilter(stage) {
@@ -925,6 +1048,14 @@ function openPatientModal(sheet, id) {
 
 function closePatientModal() {
   document.getElementById('patientDetailModal').classList.remove('open');
+}
+
+function openDefinitionsModal() {
+  document.getElementById('definitionsModal').classList.add('open');
+}
+
+function closeDefinitionsModal() {
+  document.getElementById('definitionsModal').classList.remove('open');
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
