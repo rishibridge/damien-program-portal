@@ -790,39 +790,23 @@
            VIEW 9: ASK BRIDGE AI & DATA DEFINITIONS
            ═══════════════════════════════════════════════════════════════════ -->
       <section id="view-ask" class="view">
-        <div class="slide-header">
-          <div class="slide-eyebrow">INTERACTIVE ANALYTICS Q&amp;A &amp; DATA DEFINITIONS</div>
-          <h1 class="slide-headline">Ask Questions Across All Program Analytics &amp; 410 Worklist Records</h1>
+        <div class="slide-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px">
+          <div>
+            <div class="slide-eyebrow">CONVERSATIONAL PROGRAM ASSISTANT</div>
+            <h1 class="slide-headline">Ask Bridge AI</h1>
+          </div>
+          <button type="button" class="btn-bridge-outline" onclick="clearQaConversation()">New Conversation</button>
         </div>
 
-        <div class="card">
-          <div class="card-hd">
-            <span>Ask Bridge AI — Natural Language Program &amp; Worklist Explorer</span>
-            <small id="geminiStatusBadge">✨ Powered by Google Gemini 2.5 Flash · Full Program &amp; Worklist Context</small>
-          </div>
+        <div class="card chat-shell-card">
+          <!-- Natural Conversation Thread -->
+          <div id="qaAnswerContainer" class="chat-thread" aria-live="polite"></div>
 
-          <div class="qa-prompt-grid">
-            <button class="qa-chip" onclick="askPresetQuestion('What is the executive summary and key takeaways through September 2026?')">Executive Summary</button>
-            <button class="qa-chip" onclick="askPresetQuestion('How is Program Proceeds calculated and what is the YTD P&L breakdown?')">YTD P&amp;L &amp; Proceeds ($962K)</button>
-            <button class="qa-chip" onclick="askPresetQuestion('Where are patients coming from and how are EPIC and broker partners performing?')">EPIC &amp; Broker Partners (62%)</button>
-            <button class="qa-chip" onclick="askPresetQuestion('Is paid media paying off and what is the ROAS by sign-up month?')">Paid Media ROAS (4.63x)</button>
-            <button class="qa-chip" onclick="askPresetQuestion('Where are patients dropping off in the provider and first-fill funnel and what is the median time between steps?')">First-Fill Funnel &amp; Timing</button>
-            <button class="qa-chip" onclick="askPresetQuestion('Are patients refilling and how long are patients staying by monthly cohort?')">Refill Persistence &amp; Retention</button>
-            <button class="qa-chip" onclick="askPresetQuestion('What are patients filling in September between Wegovy pill, Wegovy pen, and Ozempic?')">Wegovy Pill vs. Pen Mix (38%)</button>
-            <button class="qa-chip" onclick="askPresetQuestion('Show me the 10 urgent cancellation-pending patients on the Pharmacy To-Do worklist')">10 Urgent To-Do Patients</button>
-            <button class="qa-chip" onclick="askPresetQuestion('Which unmatched patient IDs in Pharmacy Data Fixes fuzzy-match active patients on the Pharmacy To-Do list?')">21 Fuzzy-Matched Data Fixes</button>
-            <button class="qa-chip" onclick="askPresetQuestion('Which employer groups have the most unfilled prescriptions?')">Employer Group Breakdown</button>
-            <button class="qa-chip" onclick="askPresetQuestion('Which prescribers have the most unlinked fills in Pharmacy Data Fixes?')">Prescriber Data Fixes</button>
-            <button class="qa-chip" onclick="askPresetQuestion('Why did the 186 ended memberships never fill their first prescription?')">186 Ended Memberships Root Cause</button>
-          </div>
-
-          <form class="qa-input-row" onsubmit="handleMainAskSubmit(event)">
-            <input type="text" id="mainAskInput" placeholder="Ask Gemini any question about program metrics, P&amp;L, cohorts, or specific patients..." />
-            <button type="submit" class="btn-bridge-primary" id="mainAskSubmitBtn">Ask Gemini AI</button>
+          <!-- Natural Chat Input Bar -->
+          <form class="qa-input-row chat-composer" onsubmit="handleMainAskSubmit(event)">
+            <input type="text" id="mainAskInput" autocomplete="off" placeholder="Message Bridge AI..." />
+            <button type="submit" class="btn-bridge-primary" id="mainAskSubmitBtn">Send</button>
           </form>
-
-          <!-- Dynamic Answer Container -->
-          <div id="qaAnswerContainer"></div>
         </div>
 
         <!-- Program Definitions & Data Notes -->

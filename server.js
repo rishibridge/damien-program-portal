@@ -1047,61 +1047,30 @@ async function askGeminiWithFullData(question, history = []) {
 
   const contextData = buildGeminiDataContext(question);
 
-  const systemInstruction = `You are "Bridge AI", the expert healthcare analytics and pharmacy operations copilot built by Bridge Health Hub for the Damien Center GLP-1 Weight Loss Program (data through September 30, 2026).
+  const systemInstruction = `You are a knowledgeable, warm, and direct healthcare analytics colleague at Bridge Health Hub supporting the Damien Center GLP-1 Weight Loss Program (data through September 30, 2026).
 
-You have complete access to the official program analytics and operational worklist data:
-1. Program Performance Analytics: Executive Summary, Program Financials & P&L, Patient Acquisition Sources & Broker Partners, Paid Media ROI & Cohorts, Provider & First-Fill Funnel & Step Timing, Refill Persistence Curve, Medication Mix (Wegovy Pen, Wegovy Pill, Ozempic), Program Data Definitions, and Monthly Cohort Retention Matrix (M0–M8).
-2. Pharmacy Operations Worklist (4 operational queues totaling 410 records): "Pharmacy To-Do" (101 active unfilled patients, 25 cols), "Refill Follow-Up" (37 active overdue refill patients 35+ days, 13 cols), "Pharmacy Data Fixes" (55 fills with no Patient Alternate ID + 31 fills across 21 unmatched IDs, of which 21 fills fuzzy-match to active To-Do patients), and "Ended – Never Filled" (186 ended memberships by stage and pharmacy finding).
+You are having a natural, human-like back-and-forth conversation with a teammate. Nothing more, nothing less.
 
-CRITICAL RULES:
-- Answer ANY question the user asks accurately, thoroughly, and directly using ONLY the exact numbers, patient IDs, employer groups, prescribers, medications, and financial figures from the provided JSON dataset.
-- NEVER mention slide numbers (e.g., do NOT say "Slide 3", "Slide 9", "Slides 1-10") or raw file extensions (.pptx, .xlsx) anywhere in your response, headline, answer, or sourceCitation. Instead, cite the relevant program domain (e.g., "Program Financials & P&L", "Patient Acquisition & Partner Channels", "Paid Media ROI Analytics", "Provider & First-Fill Funnel", "Refill & Retention Analytics", "Medication Mix Analytics", "Program Data Definitions", or "Pharmacy Operations Worklist").
-- Always include exact numbers, percentages, dollar amounts (e.g., $961,691 YTD proceeds, $371,214 Sep proceeds, $4.63 return per $1 media spend / 463% ROAS, 62% broker partner share in Sep, 523 of 760 filled 1st Rx [69%], 94% Fill 1->2 refill rate, 256 Wegovy pill fills [38%] in Sep, etc. when relevant).
-- Return ONLY a valid JSON object matching this exact schema:
-{
-  "category": "Short category label (e.g., 'Program Financials & P&L', 'Patient Lookup', 'Employer Group Analytics', 'Medication Mix', etc.)",
-  "sourceCitation": "Program analytics section or operational worklist queue cited (never mention slide numbers)",
-  "targetView": "Best matching portal view ID from: 'summary' | 'financials' | 'sources' | 'paidmedia' | 'funnel' | 'refill' | 'medmix' | 'worklist' | 'ask'",
-  "targetSubtab": "If targetView is 'worklist', one of: 'todo' | 'refill' | 'fixes' | 'ended', else null",
-  "headline": "Clear, specific 1-sentence executive headline directly answering the user's question with key numbers",
-  "answer": "Detailed, well-structured answer (using bullet points • and **bold** key metrics) directly addressing the user's question",
-  "kpis": [
-    { "label": "Short KPI Label (max 28 chars)", "value": "Exact KPI Value" }
-  ],
-  "chart": {
-    "type": "bar",
-    "title": "Descriptive chart title relevant to the question",
-    "labels": ["Label 1", "Label 2"],
-    "datasets": [
-      { "label": "Series Name", "data": [10, 20], "backgroundColor": "#154672" }
-    ]
-  },
-  "table": {
-    "headers": ["Column 1", "Column 2", "Column 3"],
-    "rows": [
-      ["Row 1 Col 1", "Row 1 Col 2", "Row 1 Col 3"]
-    ]
-  },
-  "followUpSuggestions": [
-    "Relevant follow-up question 1?",
-    "Relevant follow-up question 2?",
-    "Relevant follow-up question 3?"
-  ]
-}
-- Provide 3 to 4 items in "kpis".
-- Always include a relevant "chart" (with numeric "data" array matching "labels" length; use colors "#154672", "#26ABE4", "#10B981", "#F59E0B") and a relevant "table" (with all cells as strings) that supports your answer.`;
+HOW TO SPEAK:
+- Write like a real, thoughtful human colleague in a chat conversation — natural, clear, conversational, and direct.
+- Do NOT output rigid report headers, category labels, source citations, slide numbers (never say "Slide 3", "Slide 9", etc.), or file extensions (.pptx, .xlsx).
+- Match the length and tone to what the person actually asked:
+  - If they greet you or ask a quick conversational question, reply naturally in a couple of sentences.
+  - If they ask a specific question about program financials, partner channels, paid media ROI, the conversion funnel, refills, medication mix, or specific patients/employers/prescribers on the worklist, give a clear, accurate, conversational answer grounded in the exact numbers and patient IDs from the data.
+- You have full access to both the program performance analytics (862 active members in Sep, 673 Sep fills, $371,214 Sep proceeds, $961,691 YTD proceeds, $2,336,983 YTD pharmacy revenue, $1,758,625 YTD gross margin, $911 Sep gross margin/fill, EPIC & broker partners driving 62% of Sep sign-ups with 77% EPIC first-fill rate vs 62% for Paid Media, $4.63 return per $1 media spend / 463% ROAS on $142,033 spend, 69% pre-Sep first-fill conversion [523 of 760], 94% Fill 1->2 refill rate, 38% Wegovy pill share [256 of 673 Sep fills]) and all 410 operational worklist records (101 Pharmacy To-Do, 37 Refill Follow-Up, 86 Pharmacy Data Fixes including 21 unmatched IDs that fuzzy-match to 15 active To-Do patients, and 186 Ended – Never Filled).
+- Output plain conversational text (you may use simple bolding for key numbers or short bullet points only when listing multiple items, just like a human would in Slack or Teams).`;
 
   const conversationTurns = [];
   if (Array.isArray(history)) {
-    for (const h of history.slice(-6)) {
+    for (const h of history.slice(-10)) {
       if (h && h.question && h.answer) {
         conversationTurns.push({ role: 'user', parts: [{ text: String(h.question) }] });
-        conversationTurns.push({ role: 'model', parts: [{ text: JSON.stringify({ headline: h.headline, answer: h.answer }) }] });
+        conversationTurns.push({ role: 'model', parts: [{ text: String(h.answer) }] });
       }
     }
   }
 
-  const userPrompt = `OFFICIAL PORTAL DATASET CONTEXT (JSON):\n${JSON.stringify(contextData)}\n\nUSER QUESTION:\n${question}`;
+  const userPrompt = `[Reference Data Context for this turn: ${JSON.stringify(contextData)}]\n\nUser message: ${question}`;
   conversationTurns.push({ role: 'user', parts: [{ text: userPrompt }] });
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
@@ -1109,8 +1078,7 @@ CRITICAL RULES:
     systemInstruction: { parts: [{ text: systemInstruction }] },
     contents: conversationTurns,
     generationConfig: {
-      responseMimeType: 'application/json',
-      temperature: 0.1,
+      temperature: 0.3,
       thinkingConfig: { thinkingBudget: 0 }
     }
   };
@@ -1132,34 +1100,20 @@ CRITICAL RULES:
     throw new Error('Empty response from Gemini API');
   }
 
-  const parsed = JSON.parse(rawText);
+  const cleanReply = rawText.trim();
   return {
     question,
     aiPowered: true,
     aiModel: GEMINI_MODEL,
-    category: parsed.category || 'Gemini AI Program Analysis',
-    sourceCitation: parsed.sourceCitation || 'Damien Program Analytics & Worklist (Sep 2026)',
-    targetView: parsed.targetView || 'summary',
-    targetSubtab: parsed.targetSubtab || null,
-    headline: parsed.headline || 'Analysis Complete',
-    answer: parsed.answer || '',
-    kpis: Array.isArray(parsed.kpis) ? parsed.kpis.slice(0, 4) : [],
-    chart: parsed.chart && Array.isArray(parsed.chart.labels) && Array.isArray(parsed.chart.datasets) ? parsed.chart : null,
-    table: parsed.table && Array.isArray(parsed.table.headers) && Array.isArray(parsed.table.rows)
-      ? {
-          headers: parsed.table.headers.map(String),
-          rows: parsed.table.rows.map(r => (Array.isArray(r) ? r.map(c => (c === null || c === undefined ? '—' : String(c))) : []))
-        }
-      : null,
-    followUpSuggestions: Array.isArray(parsed.followUpSuggestions) ? parsed.followUpSuggestions.slice(0, 3) : []
+    reply: cleanReply,
+    answer: cleanReply
   };
 }
 
 app.post('/api/ask', async (req, res) => {
   const { question, history, mode } = req.body || {};
-  const q = String(question || '').trim() || 'What is the executive summary and key takeaways through September 2026?';
+  const q = String(question || '').trim() || 'How is the program performing through September 2026?';
 
-  // Use live Gemini 2.5 Flash whenever API key is configured (unless mode === 'instant' is explicitly requested)
   if (getGeminiApiKey() && mode !== 'instant') {
     try {
       const geminiResult = await askGeminiWithFullData(q, history);
@@ -1171,18 +1125,16 @@ app.post('/api/ask', async (req, res) => {
 
   const fallback = answerQuestion(q);
   res.json({
-    ...fallback,
+    question: q,
     aiPowered: false,
     aiModel: 'deterministic-fallback',
-    followUpSuggestions: [
-      'How is Program Proceeds calculated and what is the YTD P&L breakdown?',
-      'Which unmatched patient IDs in Pharmacy Data Fixes fuzzy-match active To-Do patients?',
-      'Which employer groups have the most unfilled prescriptions?'
-    ]
+    reply: fallback.answer,
+    answer: fallback.answer
   });
 });
 
 app.listen(PORT, () => {
   console.log(`Damien Center GLP-1 Program Portal running on http://localhost:${PORT} (Gemini Configured: ${Boolean(getGeminiApiKey())}, Model: ${GEMINI_MODEL})`);
 });
+
 
