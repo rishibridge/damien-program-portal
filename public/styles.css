@@ -320,10 +320,9 @@ h1, h2, h3, .logo-name {
 }
 
 .bridge-hero-eyebrow {
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: 0.76rem;
+  font-weight: 500;
+  letter-spacing: -0.005em;
   color: var(--muted);
   margin-bottom: 6px;
 }
@@ -442,6 +441,38 @@ h1, h2, h3, .logo-name {
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   gap: 16px;
   margin-bottom: 24px;
+}
+
+.kpi-row-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.rts-badge,
+.clinical-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(220, 38, 38, 0.08);
+  color: #b91c1c;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.low-sample-badge {
+  display: inline-block;
+  background: rgba(15, 23, 42, 0.05);
+  color: var(--muted);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.68rem;
+  font-weight: 500;
+  margin-left: 4px;
 }
 
 .kpi {
