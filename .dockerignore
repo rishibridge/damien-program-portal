@@ -1,0 +1,6 @@
+node_modules
+.git
+test-results
+tests
+source_docs
+*.log

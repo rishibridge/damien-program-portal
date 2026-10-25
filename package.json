@@ -1,0 +1,15 @@
+{
+  "name": "damien-program-portal",
+  "version": "1.0.0",
+  "description": "Damien Center GLP-1 Weight Loss Program — Interactive Reporting, Analytics & Worklist Portal by Bridge Health Hub",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "build:data": "python scripts/build_portal_data.py",
+    "test:e2e": "python tests/run_playwright_e2e.py"
+  },
+  "dependencies": {
+    "express": "^4.21.1"
+  }
+}
