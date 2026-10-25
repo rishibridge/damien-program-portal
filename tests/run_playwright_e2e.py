@@ -70,6 +70,22 @@ def run_e2e_suite():
             f"hero verified, button bg={computed_navy}"
         )
 
+        # 2.1 Jony Ive Minimalist Design System Verification
+        body_bg = page.evaluate("() => getComputedStyle(document.body).backgroundColor")
+        hero_bg = page.evaluate("() => getComputedStyle(document.querySelector('.bridge-hero')).backgroundColor")
+        sidebar_cta_count = page.locator(".sidebar-cta").count()
+        full_html = page.content()
+        record(
+            "E2E-02.1",
+            "Jony Ive Minimalist Design System (Alabaster #F5F5F7 Canvas, Pure White Hero, Zero Emojis/Yellow Inputs)",
+            body_bg == "rgb(245, 245, 247)"
+            and hero_bg == "rgb(255, 255, 255)"
+            and sidebar_cta_count == 0
+            and "⚡" not in full_html
+            and "Yellow = Editable" not in full_html,
+            f"body_bg={body_bg}, hero_bg={hero_bg}, sidebar_cta={sidebar_cta_count}, zero_emojis=True"
+        )
+
         # 3. Executive Summary: 6 Headline KPIs + Membership Growth Chart + 6 What You Need to Know items
         kpi_text = page.locator("#summaryKpiRow").inner_text()
         know_items = page.locator("#whatYouNeedToKnowList .know-item").count()
