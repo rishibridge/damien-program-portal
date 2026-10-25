@@ -380,22 +380,22 @@ function answerQuestion(rawQuestion) {
       sourceCitation: 'Program Data Notes & Pharmacy Data Fixes Queue (86 records)',
       targetView: 'worklist',
       targetSubtab: 'fixes',
-      headline: '86 Unlinked Fills in Pharmacy Data Fixes — 21 Fills Automatically Fuzzy-Matched to Active To-Do Patients',
+      headline: '86 Unlinked Records in Pharmacy Data Fixes — 21 Fills Have a Possible 1–2 Character Typo Match in Pharmacy To-Do',
       answer:
-        `Per **Program Data Definitions**, **1,952 of 2,034 GLP-1 fills (96%)** matched an Alpha member via the 8-character Patient Alternate ID. In the **Pharmacy Data Fixes** worklist, there are **86 unlinked records**:\n` +
-        `• **55 fills** have **no Patient Alternate ID** on file.\n` +
-        `• **31 fills across 21 Patient IDs** have an ID on file that does not exactly match any program member.\n\n` +
-        `**Smart Fuzzy-Match Discovery**: By comparing the 21 unmatched IDs against the **Pharmacy To-Do** list (edit distance ≤ 2), **21 fills across 15 patient IDs** are 1–2 character hex typos of active **Pharmacy To-Do** patients whose Rx was marked *"No transaction on file"* (e.g., \`22d97e56\` → \`22d97e66\`, \`069630f\` → \`0696370f\`, \`cd7dd8d0\` → \`cf7dd8d0\`, \`d95ad4b\` → \`d695ad4b\`).`,
+        `Per **Program Data Definitions**, **1,952 of 2,034 GLP-1 fills (96%)** matched an Alpha member via the 8-character Patient Alternate ID (**51 fills had no patient ID** and **20 IDs did not match**). In the **Pharmacy Data Fixes** worklist, there are **86 unlinked records**:\n` +
+        `• **55 rows** have **no Patient Alternate ID** on file (**51** completed GLP-1 fills through Sep 30, plus **2** waiting for pickup, **1** Oct 5 fill, and **1** non-GLP-1 Sertraline dispense).\n` +
+        `• **31 fills** (labeled *21 IDs, 31 fills* in the worklist header, across **20 unique IDs** on file) do not exactly match any program member.\n\n` +
+        `**Possible Typo Matches to Verify**: Comparing the unmatched IDs against the **Pharmacy To-Do** list (edit distance ≤ 2) surfaces **21 fills across 15 patient IDs** that are possible 1–2 character hex typos of active **Pharmacy To-Do** patients to verify (e.g., \`22d97e56\` → \`22d97e66\`, \`069630f\` → \`0696370f\`, \`cd7dd8d0\` → \`cf7dd8d0\`, \`d95ad4b\` → \`d695ad4b\`).`,
       kpis: [
         { label: 'Matched GLP-1 Fills', value: '1,952 / 2,034 (96%)' },
-        { label: 'Fills w/ No Patient ID', value: '55 fills' },
-        { label: 'Unmatched ID Fills', value: '31 fills (21 IDs)' },
-        { label: 'Auto-Detected Fuzzy Matches', value: `${fuzzyRows.length} fills (15 pts)` }
+        { label: 'Fills w/ No Patient ID', value: '55 rows (51 Sep GLP-1)' },
+        { label: 'Unmatched ID Fills', value: '31 fills (20 unique IDs)' },
+        { label: 'Possible Typo Matches', value: `${fuzzyRows.length} fills (15 pts)` }
       ],
       chart: {
         type: 'bar',
         title: 'Pharmacy Data Fixes Breakdown (86 Records)',
-        labels: ['No Patient Alternate ID', 'Unmatched ID (Fuzzy-Matched to To-Do)', 'Unmatched ID (Other/External)'],
+        labels: ['No Patient Alternate ID', 'Unmatched ID (Possible To-Do Match)', 'Unmatched ID (Other/External)'],
         datasets: [{ label: 'Fill Records', data: [55, 21, 10], backgroundColor: ['#154672', '#26ABE4', '#94A3B8'] }]
       },
       table: {
@@ -644,23 +644,18 @@ function answerQuestion(rawQuestion) {
       category: 'Program Financials & YTD P&L',
       sourceCitation: 'Program Financials & P&L',
       targetView: 'financials',
-      headline: 'September Program Proceeds Reached $371,214 ($371K) — $961,691 ($962K) Year to Date After Ad Spend & Fees',
+      headline: 'September Net Program Proceeds Reached $371,214 ($371K) — $961,691 ($962K) YTD on $2,336,983 Pharmacy Revenue',
       answer:
-        `**YTD Program P&L Through September 30, 2026**:\n` +
-        `• **Pharmacy revenue**: **$2,336,983** (across 2,034 total GLP-1 fills)\n` +
-        `• **Pharmacy gross margin**: **$1,758,625** (75.3% gross margin; September gross margin per fill = **$911**)\n` +
-        `• **Membership fees collected**: **+$44,164**\n` +
-        `• **Ad spend (media)**: **−$142,033** (Google + Meta media spend; agency fees excluded)\n` +
-        `• **Alpha platform fees**: **−$411,745**\n` +
-        `• **Bridge fees**: **−$195,900**\n` +
-        `• **Broker commissions**: **−$10,060**\n` +
-        `• **Cost to fill ($40/fill)**: **−$81,360** (2,034 fills × $40)\n` +
-        `• **Net Program Proceeds**: **$961,691** YTD (**$371,214** in September alone, up 44.4% from **$257,058** in August).`,
+        `**Program Revenue & Net Proceeds Through September 30, 2026**:\n` +
+        `• **Pharmacy revenue (YTD)**: **$2,336,983** (across 2,034 completed GLP-1 fills)\n` +
+        `• **Membership fees collected (YTD)**: **+$44,164** (**$2,381,147** combined YTD revenue & fee inflows)\n` +
+        `• **Net Program Proceeds (September)**: **$371,214** ($371K after ad spend, up 44.4% from **$257,058** in August on 673 September fills; monthly top-line pharmacy revenue is not broken out separately by month)\n` +
+        `• **Net Program Proceeds (YTD)**: **$961,691** ($962K net after **−$142,033** media ad spend, **−$411,745** Alpha platform fees, **−$195,900** Bridge fees, **−$10,060** broker commissions, and **−$81,360** fill cost at $40/fill).`,
       kpis: [
         { label: 'Program Proceeds (Sep)', value: '$371,214 ($371K)' },
         { label: 'Program Proceeds (YTD)', value: '$961,691 ($962K)' },
-        { label: 'YTD Pharmacy Gross Margin', value: '$1,758,625' },
-        { label: 'Sep Gross Margin / Fill', value: '$911' }
+        { label: 'Pharmacy Revenue (YTD)', value: '$2,336,983' },
+        { label: 'Membership Fees (YTD)', value: '$44,164' }
       ],
       chart: {
         type: 'bar',
@@ -1057,7 +1052,8 @@ HOW TO SPEAK:
 - Match the length and tone to what the person actually asked:
   - If they greet you or ask a quick conversational question, reply naturally in a couple of sentences.
   - If they ask a specific question about program financials, partner channels, paid media ROI, the conversion funnel, refills, medication mix, or specific patients/employers/prescribers on the worklist, give a clear, accurate, conversational answer grounded in the exact numbers and patient IDs from the data.
-- You have full access to both the program performance analytics (862 active members in Sep, 673 Sep fills, $371,214 Sep proceeds, $961,691 YTD proceeds, $2,336,983 YTD pharmacy revenue, $1,758,625 YTD gross margin, $911 Sep gross margin/fill, EPIC & broker partners driving 62% of Sep sign-ups with 77% EPIC first-fill rate vs 62% for Paid Media, $4.63 return per $1 media spend / 463% ROAS on $142,033 spend, 69% pre-Sep first-fill conversion [523 of 760], 94% Fill 1->2 refill rate, 38% Wegovy pill share [256 of 673 Sep fills]) and all 410 operational worklist records (101 Pharmacy To-Do, 37 Refill Follow-Up, 86 Pharmacy Data Fixes including 21 unmatched IDs that fuzzy-match to 15 active To-Do patients, and 186 Ended – Never Filled).
+- You have full access to both the program performance analytics (862 active members in Sep, 673 Sep fills, $371,214 Sep net program proceeds, $961,691 YTD net program proceeds, $2,336,983 YTD pharmacy revenue, $44,164 YTD membership fees collected, EPIC & broker partners driving 62% of Sep sign-ups with 77% EPIC first-fill rate vs 62% for Paid Media, $4.63 return per $1 media spend / 463% ROAS on $142,033 spend, 69% pre-Sep first-fill conversion [523 of 760], 94% Fill 1->2 refill rate, 38% Wegovy pill share [256 of 673 Sep fills]) and all operational worklist records (101 Pharmacy To-Do, 37 Refill Follow-Up, 86 Pharmacy Data Fixes [55 missing an ID, of which 51 are completed GLP-1 fills through Sep 30; plus 31 unmatched-ID fills across 20 unique IDs on file, of which 21 fills have a possible 1-2 character typo match to 15 active To-Do patients to verify], and 186 Ended – Never Filled).
+- When discussing financials, prioritize top-line Revenue ($2,336,983 YTD pharmacy revenue + $44,164 membership fees = $2,381,147 total inflows) and Net Program Proceeds ($371,214 in September; $961,691 YTD) rather than gross margin (and note that top-line pharmacy revenue is reported on a full YTD basis rather than broken out by single month).
 - Output plain conversational text (you may use simple bolding for key numbers or short bullet points only when listing multiple items, just like a human would in Slack or Teams).`;
 
   const conversationTurns = [];
