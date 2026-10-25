@@ -110,7 +110,7 @@ function renderSummaryView() {
         }
       },
       scales: {
-        y: { beginAtZero: true, grid: { color: '#eef2f6' } },
+        y: { beginAtZero: true, grid: { color: 'rgba(15, 23, 42, 0.05)' } },
         x: { grid: { display: false } }
       }
     }
@@ -135,23 +135,23 @@ function renderWorklistPulseCards() {
   const el = document.getElementById('summaryWorklistPulse');
   if (!el || !ws) return;
   el.innerHTML = `
-    <div class="kpi" style="border-top-color:#ef4444" onclick="openWorklistWithFilter('todo', {priority:'1 – Urgent: cancellation pending'})">
-      <div class="kpi-label">Pharmacy To-Do (Active Unfilled Rx)</div>
+    <div class="kpi" onclick="openWorklistWithFilter('todo', {priority:'1 – Urgent: cancellation pending'})">
+      <div class="kpi-label">Pharmacy To-Do</div>
       <div class="kpi-val">${ws.todoTotal}</div>
-      <div class="kpi-sub"><strong style="color:#c23434">${ws.todoUrgent} Urgent (Cancel Pending)</strong> · ${ws.todoCompleted} Worked</div>
+      <div class="kpi-sub"><strong>${ws.todoUrgent} Urgent (Cancel Pending)</strong> · ${ws.todoCompleted} Worked</div>
     </div>
-    <div class="kpi" style="border-top-color:#f59e0b" onclick="openWorklistWithFilter('refill')">
-      <div class="kpi-label">Refill Follow-Up (35+ Days Since Fill)</div>
+    <div class="kpi" onclick="openWorklistWithFilter('refill')">
+      <div class="kpi-label">Refill Follow-Up</div>
       <div class="kpi-val">${ws.refillTotal}</div>
       <div class="kpi-sub">${ws.refillPendingCancel} Cancel Pending · ${ws.refillCompleted} Contacted</div>
     </div>
-    <div class="kpi" style="border-top-color:#10b981" onclick="openWorklistWithFilter('fixes')">
-      <div class="kpi-label">Pharmacy Data Fixes (Unlinked Fills)</div>
+    <div class="kpi" onclick="openWorklistWithFilter('fixes')">
+      <div class="kpi-label">Pharmacy Data Fixes</div>
       <div class="kpi-val">${ws.fixesTotal}</div>
-      <div class="kpi-sub">${ws.fixesNoIdTotal} No ID · ${ws.fixesUnmatchedTotal} Unmatched (<strong style="color:#047857">${ws.fuzzySuggestedCount} Fuzzy-Matched</strong>)</div>
+      <div class="kpi-sub">${ws.fixesNoIdTotal} No ID · ${ws.fixesUnmatchedTotal} Unmatched (<strong>${ws.fuzzySuggestedCount} Fuzzy-Matched</strong>)</div>
     </div>
-    <div class="kpi" style="border-top-color:#64748b" onclick="openWorklistWithFilter('ended')">
-      <div class="kpi-label">Ended Memberships – Never Filled</div>
+    <div class="kpi" onclick="openWorklistWithFilter('ended')">
+      <div class="kpi-label">Ended – Never Filled</div>
       <div class="kpi-val">${ws.endedTotal}</div>
       <div class="kpi-sub">74 No Visit · 62 No Rx · 47 Unfilled · 3 Outside</div>
     </div>
@@ -259,7 +259,7 @@ function renderSourcesView() {
         <td class="num"><strong>${row.grossMarginFmt}</strong></td>
         <td>
           <button class="btn-bridge-outline" style="padding:4px 10px;font-size:0.74rem" onclick="openWorklistWithFilter('todo', {source:'${key}'})">
-            View To-Do →
+            View To-Do
           </button>
         </td>
       </tr>
@@ -406,7 +406,7 @@ function renderFunnelView() {
       datasets: [{
         label: 'Patients',
         data: s6.steps.map(s => s.patients),
-        backgroundColor: ['#154672', '#1f629c', '#26abe4', '#10b981'],
+        backgroundColor: ['#154672', '#1f629c', '#26abe4', '#64748b'],
         borderRadius: 6
       }]
     },
@@ -416,7 +416,7 @@ function renderFunnelView() {
       maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
-        x: { beginAtZero: true, max: 800 },
+        x: { beginAtZero: true, max: 800, grid: { color: 'rgba(15, 23, 42, 0.05)' } },
         y: { grid: { display: false } }
       }
     }
@@ -427,7 +427,7 @@ function renderFunnelView() {
     <div class="dropoff-card" onclick="openWorklistWithFilter('${d.filterSheet}', {stage:'${d.filterStage}'})">
       <div class="dropoff-num">${d.count}</div>
       <div class="dropoff-lbl">${d.label}</div>
-      <div style="margin-top:8px;font-size:0.73rem;color:var(--bridge-navy);font-weight:700">Inspect patients →</div>
+      <div style="margin-top:8px;font-size:0.73rem;color:var(--bridge-navy);font-weight:600">Inspect patients</div>
     </div>
   `).join('');
 
@@ -518,7 +518,7 @@ function renderMedMixView() {
 
   const calloutList = document.getElementById('medMixCalloutList');
   calloutList.innerHTML = s8.septemberCallouts.map(c => `
-    <div class="timing-step" style="border-left:5px solid ${c.color}">
+    <div class="timing-step">
       <div>
         <div class="timing-lbl">${c.label}</div>
         <div style="font-size:0.74rem;color:var(--muted)">${c.share} of September GLP-1 fills</div>
@@ -574,7 +574,7 @@ function renderMedMixChart() {
       datasets: [
         { label: 'Wegovy Pen', data: conv(s8.chart.wegovyPen), backgroundColor: '#154672' },
         { label: 'Wegovy Pill', data: conv(s8.chart.wegovyPill), backgroundColor: '#26abe4' },
-        { label: 'Ozempic', data: conv(s8.chart.ozempic), backgroundColor: '#10b981' }
+        { label: 'Ozempic', data: conv(s8.chart.ozempic), backgroundColor: '#94a3b8' }
       ]
     },
     options: {
@@ -659,7 +659,7 @@ function renderTodoTable() {
     const pClass = pStr.startsWith('1') ? 'prio-1' : (pStr.startsWith('2') ? 'prio-2' : 'prio-4');
     const hasFuzzy = r.possibleDataFixes && r.possibleDataFixes.length > 0;
     const fuzzyHtml = hasFuzzy
-      ? `<div style="margin-top:4px"><span class="fuzzy-badge" onclick="switchWorklistSubtab('fixes')" title="Typo ID ${r.possibleDataFixes[0].patientIdOnFile} filled ${r.possibleDataFixes[0].dispensedItem}">⚡ Match in Fixes (${r.possibleDataFixes[0].patientIdOnFile})</span></div>`
+      ? `<div style="margin-top:4px"><span class="fuzzy-badge" onclick="switchWorklistSubtab('fixes')" title="Typo ID ${r.possibleDataFixes[0].patientIdOnFile} filled ${r.possibleDataFixes[0].dispensedItem}">Match in Fixes (${r.possibleDataFixes[0].patientIdOnFile})</span></div>`
       : '';
 
     return `
@@ -756,7 +756,7 @@ function renderFixesTables() {
     const sm = r.suggestedMatch;
     const suggestionHtml = sm
       ? `<span class="fuzzy-badge" onclick="updateWorklistCell('fixes-unmatched', '${r.id}', 'Corrected patient ID', '${sm.suggestedPatientId}')">
-           ⚡ Apply ${sm.suggestedPatientId} (${sm.matchedInSheet}, dist=${sm.editDistance})
+           Apply ${sm.suggestedPatientId} (${sm.matchedInSheet}, dist=${sm.editDistance})
          </span>`
       : `<span style="color:var(--muted);font-size:0.76rem">Manual lookup required</span>`;
 
