@@ -318,12 +318,13 @@ def run_e2e_suite():
         initial_thread = page.locator("#qaAnswerContainer").inner_text()
         record(
             "E2E-19.0",
-            "Natural Conversational Chat Thread Initialization (No Forced KPIs, Charts, or Tables)",
-            "What would you like to look into?" in initial_thread
+            "Natural Conversational Chat Thread Initialization (Clean Greeting, No Forced KPIs, Charts, or Tables)",
+            "What question can I answer?" in initial_thread
+            and "410" not in initial_thread
             and page.locator("#qaAnswerContainer canvas").count() == 0
             and page.locator("#qaAnswerContainer table").count() == 0
             and page.locator("#qaAnswerContainer .kpi").count() == 0,
-            "Pure human-like conversation thread verified"
+            "Clean greeting ('What question can I answer?') and pure conversation thread verified"
         )
 
         gemini_qa_scenarios = [

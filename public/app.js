@@ -1027,7 +1027,7 @@ function renderChatThread(pendingUserQuestion = null) {
   const greetingHtml = `
     <div class="chat-msg chat-msg-ai">
       <div class="chat-sender">Bridge AI</div>
-      <div class="chat-bubble">Hi! I have the Damien Center GLP-1 program metrics and all 410 pharmacy worklist records right here. What would you like to look into?</div>
+      <div class="chat-bubble">What question can I answer?</div>
     </div>
   `;
 
