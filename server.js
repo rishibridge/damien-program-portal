@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
@@ -24,6 +25,56 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+function safeEqual(a, b) {
+  const bufA = Buffer.from(String(a || ''), 'utf8');
+  const bufB = Buffer.from(String(b || ''), 'utf8');
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+function getAllowedUsers() {
+  const map = [];
+  const primaryUser = process.env.PORTAL_USER || 'damien';
+  const primaryPass = process.env.PORTAL_PASSWORD || 'bridge2026';
+  map.push({ user: primaryUser, pass: primaryPass });
+
+  if (process.env.PORTAL_USERS) {
+    for (const pair of process.env.PORTAL_USERS.split(',')) {
+      const idx = pair.indexOf(':');
+      if (idx > 0) {
+        map.push({
+          user: pair.slice(0, idx).trim(),
+          pass: pair.slice(idx + 1).trim()
+        });
+      }
+    }
+  }
+  return map;
+}
+
+// HTTP Basic Authentication middleware (protects all static files and API routes except /api/health)
+app.use((req, res, next) => {
+  if (req.path === '/api/health') return next();
+
+  const authHeader = req.headers.authorization || '';
+  if (authHeader.startsWith('Basic ')) {
+    const base64Credentials = authHeader.slice(6).trim();
+    const decoded = Buffer.from(base64Credentials, 'base64').toString('utf8');
+    const sepIdx = decoded.indexOf(':');
+    if (sepIdx !== -1) {
+      const username = decoded.slice(0, sepIdx);
+      const password = decoded.slice(sepIdx + 1);
+      const allowed = getAllowedUsers();
+      if (allowed.some(cred => safeEqual(username, cred.user) && safeEqual(password, cred.pass))) {
+        return next();
+      }
+    }
+  }
+
+  res.setHeader('WWW-Authenticate', 'Basic realm="Damien Program Analytics", charset="UTF-8"');
+  return res.status(401).send('Authentication required');
+});
 
 app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
