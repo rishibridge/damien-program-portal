@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Damien Center GLP-1 Weight Loss Program — Bridge Health Hub</title>
+  <title id="pageTitle">GLP-1 Weight Loss Program — Bridge Health Hub</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
@@ -15,7 +15,7 @@
     <div class="logo-area">
       <img src="/assets/logo.png" alt="Bridge Health" class="logo-img" onerror="this.style.display='none'" />
       <div class="logo-text-wrap">
-        <span class="logo-name">Damien Program Analytics</span>
+        <span class="logo-name" id="sidebarLogoName">Program Analytics</span>
       </div>
     </div>
 
@@ -99,7 +99,7 @@
     <header class="topbar">
       <div class="topbar-left">
         <h2 id="topbarTitle">Executive Overview</h2>
-        <span class="topbar-sub">As of September 30, 2026</span>
+        <span class="topbar-sub" id="topbarAsOfSub">As of September 30, 2026</span>
       </div>
 
       <form class="topbar-ask-bar" onsubmit="handleTopbarAsk(event)">
@@ -108,9 +108,9 @@
       </form>
 
       <div class="badges">
-        <span class="badge">Damien Center</span>
-        <span class="badge">Hello Alpha</span>
-        <span class="badge">Damien Pharmacy</span>
+        <span class="badge" id="badgeClientName">Client</span>
+        <span class="badge" id="badgeTelehealthName">Hello Alpha</span>
+        <span class="badge" id="badgePharmacyName">Pharmacy</span>
         <button type="button" class="btn-bridge-outline" id="btnOpenDefinitions" style="padding:4px 10px;font-size:0.74rem" onclick="openDefinitionsModal()">Definitions</button>
       </div>
     </header>
@@ -123,12 +123,12 @@
       <section id="view-summary" class="view active">
         <div class="bridge-hero">
           <div>
-            <div class="bridge-hero-eyebrow">Damien Center GLP-1 Weight Loss Program · Bridge Health Hub · Through September 30, 2026</div>
-            <h1>The program is growing and profitable; the opportunity is getting more sign-ups to a first fill.</h1>
-            <p>862 active September members · 673 September GLP-1 fills · $371,214 September proceeds ($961,691 YTD)</p>
+            <div class="bridge-hero-eyebrow" id="heroEyebrow">GLP-1 Weight Loss Program · Bridge Health Hub</div>
+            <h1 id="heroHeadline">The program is growing and profitable; the opportunity is getting more sign-ups to a first fill.</h1>
+            <p id="heroSubtext"></p>
           </div>
           <div class="bridge-hero-actions">
-            <button class="btn-bridge-primary" onclick="switchView('worklist')">First-Fill Worklist (101)</button>
+            <button class="btn-bridge-primary" id="heroWorklistBtn" onclick="switchView('worklist')">First-Fill Worklist</button>
             <button class="btn-bridge-outline" onclick="switchView('ask')">Ask Bridge AI</button>
           </div>
         </div>
@@ -144,7 +144,7 @@
                 Active members by month
                 <br /><small>Includes members that cancelled in-month</small>
               </div>
-              <span class="know-badge">23 to 862</span>
+              <span class="know-badge" id="membershipGrowthBadge"></span>
             </div>
             <div class="chart-box">
               <canvas id="chartMembershipGrowth"></canvas>
@@ -166,7 +166,7 @@
           <div class="card-hd">
             <div>
               First-Fill Worklist Queues
-              <br /><small>Operational queues from the Damien Pharmacy First-Fill Worklist (data through September 30, 2026)</small>
+              <br /><small id="worklistPulseSub">Operational queues from the First-Fill Worklist</small>
             </div>
             <button class="btn-bridge-outline" onclick="switchView('worklist')">Open Worklist</button>
           </div>
@@ -180,15 +180,10 @@
       <section id="view-financials" class="view">
         <div class="slide-header">
           <div class="slide-eyebrow">Financials</div>
-          <h1 class="slide-headline">September program proceeds reached $371K after ad spend, $962K year to date</h1>
+          <h1 class="slide-headline" id="financialsHeadline">September program proceeds reached $371K after ad spend, $962K year to date</h1>
         </div>
 
-        <div class="kpi-row-4">
-          <div class="kpi"><div class="kpi-label">Program proceeds, Sep</div><div class="kpi-val">$371,214</div><div class="kpi-sub">$371K after ad spend (+44.4% vs Aug)</div></div>
-          <div class="kpi"><div class="kpi-label">Program proceeds, YTD</div><div class="kpi-val">$961,691</div><div class="kpi-sub">$962K net after ad spend, fees &amp; fill cost</div></div>
-          <div class="kpi"><div class="kpi-label">Pharmacy revenue, YTD</div><div class="kpi-val">$2,336,983</div><div class="kpi-sub">Across 2,034 completed GLP-1 fills</div></div>
-          <div class="kpi"><div class="kpi-label">Membership fees collected, YTD</div><div class="kpi-val">$44,164</div><div class="kpi-sub">Active member billing through Sep 30</div></div>
-        </div>
+        <div class="kpi-row-4" id="financialsKpiRow"></div>
 
         <div class="grid-3-2">
           <div class="card">
@@ -204,7 +199,7 @@
           <div class="card">
             <div class="card-hd">
               <span>Year to date</span>
-              <small>Program financials through September 30, 2026</small>
+              <small id="financialsTableSub">Program financials through September 30, 2026</small>
             </div>
             <div class="tbl-wrap">
               <table id="tableYtdFinancials">
@@ -226,7 +221,7 @@
           <div class="card-hd">
             <div>
               First-Fill Net Proceeds Simulator
-              <br /><small>Interactive what-if model for converting open prescriptions (using Slide 3's $911 Sep margin/fill less $40 fill cost)</small>
+              <br /><small id="simSubtitle">Interactive what-if model for converting open prescriptions</small>
             </div>
             <button class="btn-bridge-outline" onclick="resetFinancialSimulator()">Reset</button>
           </div>
@@ -234,21 +229,21 @@
             <div>
               <div class="sim-control">
                 <label>
-                  <span>Pharmacy To-Do Prescriptions Converted (of 101)</span>
+                  <span id="simTodoLabel">Pharmacy To-Do Prescriptions Converted (of 101)</span>
                   <span id="simTodoVal">50 patients</span>
                 </label>
                 <input type="range" id="simTodoSlider" min="0" max="101" value="50" oninput="updateFinancialSimulator()" />
               </div>
               <div class="sim-control">
                 <label>
-                  <span>Overdue Refills Retained (of 37)</span>
+                  <span id="simRefillLabel">Overdue Refills Retained (of 37)</span>
                   <span id="simRefillVal">25 patients</span>
                 </label>
                 <input type="range" id="simRefillSlider" min="0" max="37" value="25" oninput="updateFinancialSimulator()" />
               </div>
               <div class="sim-control">
                 <label>
-                  <span>Margin per Fill Assumption (Sep actual: $911)</span>
+                  <span id="simMarginLabel">Margin per Fill Assumption (Sep actual: $911)</span>
                   <span id="simMarginVal">$911 / fill</span>
                 </label>
                 <input type="range" id="simMarginSlider" min="700" max="1100" step="1" value="911" oninput="updateFinancialSimulator()" />
@@ -256,7 +251,7 @@
             </div>
             <div class="kpi-row" style="margin-bottom:0">
               <div class="kpi"><div class="kpi-label">Incremental Fills</div><div class="kpi-val" id="simOutFills">+75</div><div class="kpi-sub">First fills + refills</div></div>
-              <div class="kpi"><div class="kpi-label">Incremental Net Proceeds</div><div class="kpi-val" id="simOutMargin">+$65,325</div><div class="kpi-sub">After $40 per fill cost</div></div>
+              <div class="kpi"><div class="kpi-label">Incremental Net Proceeds</div><div class="kpi-val" id="simOutMargin">+$65,325</div><div class="kpi-sub" id="simOutMarginSub">After $40 per fill cost</div></div>
               <div class="kpi"><div class="kpi-label">Projected YTD Proceeds</div><div class="kpi-val" id="simOutProceeds">$1,027,016</div><div class="kpi-sub" id="simOutDelta">+$65,325 net proceeds lift</div></div>
             </div>
           </div>
@@ -269,7 +264,7 @@
       <section id="view-sources" class="view">
         <div class="slide-header">
           <div class="slide-eyebrow">Patient Sources</div>
-          <h1 class="slide-headline">EPIC and broker partners drove 62% of September enrollments</h1>
+          <h1 class="slide-headline" id="sourcesHeadline">EPIC and broker partners drove 62% of September enrollments</h1>
         </div>
 
         <div class="card">
@@ -289,9 +284,9 @@
           <div class="card-hd">
             <div>
               Enrollment &amp; Fill Performance by Source
-              <br /><small>62% of September enrollments came from EPIC, LHD, and McGohan Brabender</small>
+              <br /><small id="sourcesTableSub">Enrollment, conversion, and gross margin by channel</small>
             </div>
-            <span class="know-badge">1,952 Matched Member Fills</span>
+            <span class="know-badge" id="sourcesMatchedBadge">Matched Member Fills</span>
           </div>
           <div class="tbl-wrap">
             <table id="tableSources">
@@ -321,7 +316,7 @@
       <section id="view-paidmedia" class="view">
         <div class="slide-header">
           <div class="slide-eyebrow">Paid Media</div>
-          <h1 class="slide-headline">Every $1 of media spend has returned $4.63 of pharmacy margin from Paid Media patients</h1>
+          <h1 class="slide-headline" id="paidMediaHeadline">Every $1 of media spend has returned $4.63 of pharmacy margin from Paid Media patients</h1>
         </div>
 
         <div class="kpi-row-4" id="paidMediaKpiRow"></div>
@@ -369,14 +364,14 @@
       <section id="view-funnel" class="view">
         <div class="slide-header">
           <div class="slide-eyebrow">First-Fill Funnel</div>
-          <h1 class="slide-headline">69% of sign-ups fill their first prescription; the losses happen before the pharmacy</h1>
+          <h1 class="slide-headline" id="funnelHeadline">69% of sign-ups fill their first prescription; the losses happen before the pharmacy</h1>
         </div>
 
         <div class="grid-3-2">
           <div>
             <div class="card">
               <div class="card-hd">
-                <span>Members who enrolled before September (760 patients)</span>
+                <span id="funnelChartTitle">Members who enrolled before September (760 patients)</span>
                 <small>At least 30 days since enrollment</small>
               </div>
               <div class="chart-box">
@@ -390,12 +385,7 @@
           <div class="timing-panel">
             <h3 style="font-size:0.96rem;font-weight:600;color:var(--text)">Median time between steps</h3>
             <div id="funnelTimingList" style="display:flex;flex-direction:column;gap:10px"></div>
-            <div class="footnote-box" style="margin-top:auto">
-              <strong>Funnel &amp; Worklist Note:</strong> Funnel conversion uses the 760 members who enrolled before September (at least 30 days to fill; 85 were prescribed but never filled). Across all active cohorts through September 30, <strong>101 active members</strong> are on the Pharmacy To-Do worklist with an open prescription (including 15 with a possible ID typo match in Pharmacy Data Fixes to verify).
-              <div style="margin-top:12px">
-                <button class="btn-bridge-primary" onclick="openWorklistWithFilter('todo')">Open Pharmacy To-Do (101)</button>
-              </div>
-            </div>
+            <div class="footnote-box" style="margin-top:auto" id="funnelWorklistNoteBox"></div>
           </div>
         </div>
       </section>
@@ -406,14 +396,14 @@
       <section id="view-refill" class="view">
         <div class="slide-header">
           <div class="slide-eyebrow">Refills &amp; Retention</div>
-          <h1 class="slide-headline">Once patients start, more than 9 in 10 come back for each refill</h1>
+          <h1 class="slide-headline" id="refillHeadline">Once patients start, more than 9 in 10 come back for each refill</h1>
         </div>
 
         <div class="grid-3-2">
           <div class="card">
             <div class="card-hd">
               <span>Share of patients who started therapy still filling, by fill number</span>
-              <small>Fill 1 (670 patients) through Fill 8 (24 patients)</small>
+              <small id="refillChartSub">Fill 1 through Fill 8</small>
             </div>
             <div class="chart-box">
               <canvas id="chartRefillPersistence"></canvas>
@@ -424,7 +414,7 @@
           <div class="card">
             <div class="card-hd">
               <span>Refill Continuation by Step</span>
-              <small>Patients whose prior fill was at least 45 days before Sep 30, 2026</small>
+              <small id="refillStepSub">Patients whose prior fill was at least 45 days before Sep 30, 2026</small>
             </div>
             <div class="tbl-wrap">
               <table id="tableRefillSteps">
@@ -439,7 +429,7 @@
               </table>
             </div>
             <div style="margin-top:16px">
-              <button class="btn-bridge-outline" style="width:100%" onclick="openWorklistWithFilter('refill')">
+              <button class="btn-bridge-outline" id="btnRefillQueueLink" style="width:100%" onclick="openWorklistWithFilter('refill')">
                 View Refill Follow-Up Queue (37)
               </button>
             </div>
@@ -470,7 +460,7 @@
       <section id="view-medmix" class="view">
         <div class="slide-header">
           <div class="slide-eyebrow">Medications</div>
-          <h1 class="slide-headline">Wegovy pill reached 38% of fills in September</h1>
+          <h1 class="slide-headline" id="medMixHeadline">Wegovy pill reached 38% of fills in September</h1>
         </div>
 
         <div class="grid-3-2">
@@ -488,7 +478,7 @@
           </div>
 
           <div class="timing-panel">
-            <h3 style="font-size:0.96rem;font-weight:600;color:var(--text)">September Dispenses (673)</h3>
+            <h3 id="medMixSeptHeader" style="font-size:0.96rem;font-weight:600;color:var(--text)">September Dispenses (673)</h3>
             <div id="medMixCalloutList" style="display:flex;flex-direction:column;gap:10px"></div>
             <div class="footnote-box" id="medMixNote"></div>
             <div style="margin-top:8px">
@@ -540,7 +530,7 @@
           </button>
         </div>
 
-        <!-- SUBTAB 1: PHARMACY TO-DO (101) -->
+        <!-- SUBTAB 1: PHARMACY TO-DO -->
         <div id="wlSubtab-todo" class="wl-subtab">
           <div class="card">
             <div class="card-hd">
@@ -554,29 +544,16 @@
             <div class="wl-filter-bar">
               <input type="search" id="todoSearchInput" placeholder="Search patient ID, employer, medication..." oninput="renderTodoTable()" />
               <select id="todoPriorityFilter" onchange="renderTodoTable()">
-                <option value="">All Priorities (101)</option>
-                <option value="1 – Urgent: cancellation pending">1 – Urgent: cancellation pending (10)</option>
-                <option value="2 – High">2 – High (83)</option>
-                <option value="4 – New: monitor">4 – New: monitor (8)</option>
+                <option value="">All Priorities</option>
               </select>
               <select id="todoFindingFilter" onchange="renderTodoTable()">
                 <option value="">All Findings</option>
-                <option value="No transaction on file">No transaction on file (89)</option>
-                <option value="Cancelled – no reason recorded">Cancelled – no reason recorded (9)</option>
-                <option value="Ready – waiting for pickup">Ready – waiting for pickup (3)</option>
               </select>
               <select id="todoSourceFilter" onchange="renderTodoTable()">
                 <option value="">All Sources</option>
-                <option value="EPIC">EPIC (45)</option>
-                <option value="Paid Media">Paid Media (34)</option>
-                <option value="LHD">LHD (12)</option>
-                <option value="Other">Other (5)</option>
-                <option value="Employee">Employee (3)</option>
-                <option value="McGohan Brabender">McGohan Brabender (2)</option>
               </select>
               <select id="todoFuzzyFilter" onchange="renderTodoTable()">
                 <option value="">All ID States</option>
-                <option value="fuzzy">Possible Match in Data Fixes (15)</option>
               </select>
             </div>
 
@@ -602,7 +579,7 @@
           </div>
         </div>
 
-        <!-- SUBTAB 2: REFILL FOLLOW-UP (37) -->
+        <!-- SUBTAB 2: REFILL FOLLOW-UP -->
         <div id="wlSubtab-refill" class="wl-subtab" style="display:none">
           <div class="card">
             <div class="card-hd">
@@ -616,16 +593,10 @@
             <div class="wl-filter-bar">
               <input type="search" id="refillSearchInput" placeholder="Search patient ID, medication, source..." oninput="renderRefillTable()" />
               <select id="refillStatusFilter" onchange="renderRefillTable()">
-                <option value="">All Statuses (37)</option>
-                <option value="Active">Active (30)</option>
-                <option value="Active – cancellation pending">Active – cancellation pending (7)</option>
+                <option value="">All Statuses</option>
               </select>
               <select id="refillSourceFilter" onchange="renderRefillTable()">
                 <option value="">All Sources</option>
-                <option value="EPIC">EPIC (22)</option>
-                <option value="Paid Media">Paid Media (10)</option>
-                <option value="Other">Other (4)</option>
-                <option value="Employee">Employee (1)</option>
               </select>
             </div>
 
@@ -652,13 +623,13 @@
           </div>
         </div>
 
-        <!-- SUBTAB 3: PHARMACY DATA FIXES (86 = 55 No ID + 31 Unmatched) -->
+        <!-- SUBTAB 3: PHARMACY DATA FIXES -->
         <div id="wlSubtab-fixes" class="wl-subtab" style="display:none">
           <div class="card">
             <div class="card-hd">
               <div>
-                Patient IDs that don't match any program member (21 IDs, 31 fills)
-                <br /><small>20 unique IDs on file (Data Note 2) · 21 fills have a possible 1–2 character typo match in Pharmacy To-Do to verify</small>
+                <span id="fixesUnmatchedTitle">Patient IDs that don't match any program member (21 IDs, 31 fills)</span>
+                <br /><small id="fixesUnmatchedSub">20 unique IDs on file (Data Note 2) · 21 fills have a possible 1–2 character typo match in Pharmacy To-Do to verify</small>
               </div>
               <button class="btn-bridge-primary" id="btnApplyAllFuzzy" onclick="applyAllFuzzyFixes()">
                 Auto-Reconcile 21 Matches
@@ -685,8 +656,8 @@
           <div class="card">
             <div class="card-hd">
               <div>
-                Fills with no Patient Alternate ID (55)
-                <br /><small>51 completed GLP-1 fills through Sep 30 (Data Note 2) + 2 waiting for pickup + 1 Oct 5 fill + 1 non-GLP-1 (Sertraline)</small>
+                <span id="fixesNoIdTitle">Fills with no Patient Alternate ID (55)</span>
+                <br /><small id="fixesNoIdSub">51 completed GLP-1 fills through Sep 30 (Data Note 2) + 2 waiting for pickup + 1 Oct 5 fill + 1 non-GLP-1 (Sertraline)</small>
               </div>
               <div>
                 <input type="search" id="fixesNoIdSearch" placeholder="Filter prescriber, payer..." oninput="renderFixesTables()" style="padding:7px 12px;border:1px solid var(--border-strong);border-radius:8px;font-size:0.8rem" />
@@ -711,19 +682,14 @@
           </div>
         </div>
 
-        <!-- SUBTAB 4: ENDED – NEVER FILLED (186) -->
+        <!-- SUBTAB 4: ENDED – NEVER FILLED -->
         <div id="wlSubtab-ended" class="wl-subtab" style="display:none">
-          <div class="kpi-row-4">
-            <div class="kpi" onclick="setEndedStageFilter('No provider visit')"><div class="kpi-label">No provider visit</div><div class="kpi-val">74</div><div class="kpi-sub">39.8% of ended memberships</div></div>
-            <div class="kpi" onclick="setEndedStageFilter('Saw provider, no Rx')"><div class="kpi-label">Saw provider, no Rx</div><div class="kpi-val">62</div><div class="kpi-sub">33.3% of ended memberships</div></div>
-            <div class="kpi" onclick="setEndedStageFilter('Rx written, not filled')"><div class="kpi-label">Rx written, not filled</div><div class="kpi-val">47</div><div class="kpi-sub">18 Medicaid/Medicare · 14 No Tx · 10 Cancelled · 5 RTS</div></div>
-            <div class="kpi" onclick="setEndedStageFilter('Rx sent to outside pharmacy')"><div class="kpi-label">Rx sent to outside pharmacy</div><div class="kpi-val">3</div><div class="kpi-sub">1.6% of ended memberships</div></div>
-          </div>
+          <div class="kpi-row-4" id="endedStageKpiRow"></div>
 
           <div class="card">
             <div class="card-hd">
               <div>
-                Ended – Never Filled (186 Members)
+                <span id="endedCardTitle">Ended – Never Filled (186 Members)</span>
                 <br /><small id="descEndedNeverFilled"></small>
               </div>
               <span class="know-badge" id="endedFilteredCountBadge">Showing 186 of 186</span>
@@ -732,27 +698,13 @@
             <div class="wl-filter-bar">
               <input type="search" id="endedSearchInput" placeholder="Search patient ID, employer, note..." oninput="renderEndedTable()" />
               <select id="endedStageFilter" onchange="renderEndedTable()">
-                <option value="">All Stages (186)</option>
-                <option value="No provider visit">No provider visit (74)</option>
-                <option value="Saw provider, no Rx">Saw provider, no Rx (62)</option>
-                <option value="Rx written, not filled">Rx written, not filled (47)</option>
-                <option value="Rx sent to outside pharmacy">Rx sent to outside pharmacy (3)</option>
+                <option value="">All Stages</option>
               </select>
               <select id="endedFindingFilter" onchange="renderEndedTable()">
                 <option value="">All Findings</option>
-                <option value="Ineligible – Medicaid/HIP/Medicare coverage">Ineligible – Medicaid/HIP/Medicare coverage (18)</option>
-                <option value="No transaction on file">No transaction on file (14)</option>
-                <option value="Cancelled – no reason recorded">Cancelled – no reason recorded (10)</option>
-                <option value="No response – medication returned to stock">No response – medication returned to stock (5)</option>
               </select>
               <select id="endedSourceFilter" onchange="renderEndedTable()">
                 <option value="">All Sources</option>
-                <option value="Paid Media">Paid Media (110)</option>
-                <option value="EPIC">EPIC (50)</option>
-                <option value="Employee">Employee (13)</option>
-                <option value="Other">Other (10)</option>
-                <option value="LHD">LHD (2)</option>
-                <option value="McGohan Brabender">McGohan Brabender (1)</option>
               </select>
             </div>
 
