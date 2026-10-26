@@ -1,9 +1,34 @@
-# Multi-Client (Multi-CE) Architecture & Implementation Plan (v2)
+# Multi-Client (Multi-CE) Architecture & Implementation Plan (v3)
 
 > [!IMPORTANT]
-> **Confirmed Architectural Decisions in v2:**
-> 1. **Strictly Locked Per-Client Access**: Each ID/password login is strictly locked 1-to-1 to a single Covered Entity (`clientId`). No cross-client switcher UI or multi-tenant enumeration is exposed in the portal.
-> 2. **Durable Cloud Persistence for Worklist Edits**: Pharmacist updates (`Status`, `Date contacted`, `Notes`, `Corrected patient ID`) are persisted per client in **Google Cloud Storage (GCS) / Firestore** so all operational edits survive Cloud Run container restarts, scaling events, and future code/data redeployments.
+> **Confirmed Architectural Decisions (v3):**
+> 1. **Zero-Impact Side-by-Side Isolation**: The existing HTTP Basic Auth MVP site (`damien-program-portal`, tag `MVP`, `https://damien-program-portal-525536279111.us-central1.run.app`) remains **100% frozen and untouched**. The new Multi-Client platform will be built in a separate workspace (`bridge-program-portal`), pushed to a separate GitHub repo/branch, and deployed to a **brand-new GCP Cloud Run service (`bridge-program-portal`)** with its own independent URL.
+> 2. **Strictly Locked Per-Client Access**: Each ID/password login is strictly locked 1-to-1 to a single Covered Entity (`clientId`). No cross-client switcher UI or multi-tenant enumeration is exposed in the portal.
+> 3. **Durable Cloud Persistence for Worklist Edits**: Pharmacist updates (`Status`, `Date contacted`, `Notes`, `Corrected patient ID`) are persisted per client in **Google Cloud Storage (GCS) / Firestore** so all operational edits survive Cloud Run container restarts, scaling events, and future code/data redeployments.
+
+---
+
+## 0. Side-by-Side Deployment & Zero-Impact Isolation Strategy
+
+To guarantee **zero impact** on the live HTTP Basic Auth MVP site (`damien-program-portal`), the new Multi-Client platform is isolated across **four layers**:
+
+| Layer | Existing MVP Site (Frozen / Untouched) | New Multi-Client Site (Isolated) |
+| :--- | :--- | :--- |
+| **Local Workspace** | `C:\Users\rishi\.gemini\antigravity\scratch\damien-program-portal` | `C:\Users\rishi\.gemini\antigravity\scratch\bridge-program-portal` *(cloned from `MVP`)* |
+| **GitHub Repo / Tag** | `rishibridge/damien-program-portal` (`main` / tag `MVP`) | Separate repo `rishibridge/bridge-program-portal` *(or isolated `multi-client` branch)* |
+| **Cloud Run Service** | `damien-program-portal`<br>`https://damien-program-portal-525536279111.us-central1.run.app` | **`bridge-program-portal`** *(new Cloud Run service & independent URL, e.g. `https://bridge-program-portal-525536279111.us-central1.run.app`)* |
+| **Worklist State Storage** | Local container state inside `damien-program-portal` | Dedicated GCS bucket path `gs://dev-dispatch-331019-portal-state/clients/<clientId>/worklist_edits.json` |
+| **Local Test Port** | `3000` / `3099` | `3100` |
+
+### Side-by-Side Rollout Sequence
+1. **Freeze `damien-program-portal`**: Never run `gcloud run deploy damien-program-portal` or mutate the `MVP` tag during Multi-Client development.
+2. **Clone Baseline into `bridge-program-portal`**: Copy the `MVP` codebase into `C:\Users\rishi\.gemini\antigravity\scratch\bridge-program-portal` and initialize its remote (`rishibridge/bridge-program-portal`).
+3. **Develop & Test Locally on Port `3100`**: Implement Phases 1–5 below inside `bridge-program-portal` and run the Playwright E2E suite against `http://localhost:3100`.
+4. **Deploy to New Cloud Run Service (`bridge-program-portal`)**:
+   ```powershell
+   gcloud run deploy bridge-program-portal --source "C:\Users\rishi\.gemini\antigravity\scratch\bridge-program-portal" --project dev-dispatch-331019 --region us-central1 --allow-unauthenticated
+   ```
+5. **Dual-Site Production Verification**: Run Playwright E2E checks against **both** the new `bridge-program-portal` URL and the original `damien-program-portal` URL to verify both sites pass 100% independently.
 
 ---
 
@@ -90,7 +115,7 @@ flowchart LR
      1. Survives all Cloud Run container restarts and code redeployments.
      2. Even when next month's `.pptx` and `.xlsx` are ingested for that client, any in-progress pharmacist notes, contact dates, and corrected IDs for patients still on the worklist automatically carry forward!
 2. **Storage Backend (`GCS + Local Fallback`)**:
-   - In GCP Cloud Run, read/write `gs://<PROJECT_BUCKET>/portal-state/<clientId>/worklist_edits.json` via the Cloud Run service account (using lightweight REST Calls with metadata-server OAuth token or `@google-cloud/storage`, requiring zero external keys).
+   - In GCP Cloud Run, read/write `gs://<PROJECT_BUCKET>/portal-state/<clientId>/worklist_edits.json` via the Cloud Run service account (using lightweight REST calls with metadata-server OAuth token or `@google-cloud/storage`, requiring zero external keys).
    - In local development (when `GCS_STATE_BUCKET` is not set), fall back seamlessly to `data/clients/<clientId>/worklist_edits.json`.
 
 ---
