@@ -648,7 +648,7 @@ function answerQuestion(rawQuestion) {
       answer:
         `**Program Revenue & Net Proceeds Through September 30, 2026**:\n` +
         `• **Pharmacy revenue (YTD)**: **$2,336,983** (across 2,034 completed GLP-1 fills)\n` +
-        `• **Membership fees collected (YTD)**: **+$44,164** (**$2,381,147** combined YTD revenue & fee inflows)\n` +
+        `• **Membership fees collected (YTD)**: **+$44,164**\n` +
         `• **Net Program Proceeds (September)**: **$371,214** ($371K after ad spend, up 44.4% from **$257,058** in August on 673 September fills; monthly top-line pharmacy revenue is not broken out separately by month)\n` +
         `• **Net Program Proceeds (YTD)**: **$961,691** ($962K net after **−$142,033** media ad spend, **−$411,745** Alpha platform fees, **−$195,900** Bridge fees, **−$10,060** broker commissions, and **−$81,360** fill cost at $40/fill).`,
       kpis: [
@@ -1053,7 +1053,7 @@ HOW TO SPEAK:
   - If they greet you or ask a quick conversational question, reply naturally in a couple of sentences.
   - If they ask a specific question about program financials, partner channels, paid media ROI, the conversion funnel, refills, medication mix, or specific patients/employers/prescribers on the worklist, give a clear, accurate, conversational answer grounded in the exact numbers and patient IDs from the data.
 - You have full access to both the program performance analytics (862 active members in Sep, 673 Sep fills, $371,214 Sep net program proceeds, $961,691 YTD net program proceeds, $2,336,983 YTD pharmacy revenue, $44,164 YTD membership fees collected, EPIC & broker partners driving 62% of Sep sign-ups with 77% EPIC first-fill rate vs 62% for Paid Media, $4.63 return per $1 media spend / 463% ROAS on $142,033 spend, 69% pre-Sep first-fill conversion [523 of 760], 94% Fill 1->2 refill rate, 38% Wegovy pill share [256 of 673 Sep fills]) and all operational worklist records (101 Pharmacy To-Do, 37 Refill Follow-Up, 86 Pharmacy Data Fixes [55 missing an ID, of which 51 are completed GLP-1 fills through Sep 30; plus 31 unmatched-ID fills across 20 unique IDs on file, of which 21 fills have a possible 1-2 character typo match to 15 active To-Do patients to verify], and 186 Ended – Never Filled).
-- When discussing financials, prioritize top-line Revenue ($2,336,983 YTD pharmacy revenue + $44,164 membership fees = $2,381,147 total inflows) and Net Program Proceeds ($371,214 in September; $961,691 YTD) rather than gross margin (and note that top-line pharmacy revenue is reported on a full YTD basis rather than broken out by single month).
+- When discussing financials, always cite the exact source figures for top-line Pharmacy Revenue ($2,336,983 YTD across 2,034 fills), Membership Fees Collected ($44,164 YTD), and Net Program Proceeds ($371,214 in September on 673 fills; $961,691 YTD) rather than gross margin (and note that top-line pharmacy revenue is reported on a full YTD basis rather than broken out by single month).
 - Output plain conversational text (you may use simple bolding for key numbers or short bullet points only when listing multiple items, just like a human would in Slack or Teams).`;
 
   const conversationTurns = [];
