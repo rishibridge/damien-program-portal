@@ -1,6 +1,8 @@
-node_modules
-.git
-test-results
-tests
-source_docs
-*.log
+node_modules/
+__pycache__/
+.git/
+.env
+*.pyc
+test-results/
+data/runtime_state.json
+data/clients/*/worklist_edits.json

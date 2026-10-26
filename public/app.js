@@ -1,10 +1,11 @@
-/* Damien Center GLP-1 Weight Loss Program — Bridge Health Hub Interactive Portal */
+/* Bridge Health Hub — Multi-Client GLP-1 Weight Loss Program Interactive Portal */
 
 let PORTAL_DATA = null;
 let CURRENT_VIEW = 'summary';
 let CURRENT_WL_SUBTAB = 'todo';
 let SOURCES_CHART_MODE = 'count';
 let MEDMIX_CHART_MODE = 'count';
+let SIMULATOR_INITIALIZED = false;
 const QA_HISTORY = [];
 
 const CHARTS = {};
@@ -20,11 +21,127 @@ async function initPortal() {
   try {
     const resp = await fetch('/api/portal-data');
     PORTAL_DATA = await resp.json();
+    hydrateShellBranding();
+    populateWorklistFilterDropdowns();
     renderAllViews();
     renderChatThread();
   } catch (err) {
     console.error('Failed to load portal data:', err);
   }
+}
+
+function hydrateShellBranding() {
+  if (!PORTAL_DATA || !PORTAL_DATA.meta) return;
+  const meta = PORTAL_DATA.meta;
+  const s2 = PORTAL_DATA.slide2_summary;
+  const s3 = PORTAL_DATA.slide3_financials;
+  const ws = PORTAL_DATA.worklistSummary;
+
+  document.title = `${meta.programTitle} — ${meta.preparedBy || 'Bridge Health Hub'}`;
+
+  const logoNameEl = document.getElementById('sidebarLogoName');
+  if (logoNameEl) logoNameEl.textContent = `${meta.shortName || meta.client} Program Analytics`;
+
+  const topbarSubEl = document.getElementById('topbarAsOfSub');
+  if (topbarSubEl) topbarSubEl.textContent = `As of ${meta.asOfDateFormatted || 'September 30, 2026'}`;
+
+  const badgeClient = document.getElementById('badgeClientName');
+  if (badgeClient) badgeClient.textContent = meta.client || '';
+
+  const badgeTele = document.getElementById('badgeTelehealthName');
+  if (badgeTele) badgeTele.textContent = meta.telehealthPartner || 'Hello Alpha';
+
+  const badgePharm = document.getElementById('badgePharmacyName');
+  if (badgePharm) badgePharm.textContent = meta.pharmacyPartner || '';
+
+  const heroEyebrow = document.getElementById('heroEyebrow');
+  if (heroEyebrow) {
+    heroEyebrow.textContent = `${meta.programTitle} · ${meta.preparedBy || 'Bridge Health Hub'} · Through ${meta.asOfDateFormatted || 'September 30, 2026'}`;
+  }
+
+  const heroHeadline = document.getElementById('heroHeadline');
+  if (heroHeadline && s2?.headline) {
+    heroHeadline.textContent = s2.headline.endsWith('.') ? s2.headline : `${s2.headline}.`;
+  }
+
+  const heroSubtext = document.getElementById('heroSubtext');
+  if (heroSubtext && s2 && s3) {
+    const activeVal = s2.kpis?.find(k => k.id === 'active_sep')?.numericValue || 862;
+    const fillsVal = s2.kpis?.find(k => k.id === 'fills_sep')?.numericValue || 673;
+    const sepProc = s3.monthlyProceeds?.values?.[s3.monthlyProceeds.values.length - 1] || 371214;
+    const ytdProc = s3.ytdTable?.find(r => r.item === 'Program proceeds')?.formatted || '$961,691';
+    heroSubtext.textContent = `${activeVal.toLocaleString()} active September members · ${fillsVal.toLocaleString()} September GLP-1 fills · $${sepProc.toLocaleString()} September proceeds (${ytdProc} YTD)`;
+  }
+
+  const heroWlBtn = document.getElementById('heroWorklistBtn');
+  if (heroWlBtn && ws) {
+    heroWlBtn.textContent = `First-Fill Worklist (${ws.todoTotal})`;
+  }
+
+  const wlPulseSub = document.getElementById('worklistPulseSub');
+  if (wlPulseSub) {
+    wlPulseSub.textContent = `Operational queues from the ${meta.pharmacyPartner} First-Fill Worklist (data through ${meta.asOfDateFormatted || 'September 30, 2026'})`;
+  }
+}
+
+function countDistinctValues(rows, field) {
+  const counts = {};
+  for (const r of rows) {
+    const val = r[field];
+    if (val !== null && val !== undefined && String(val).trim() !== '') {
+      const k = String(val).trim();
+      counts[k] = (counts[k] || 0) + 1;
+    }
+  }
+  return counts;
+}
+
+function setSelectOptions(selectId, allLabel, countsObj, sortMode = 'count_desc') {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  const currentVal = sel.value;
+  let entries = Object.entries(countsObj);
+  if (sortMode === 'alpha') {
+    entries.sort((a, b) => a[0].localeCompare(b[0]));
+  } else {
+    entries.sort((a, b) => b[1] - a[1]);
+  }
+  sel.innerHTML = `<option value="">${allLabel}</option>` + entries.map(([val, cnt]) =>
+    `<option value="${escapeAttr(val)}">${val} (${cnt})</option>`
+  ).join('');
+  if (currentVal && countsObj[currentVal]) {
+    sel.value = currentVal;
+  }
+}
+
+function populateWorklistFilterDropdowns() {
+  if (!PORTAL_DATA || !PORTAL_DATA.worklists) return;
+  const wl = PORTAL_DATA.worklists;
+  const todoRows = wl.pharmacyTodo.rows;
+  const refillRows = wl.refillFollowup.rows;
+  const endedRows = wl.endedNeverFilled.rows;
+
+  setSelectOptions('todoPriorityFilter', `All Priorities (${todoRows.length})`, countDistinctValues(todoRows, 'Priority'), 'alpha');
+  setSelectOptions('todoFindingFilter', 'All Findings', countDistinctValues(todoRows, 'Pharmacy finding'), 'count_desc');
+  setSelectOptions('todoSourceFilter', 'All Sources', countDistinctValues(todoRows, 'Patient source'), 'count_desc');
+
+  const fuzzyCount = todoRows.filter(r => r.possibleDataFixes && r.possibleDataFixes.length > 0).length;
+  const fuzzySel = document.getElementById('todoFuzzyFilter');
+  if (fuzzySel) {
+    const prev = fuzzySel.value;
+    fuzzySel.innerHTML = `
+      <option value="">All ID States</option>
+      <option value="fuzzy">Possible Match in Data Fixes (${fuzzyCount})</option>
+    `;
+    fuzzySel.value = prev;
+  }
+
+  setSelectOptions('refillStatusFilter', `All Statuses (${refillRows.length})`, countDistinctValues(refillRows, 'Membership status'), 'alpha');
+  setSelectOptions('refillSourceFilter', 'All Sources', countDistinctValues(refillRows, 'Patient source'), 'count_desc');
+
+  setSelectOptions('endedStageFilter', `All Stages (${endedRows.length})`, countDistinctValues(endedRows, 'Stage'), 'count_desc');
+  setSelectOptions('endedFindingFilter', 'All Findings', countDistinctValues(endedRows, 'Pharmacy finding'), 'count_desc');
+  setSelectOptions('endedSourceFilter', 'All Sources', countDistinctValues(endedRows, 'Patient source'), 'count_desc');
 }
 
 function renderAllViews() {
@@ -100,7 +217,12 @@ function renderSummaryView() {
     </div>
   `).join('');
 
-  // Membership Growth Chart
+  const growthVals = s2.activeMembersByMonth.values;
+  const growthBadge = document.getElementById('membershipGrowthBadge');
+  if (growthBadge && growthVals.length > 0) {
+    growthBadge.textContent = `${growthVals[0]} to ${growthVals[growthVals.length - 1]}`;
+  }
+
   destroyChart('membershipGrowth');
   const ctx = document.getElementById('chartMembershipGrowth').getContext('2d');
   CHARTS.membershipGrowth = new Chart(ctx, {
@@ -109,8 +231,8 @@ function renderSummaryView() {
       labels: s2.activeMembersByMonth.months,
       datasets: [{
         label: 'Active members',
-        data: s2.activeMembersByMonth.values,
-        backgroundColor: s2.activeMembersByMonth.values.map((_, i) => i === 8 ? '#154672' : '#26abe4'),
+        data: growthVals,
+        backgroundColor: growthVals.map((_, i) => i === growthVals.length - 1 ? '#154672' : '#26abe4'),
         borderRadius: 6
       }]
     },
@@ -132,7 +254,6 @@ function renderSummaryView() {
     }
   });
 
-  // What You Need to Know
   const knowEl = document.getElementById('whatYouNeedToKnowList');
   knowEl.innerHTML = s2.whatYouNeedToKnow.map(item => `
     <div class="know-item" onclick="switchView('${item.targetView}')">
@@ -148,7 +269,15 @@ function renderSummaryView() {
 
 function renderWorklistPulseCards() {
   const ws = PORTAL_DATA.worklistSummary;
-  if (!ws) return;
+  const wl = PORTAL_DATA.worklists;
+  if (!ws || !wl) return;
+
+  const endedRows = wl.endedNeverFilled.rows;
+  const stageCounts = countDistinctValues(endedRows, 'Stage');
+  const noVisit = stageCounts['No provider visit'] || 0;
+  const noRx = stageCounts['Saw provider, no Rx'] || 0;
+  const noFill = stageCounts['Rx written, not filled'] || 0;
+  const outside = stageCounts['Rx sent to outside pharmacy'] || 0;
 
   const cardsHtml = `
     <div class="kpi" onclick="openWorklistWithFilter('todo', {priority:'1 – Urgent: cancellation pending'})">
@@ -164,12 +293,12 @@ function renderWorklistPulseCards() {
     <div class="kpi" onclick="openWorklistWithFilter('fixes')">
       <div class="kpi-label">Pharmacy Data Fixes</div>
       <div class="kpi-val">${ws.fixesTotal}</div>
-      <div class="kpi-sub">55 No Patient ID · 31 Unmatched ID (21 IDs)</div>
+      <div class="kpi-sub">${ws.fixesNoIdTotal} No Patient ID · ${ws.fixesUnmatchedTotal} Unmatched ID</div>
     </div>
     <div class="kpi" onclick="openWorklistWithFilter('ended')">
       <div class="kpi-label">Ended – Never Filled</div>
       <div class="kpi-val">${ws.endedTotal}</div>
-      <div class="kpi-sub">74 No Visit · 62 No Rx · 47 Unfilled · 3 Outside</div>
+      <div class="kpi-sub">${noVisit} No Visit · ${noRx} No Rx · ${noFill} Unfilled · ${outside} Outside</div>
     </div>
   `;
 
@@ -185,6 +314,28 @@ function renderWorklistPulseCards() {
    ═══════════════════════════════════════════════════════════════════════════ */
 function renderFinancialsView() {
   const s3 = PORTAL_DATA.slide3_financials;
+  const ws = PORTAL_DATA.worklistSummary;
+
+  const finHeadline = document.getElementById('financialsHeadline');
+  if (finHeadline && s3.headline) finHeadline.textContent = s3.headline;
+
+  const vals = s3.monthlyProceeds.values;
+  const sepProceeds = vals[vals.length - 1] || 0;
+  const augProceeds = vals[vals.length - 2] || 1;
+  const momPct = (((sepProceeds - augProceeds) / augProceeds) * 100).toFixed(1);
+  const ytdProceedsRow = s3.ytdTable.find(r => r.item === 'Program proceeds');
+  const ytdRevRow = s3.ytdTable.find(r => r.item === 'Pharmacy revenue');
+  const ytdFeesRow = s3.ytdTable.find(r => r.item === 'Membership fees collected');
+
+  const finKpiRow = document.getElementById('financialsKpiRow');
+  if (finKpiRow) {
+    finKpiRow.innerHTML = `
+      <div class="kpi"><div class="kpi-label">Program proceeds, Sep</div><div class="kpi-val">$${sepProceeds.toLocaleString()}</div><div class="kpi-sub">$${Math.round(sepProceeds / 1000)}K after ad spend (+${momPct}% vs Aug)</div></div>
+      <div class="kpi"><div class="kpi-label">Program proceeds, YTD</div><div class="kpi-val">${ytdProceedsRow ? ytdProceedsRow.formatted : '$961,691'}</div><div class="kpi-sub">$${Math.round((ytdProceedsRow?.amount || 961691) / 1000)}K net after ad spend, fees &amp; fill cost</div></div>
+      <div class="kpi"><div class="kpi-label">Pharmacy revenue, YTD</div><div class="kpi-val">${ytdRevRow ? ytdRevRow.formatted : '$2,336,983'}</div><div class="kpi-sub">Across ${(s3.totalFillsInPnl || 2034).toLocaleString()} completed GLP-1 fills</div></div>
+      <div class="kpi"><div class="kpi-label">Membership fees collected, YTD</div><div class="kpi-val">${ytdFeesRow ? ytdFeesRow.formatted : '$44,164'}</div><div class="kpi-sub">Active member billing through Sep 30</div></div>
+    `;
+  }
 
   destroyChart('monthlyProceeds');
   const ctx = document.getElementById('chartMonthlyProceeds').getContext('2d');
@@ -194,8 +345,8 @@ function renderFinancialsView() {
       labels: s3.monthlyProceeds.months,
       datasets: [{
         label: 'Monthly program proceeds ($)',
-        data: s3.monthlyProceeds.values,
-        backgroundColor: s3.monthlyProceeds.values.map((_, i) => i === 8 ? '#154672' : '#26abe4'),
+        data: vals,
+        backgroundColor: vals.map((_, i) => i === vals.length - 1 ? '#154672' : '#26abe4'),
         borderRadius: 6
       }]
     },
@@ -228,10 +379,41 @@ function renderFinancialsView() {
   }).join('');
 
   document.getElementById('financialsFootnote').textContent = s3.footnote;
+
+  // Configure simulator slider bounds & labels dynamically from tenant data
+  const todoSlider = document.getElementById('simTodoSlider');
+  const refillSlider = document.getElementById('simRefillSlider');
+  const marginSlider = document.getElementById('simMarginSlider');
+  const todoMax = ws ? ws.todoTotal : 101;
+  const refillMax = ws ? ws.refillTotal : 37;
+  const defaultMargin = s3.septemberGrossMarginPerFill || 911;
+  const fillCost = s3.costPerFill || 40;
+
+  document.getElementById('simTodoLabel').textContent = `Pharmacy To-Do Prescriptions Converted (of ${todoMax})`;
+  document.getElementById('simRefillLabel').textContent = `Overdue Refills Retained (of ${refillMax})`;
+  document.getElementById('simMarginLabel').textContent = `Margin per Fill Assumption (Sep actual: $${defaultMargin})`;
+  document.getElementById('simSubtitle').textContent = `Interactive what-if model for converting open prescriptions (using $${defaultMargin} Sep margin/fill less $${fillCost} fill cost)`;
+  document.getElementById('simOutMarginSub').textContent = `After $${fillCost} per fill cost`;
+
+  if (todoSlider) todoSlider.max = String(todoMax);
+  if (refillSlider) refillSlider.max = String(refillMax);
+
+  if (!SIMULATOR_INITIALIZED) {
+    if (todoSlider) todoSlider.value = String(todoMax === 101 ? 50 : Math.round(todoMax / 2));
+    if (refillSlider) refillSlider.value = String(refillMax === 37 ? 25 : Math.round(refillMax * 0.67));
+    if (marginSlider) marginSlider.value = String(defaultMargin);
+    SIMULATOR_INITIALIZED = true;
+  }
+
   updateFinancialSimulator();
 }
 
 function updateFinancialSimulator() {
+  if (!PORTAL_DATA) return;
+  const s3 = PORTAL_DATA.slide3_financials;
+  const ytdBaseline = s3.ytdTable.find(r => r.item === 'Program proceeds')?.amount ?? 961691;
+  const fillCost = s3.costPerFill ?? 40;
+
   const todoCaptured = Number(document.getElementById('simTodoSlider').value);
   const refillCaptured = Number(document.getElementById('simRefillSlider').value);
   const marginPerFill = Number(document.getElementById('simMarginSlider').value);
@@ -242,20 +424,25 @@ function updateFinancialSimulator() {
 
   const extraFills = todoCaptured + refillCaptured;
   const extraGrossMargin = extraFills * marginPerFill;
-  const extraFillCost = extraFills * 40;
+  const extraFillCost = extraFills * fillCost;
   const netLift = extraGrossMargin - extraFillCost;
-  const newYtdProceeds = 961691 + netLift;
+  const newYtdProceeds = ytdBaseline + netLift;
 
   document.getElementById('simOutFills').textContent = `+${extraFills}`;
   document.getElementById('simOutMargin').textContent = `+$${netLift.toLocaleString()}`;
   document.getElementById('simOutProceeds').textContent = `$${newYtdProceeds.toLocaleString()}`;
-  document.getElementById('simOutDelta').textContent = `+$${netLift.toLocaleString()} net proceeds lift (after $40/fill cost)`;
+  document.getElementById('simOutDelta').textContent = `+$${netLift.toLocaleString()} net proceeds lift (after $${fillCost}/fill cost)`;
 }
 
 function resetFinancialSimulator() {
-  document.getElementById('simTodoSlider').value = 50;
-  document.getElementById('simRefillSlider').value = 25;
-  document.getElementById('simMarginSlider').value = 911;
+  if (!PORTAL_DATA) return;
+  const ws = PORTAL_DATA.worklistSummary;
+  const s3 = PORTAL_DATA.slide3_financials;
+  const todoMax = ws ? ws.todoTotal : 101;
+  const refillMax = ws ? ws.refillTotal : 37;
+  document.getElementById('simTodoSlider').value = String(todoMax === 101 ? 50 : Math.round(todoMax / 2));
+  document.getElementById('simRefillSlider').value = String(refillMax === 37 ? 25 : Math.round(refillMax * 0.67));
+  document.getElementById('simMarginSlider').value = String(s3.septemberGrossMarginPerFill || 911);
   updateFinancialSimulator();
 }
 
@@ -264,7 +451,14 @@ function resetFinancialSimulator() {
    ═══════════════════════════════════════════════════════════════════════════ */
 function renderSourcesView() {
   const s4 = PORTAL_DATA.slide4_sources;
+  const hl = document.getElementById('sourcesHeadline');
+  if (hl && s4.headline) hl.textContent = s4.headline;
+
   renderSourcesChart();
+
+  const totalMatchedFills = s4.table.reduce((acc, r) => acc + (r.glp1Fills || 0), 0);
+  const matchedBadge = document.getElementById('sourcesMatchedBadge');
+  if (matchedBadge) matchedBadge.textContent = `${totalMatchedFills.toLocaleString()} Matched Member Fills`;
 
   const tbody = document.getElementById('tbodySources');
   tbody.innerHTML = s4.table.map(row => {
@@ -349,6 +543,8 @@ function renderSourcesChart() {
    ═══════════════════════════════════════════════════════════════════════════ */
 function renderPaidMediaView() {
   const s5 = PORTAL_DATA.slide5_paidMedia;
+  const hl = document.getElementById('paidMediaHeadline');
+  if (hl && s5.headline) hl.textContent = s5.headline;
 
   const kpiRow = document.getElementById('paidMediaKpiRow');
   kpiRow.innerHTML = s5.kpis.map(k => `
@@ -418,6 +614,27 @@ function renderPaidMediaView() {
    ═══════════════════════════════════════════════════════════════════════════ */
 function renderFunnelView() {
   const s6 = PORTAL_DATA.slide6_funnel;
+  const ws = PORTAL_DATA.worklistSummary;
+  const hl = document.getElementById('funnelHeadline');
+  if (hl && s6.headline) hl.textContent = s6.headline;
+
+  const chartTitle = document.getElementById('funnelChartTitle');
+  if (chartTitle && s6.chartTitle) chartTitle.textContent = s6.chartTitle;
+
+  const enrolledCount = s6.steps[0]?.patients || 760;
+  const rxDropCount = s6.dropoffs[2]?.count || 85;
+  const todoTotal = ws ? ws.todoTotal : 101;
+  const fuzzyPts = ws ? ws.todoWithFuzzyCount : 15;
+
+  const noteBox = document.getElementById('funnelWorklistNoteBox');
+  if (noteBox) {
+    noteBox.innerHTML = `
+      <strong>Funnel &amp; Worklist Note:</strong> Funnel conversion uses the ${enrolledCount} members who enrolled before September (at least 30 days to fill; ${rxDropCount} were prescribed but never filled). Across all active cohorts through September 30, <strong>${todoTotal} active members</strong> are on the Pharmacy To-Do worklist with an open prescription (including ${fuzzyPts} with a possible ID typo match in Pharmacy Data Fixes to verify).
+      <div style="margin-top:12px">
+        <button class="btn-bridge-primary" onclick="openWorklistWithFilter('todo')">Open Pharmacy To-Do (${todoTotal})</button>
+      </div>
+    `;
+  }
 
   destroyChart('funnelBars');
   const ctx = document.getElementById('chartFunnelBars').getContext('2d');
@@ -438,7 +655,7 @@ function renderFunnelView() {
       maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
-        x: { beginAtZero: true, max: 800, grid: { color: 'rgba(15, 23, 42, 0.05)' } },
+        x: { beginAtZero: true, grid: { color: 'rgba(15, 23, 42, 0.05)' } },
         y: { grid: { display: false } }
       }
     }
@@ -468,6 +685,15 @@ function renderFunnelView() {
 function renderRefillAndRetentionView() {
   const s7 = PORTAL_DATA.slide7_refill;
   const s10 = PORTAL_DATA.slide10_retention;
+  const ws = PORTAL_DATA.worklistSummary;
+
+  const hl = document.getElementById('refillHeadline');
+  if (hl && s7.headline) hl.textContent = s7.headline;
+
+  const refillBtn = document.getElementById('btnRefillQueueLink');
+  if (refillBtn && ws) {
+    refillBtn.textContent = `View Refill Follow-Up Queue (${ws.refillTotal})`;
+  }
 
   destroyChart('refillPersistence');
   const ctx = document.getElementById('chartRefillPersistence').getContext('2d');
@@ -511,7 +737,6 @@ function renderRefillAndRetentionView() {
     </tr>
   `).join('');
 
-  // Slide 10 Cohort Retention Heatmap
   const theadRet = document.getElementById('theadRetentionMatrix');
   theadRet.innerHTML = `<tr>${s10.columns.map((c, i) => `<th class="${i >= 1 ? 'num' : ''}">${c}</th>`).join('')}</tr>`;
 
@@ -535,6 +760,13 @@ function renderRefillAndRetentionView() {
    ═══════════════════════════════════════════════════════════════════════════ */
 function renderMedMixView() {
   const s8 = PORTAL_DATA.slide8_medMix;
+  const hl = document.getElementById('medMixHeadline');
+  if (hl && s8.headline) hl.textContent = s8.headline;
+
+  const totalSepDispenses = s8.septemberCallouts.reduce((acc, c) => acc + (c.value || 0), 0);
+  const sepHeader = document.getElementById('medMixSeptHeader');
+  if (sepHeader) sepHeader.textContent = `September Dispenses (${totalSepDispenses})`;
+
   renderMedMixChart();
 
   const calloutList = document.getElementById('medMixCalloutList');
@@ -631,6 +863,8 @@ function switchWorklistSubtab(subtab) {
 function updateWorklistBadges() {
   const ws = PORTAL_DATA.worklistSummary;
   if (!ws) return;
+  const navPill = document.getElementById('navTodoUrgentPill');
+  if (navPill) navPill.textContent = ws.todoTotal;
   document.getElementById('badgeCountTodo').textContent = ws.todoTotal;
   document.getElementById('badgeCountRefill').textContent = ws.refillTotal;
   document.getElementById('badgeCountFixes').textContent = ws.fixesTotal;
@@ -640,9 +874,45 @@ function updateWorklistBadges() {
 
 function renderWorklistsView() {
   const wl = PORTAL_DATA.worklists;
+  const ws = PORTAL_DATA.worklistSummary;
   document.getElementById('descPharmacyTodo').textContent = wl.pharmacyTodo.description;
   document.getElementById('descRefillFollowup').textContent = wl.refillFollowup.description;
   document.getElementById('descEndedNeverFilled').textContent = wl.endedNeverFilled.description;
+
+  const unmatchedTitleEl = document.getElementById('fixesUnmatchedTitle');
+  if (unmatchedTitleEl && wl.pharmacyDataFixes.unmatchedTitle) {
+    unmatchedTitleEl.textContent = wl.pharmacyDataFixes.unmatchedTitle;
+  }
+  const noIdTitleEl = document.getElementById('fixesNoIdTitle');
+  if (noIdTitleEl && wl.pharmacyDataFixes.noIdTitle) {
+    noIdTitleEl.textContent = wl.pharmacyDataFixes.noIdTitle;
+  }
+  const applyBtn = document.getElementById('btnApplyAllFuzzy');
+  if (applyBtn && ws) {
+    applyBtn.textContent = `Auto-Reconcile ${ws.fuzzySuggestedCount} Matches`;
+  }
+
+  // Hydrate Ended – Never Filled stage KPIs dynamically
+  const endedRows = wl.endedNeverFilled.rows;
+  const stageCounts = countDistinctValues(endedRows, 'Stage');
+  const totalEnded = endedRows.length || 1;
+  const sNoVisit = stageCounts['No provider visit'] || 0;
+  const sNoRx = stageCounts['Saw provider, no Rx'] || 0;
+  const sNoFill = stageCounts['Rx written, not filled'] || 0;
+  const sOutside = stageCounts['Rx sent to outside pharmacy'] || 0;
+
+  const endedTitleEl = document.getElementById('endedCardTitle');
+  if (endedTitleEl) endedTitleEl.textContent = `Ended – Never Filled (${endedRows.length} Members)`;
+
+  const endedKpiRow = document.getElementById('endedStageKpiRow');
+  if (endedKpiRow) {
+    endedKpiRow.innerHTML = `
+      <div class="kpi" onclick="setEndedStageFilter('No provider visit')"><div class="kpi-label">No provider visit</div><div class="kpi-val">${sNoVisit}</div><div class="kpi-sub">${((sNoVisit / totalEnded) * 100).toFixed(1)}% of ended memberships</div></div>
+      <div class="kpi" onclick="setEndedStageFilter('Saw provider, no Rx')"><div class="kpi-label">Saw provider, no Rx</div><div class="kpi-val">${sNoRx}</div><div class="kpi-sub">${((sNoRx / totalEnded) * 100).toFixed(1)}% of ended memberships</div></div>
+      <div class="kpi" onclick="setEndedStageFilter('Rx written, not filled')"><div class="kpi-label">Rx written, not filled</div><div class="kpi-val">${sNoFill}</div><div class="kpi-sub">${((sNoFill / totalEnded) * 100).toFixed(1)}% of ended memberships</div></div>
+      <div class="kpi" onclick="setEndedStageFilter('Rx sent to outside pharmacy')"><div class="kpi-label">Rx sent to outside pharmacy</div><div class="kpi-val">${sOutside}</div><div class="kpi-sub">${((sOutside / totalEnded) * 100).toFixed(1)}% of ended memberships</div></div>
+    `;
+  }
 
   renderTodoTable();
   renderRefillTable();
@@ -780,6 +1050,7 @@ function renderRefillTable() {
 function renderFixesTables() {
   const unmatchedRows = PORTAL_DATA.worklists.pharmacyDataFixes.unmatchedRows;
   const noIdRows = PORTAL_DATA.worklists.pharmacyDataFixes.noIdRows;
+  const cutoffDate = PORTAL_DATA.meta?.asOfDate || '2026-09-30';
   const qNoId = (document.getElementById('fixesNoIdSearch')?.value || '').toLowerCase().trim();
 
   const tbodyUnmatched = document.getElementById('tbodyFixesUnmatched');
@@ -811,13 +1082,13 @@ function renderFixesTables() {
   tbodyNoId.innerHTML = filteredNoId.map(r => {
     const isGlp1 = /wegovy|ozempic/i.test(r['Dispensed item'] || '');
     const isCompleted = r['Transaction status'] === 'Completed';
-    const isOnOrBeforeSep30 = String(r['Date filled'] || '') <= '2026-09-30';
+    const isOnOrBeforeCutoff = String(r['Date filled'] || '') <= cutoffDate;
     let catBadge = '';
-    if (isGlp1 && isCompleted && isOnOrBeforeSep30) {
+    if (isGlp1 && isCompleted && isOnOrBeforeCutoff) {
       catBadge = `<span class="know-badge">Sep P&amp;L GLP-1 Fill</span>`;
     } else if (!isGlp1) {
       catBadge = `<span class="low-sample-badge">Non-GLP-1</span>`;
-    } else if (!isOnOrBeforeSep30) {
+    } else if (!isOnOrBeforeCutoff) {
       catBadge = `<span class="low-sample-badge">Post-Sep 30 Cutoff</span>`;
     } else {
       catBadge = `<span class="low-sample-badge">${r['Transaction status']}</span>`;
@@ -885,7 +1156,6 @@ async function updateWorklistCell(sheet, id, field, value) {
     });
     const data = await resp.json();
     if (data.ok) {
-      // Update local state
       const wl = PORTAL_DATA.worklists;
       let arr = null;
       if (sheet === 'todo') arr = wl.pharmacyTodo.rows;
@@ -1120,4 +1390,3 @@ function escapeAttr(s) {
 }
 
 window.addEventListener('DOMContentLoaded', initPortal);
-

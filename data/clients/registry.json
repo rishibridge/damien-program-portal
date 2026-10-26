@@ -1,0 +1,55 @@
+{
+  "defaultClientId": "damien",
+  "clients": {
+    "damien": {
+      "clientId": "damien",
+      "shortName": "Damien",
+      "programTitle": "Damien Center GLP-1 Weight Loss Program",
+      "subtitle": "Program performance through September 30, 2026",
+      "preparedBy": "Bridge Health Hub",
+      "client": "Damien Center",
+      "telehealthPartner": "Hello Alpha",
+      "pharmacyPartner": "Damien Pharmacy",
+      "asOfDate": "2026-09-30",
+      "asOfDateFormatted": "September 30, 2026",
+      "asOfShort": "Sep2026",
+      "cutoffMonthName": "September",
+      "months": [
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep"
+      ]
+    },
+    "metro": {
+      "clientId": "metro",
+      "shortName": "Metro Health",
+      "programTitle": "Metro Health Center GLP-1 Weight Loss Program",
+      "subtitle": "Program performance through September 30, 2026",
+      "preparedBy": "Bridge Health Hub",
+      "client": "Metro Health Center",
+      "telehealthPartner": "Hello Alpha",
+      "pharmacyPartner": "Metro Specialty Pharmacy",
+      "asOfDate": "2026-09-30",
+      "asOfDateFormatted": "September 30, 2026",
+      "asOfShort": "Sep2026",
+      "cutoffMonthName": "September",
+      "months": [
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep"
+      ]
+    }
+  }
+}
