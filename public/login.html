@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign In — Bridge Health Hub Program Analytics</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --navy: #0e2841;
+      --blue: #154672;
+      --accent: #26abe4;
+      --bg: #f1f5f9;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --danger-bg: #fef2f2;
+      --danger-border: #fecaca;
+      --danger-text: #b91c1c;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: linear-gradient(135deg, #0e2841 0%, #154672 55%, #1e6091 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      color: var(--text);
+    }
+    .login-card {
+      width: 100%;
+      max-width: 420px;
+      background: var(--card);
+      border-radius: 16px;
+      box-shadow: 0 24px 48px rgba(14, 40, 65, 0.35);
+      padding: 36px 32px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+    .login-brand {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    .login-logo {
+      height: 44px;
+      width: auto;
+      object-fit: contain;
+      margin-bottom: 14px;
+      background: var(--navy);
+      padding: 8px 14px;
+      border-radius: 10px;
+    }
+    .login-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--navy);
+      letter-spacing: -0.02em;
+    }
+    .login-subtitle {
+      font-size: 0.84rem;
+      color: var(--muted);
+      margin-top: 6px;
+      line-height: 1.45;
+    }
+    .login-error {
+      display: none;
+      background: var(--danger-bg);
+      border: 1px solid var(--danger-border);
+      color: var(--danger-text);
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 500;
+      margin-bottom: 18px;
+    }
+    .form-group {
+      margin-bottom: 18px;
+    }
+    .form-label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #334155;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 6px;
+    }
+    .form-input {
+      width: 100%;
+      padding: 11px 14px;
+      font-size: 0.92rem;
+      font-family: inherit;
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .form-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(38, 171, 228, 0.18);
+    }
+    .login-btn {
+      width: 100%;
+      padding: 12px 16px;
+      font-size: 0.94rem;
+      font-weight: 600;
+      font-family: inherit;
+      color: #ffffff;
+      background: var(--blue);
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.05s;
+      margin-top: 4px;
+    }
+    .login-btn:hover {
+      background: var(--navy);
+    }
+    .login-btn:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+    }
+    .login-footer {
+      margin-top: 24px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      text-align: center;
+      font-size: 0.76rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <div class="login-brand">
+      <img src="/assets/logo.png" alt="Bridge Health Hub" class="login-logo" onerror="this.style.display='none'" />
+      <h1 class="login-title">Client Program Analytics</h1>
+      <p class="login-subtitle">Sign in with your Covered Entity credentials to access your GLP-1 dashboard and pharmacy worklist.</p>
+    </div>
+
+    <div id="loginError" class="login-error" role="alert"></div>
+
+    <form id="loginForm" onsubmit="handleLogin(event)">
+      <div class="form-group">
+        <label class="form-label" for="loginUsername">Client ID</label>
+        <input
+          type="text"
+          id="loginUsername"
+          class="form-input"
+          placeholder="Enter your Client ID"
+          autocomplete="username"
+          required
+          autofocus
+        />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="loginPassword">Password</label>
+        <input
+          type="password"
+          id="loginPassword"
+          class="form-input"
+          placeholder="Enter your password"
+          autocomplete="current-password"
+          required
+        />
+      </div>
+
+      <button type="submit" id="loginSubmitBtn" class="login-btn">Sign In to Portal</button>
+    </form>
+
+    <div class="login-footer">
+      Protected Covered Entity Environment · Bridge Health Hub
+    </div>
+  </div>
+
+  <script>
+    async function handleLogin(e) {
+      e.preventDefault();
+      const errEl = document.getElementById('loginError');
+      const btn = document.getElementById('loginSubmitBtn');
+      const username = document.getElementById('loginUsername').value.trim();
+      const password = document.getElementById('loginPassword').value;
+
+      errEl.style.display = 'none';
+      btn.disabled = true;
+      btn.textContent = 'Signing in...';
+
+      try {
+        const resp = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (resp.ok && data.ok) {
+          window.location.href = '/';
+          return;
+        }
+        errEl.textContent = data.error || 'Invalid Client ID or password. Please try again.';
+        errEl.style.display = 'block';
+      } catch (err) {
+        errEl.textContent = 'Unable to reach server. Please check your connection and try again.';
+        errEl.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Sign In to Portal';
+      }
+    }
+  </script>
+</body>
+</html>

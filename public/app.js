@@ -20,6 +20,10 @@ function destroyChart(key) {
 async function initPortal() {
   try {
     const resp = await fetch('/api/portal-data');
+    if (resp.status === 401) {
+      window.location.href = '/login';
+      return;
+    }
     PORTAL_DATA = await resp.json();
     hydrateShellBranding();
     populateWorklistFilterDropdowns();
@@ -28,6 +32,15 @@ async function initPortal() {
   } catch (err) {
     console.error('Failed to load portal data:', err);
   }
+}
+
+async function logoutPortal() {
+  try {
+    await fetch('/api/auth/logout', { method: 'POST' });
+  } catch (err) {
+    console.error('Logout error:', err);
+  }
+  window.location.href = '/login';
 }
 
 function hydrateShellBranding() {
