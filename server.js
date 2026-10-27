@@ -81,44 +81,148 @@ function getAllowedUsers() {
   return map;
 }
 
+const SESSION_COOKIE_NAME = 'bridge_session';
+const SESSION_SECRET = process.env.SESSION_SECRET || 'bridge-multi-client-hmac-secret-2026-v2';
+const SESSION_TTL_SECONDS = 12 * 60 * 60; // 12 hours
+
+function signSessionToken(payloadObj) {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const body = {
+    user: payloadObj.user,
+    clientId: payloadObj.clientId,
+    iat: nowSec,
+    exp: nowSec + SESSION_TTL_SECONDS
+  };
+  const payloadB64 = Buffer.from(JSON.stringify(body), 'utf8').toString('base64url');
+  const sigB64 = crypto.createHmac('sha256', SESSION_SECRET).update(payloadB64).digest('base64url');
+  return `${payloadB64}.${sigB64}`;
+}
+
+function verifySessionToken(token) {
+  if (!token || typeof token !== 'string' || !token.includes('.')) return null;
+  const [payloadB64, sigB64] = token.split('.');
+  if (!payloadB64 || !sigB64) return null;
+  const expectedSig = crypto.createHmac('sha256', SESSION_SECRET).update(payloadB64).digest('base64url');
+  if (!safeEqual(sigB64, expectedSig)) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (!parsed || !parsed.clientId || (parsed.exp && parsed.exp < nowSec)) return null;
+    return parsed;
+  } catch (e) {
+    return null;
+  }
+}
+
+function parseCookies(req) {
+  const out = {};
+  const raw = req.headers.cookie || '';
+  for (const part of raw.split(';')) {
+    const idx = part.indexOf('=');
+    if (idx > 0) {
+      const k = part.slice(0, idx).trim();
+      const v = part.slice(idx + 1).trim();
+      out[k] = decodeURIComponent(v);
+    }
+  }
+  return out;
+}
+
 // Strict anti-cache headers helper
 function setNoCacheHeaders(res) {
   res.setHeader('Cache-Control', 'private, no-store, no-cache, must-revalidate');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
-  res.setHeader('Vary', 'Authorization');
+  res.setHeader('Vary', 'Cookie, Authorization');
 }
 
-// HTTP Basic Authentication & Strict 1-to-1 Tenant Lock Middleware
+app.use(express.json({ limit: '5mb' }));
+
+// Public Web Login Page (/login)
+app.get(['/login', '/login.html'], (req, res) => {
+  setNoCacheHeaders(res);
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+// Web Login API (sets HMAC-signed HttpOnly session cookie — NO Basic Auth popup)
+app.post('/api/auth/login', (req, res) => {
+  setNoCacheHeaders(res);
+  const { username, password } = req.body || {};
+  const u = String(username || '').trim();
+  const p = String(password || '');
+  const allowed = getAllowedUsers();
+  const matched = allowed.find(cred => safeEqual(u, cred.user) && safeEqual(p, cred.pass));
+  if (!matched) {
+    return res.status(401).json({ ok: false, error: 'Invalid Client ID or password.' });
+  }
+
+  const token = signSessionToken({ user: matched.user, clientId: matched.clientId });
+  const isSecure = req.secure || req.headers['x-forwarded-proto'] === 'https';
+  const cookieParts = [
+    `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    `Max-Age=${SESSION_TTL_SECONDS}`
+  ];
+  if (isSecure) cookieParts.push('Secure');
+
+  res.setHeader('Set-Cookie', cookieParts.join('; '));
+  return res.json({
+    ok: true,
+    user: matched.user,
+    clientId: matched.clientId
+  });
+});
+
+// Web Logout API (clears session cookie)
+app.post('/api/auth/logout', (req, res) => {
+  setNoCacheHeaders(res);
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+  return res.json({ ok: true });
+});
+
+// Session Authentication & Strict 1-to-1 Tenant Lock Middleware (NO WWW-Authenticate header)
 app.use((req, res, next) => {
-  if (req.path === '/api/health') return next();
+  if (
+    req.path === '/api/health' ||
+    req.path === '/login' ||
+    req.path === '/login.html' ||
+    req.path === '/styles.css' ||
+    req.path === '/favicon.ico' ||
+    req.path.startsWith('/assets/')
+  ) {
+    return next();
+  }
 
   setNoCacheHeaders(res);
 
-  const authHeader = req.headers.authorization || '';
-  if (authHeader.startsWith('Basic ')) {
-    const base64Credentials = authHeader.slice(6).trim();
-    const decoded = Buffer.from(base64Credentials, 'base64').toString('utf8');
-    const sepIdx = decoded.indexOf(':');
-    if (sepIdx !== -1) {
-      const username = decoded.slice(0, sepIdx);
-      const password = decoded.slice(sepIdx + 1);
-      const allowed = getAllowedUsers();
-      const matched = allowed.find(cred => safeEqual(username, cred.user) && safeEqual(password, cred.pass));
-      if (matched) {
-        // Strictly lock req.clientId from credential mapping only (ignore any query/header/body clientId)
-        req.clientId = matched.clientId;
-        req.authenticatedUser = matched.user;
-        return next();
-      }
-    }
+  // 1. Verify signed HttpOnly session cookie
+  const cookies = parseCookies(req);
+  const session = verifySessionToken(cookies[SESSION_COOKIE_NAME]);
+  if (session && session.clientId) {
+    req.clientId = session.clientId;
+    req.authenticatedUser = session.user;
+    return next();
   }
 
-  res.setHeader('WWW-Authenticate', 'Basic realm="Bridge Health Program Analytics", charset="UTF-8"');
-  return res.status(401).send('Authentication required');
+  // 2. Unauthenticated API calls get 401 JSON (never WWW-Authenticate)
+  if (req.path.startsWith('/api/')) {
+    return res.status(401).json({ error: 'Authentication required', loginUrl: '/login' });
+  }
+
+  // 3. Unauthenticated browser navigation redirects to /login web page
+  return res.redirect(302, '/login');
 });
 
-app.use(express.json({ limit: '5mb' }));
+app.get('/api/auth/me', (req, res) => {
+  res.json({
+    authenticated: true,
+    user: req.authenticatedUser,
+    clientId: req.clientId
+  });
+});
+
 app.use(express.static(path.join(__dirname, 'public'), {
   etag: false,
   lastModified: false,
