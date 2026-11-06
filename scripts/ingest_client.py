@@ -1,4 +1,5 @@
 import argparse
+import collections
 import copy
 import datetime
 import json
@@ -9,6 +10,7 @@ from pptx import Presentation
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOURCE_DIR = os.path.join(BASE_DIR, "source_docs")
 CLIENTS_DIR = os.path.join(BASE_DIR, "data", "clients")
+DEFAULT_ANALYSIS_XLSX = r"C:\Users\rishi\OneDrive - Bridge Helath Hub Inc\Bridge Health\Active Projects\Dashboard\September 2026 Analysis.xlsx"
 os.makedirs(CLIENTS_DIR, exist_ok=True)
 
 
@@ -209,7 +211,556 @@ def assign_stable_keys_and_fuzzy_links(pharmacy_todo, refill_followup, fixes_no_
         t["possibleDataFixes"] = linked_fixes
 
 
-def build_damien_portal_data(xlsx_path):
+def _num(v, default=0.0):
+    if v is None or v == "":
+        return default
+    try:
+        f = float(v)
+        return int(f) if f.is_integer() else round(f, 2)
+    except Exception:
+        return default
+
+
+def parse_damien_analysis_workbook(analysis_xlsx_path):
+    """
+    Extracts strictly AGGREGATE, NON-MEMBER-LEVEL analytics from 'September 2026 Analysis.xlsx'
+    scoped 100% to Damien Center (Damien Exhibits, Damien Dispense Data, Lookups, and
+    Alpha Data rows where plan_name == 'damien-health-membership').
+    Zero member UUIDs, zero Patient Alternate IDs, and zero individual member/claim rows are included.
+    """
+    if not analysis_xlsx_path or not os.path.exists(analysis_xlsx_path):
+        print(f"[WARN] Analysis workbook not found at {analysis_xlsx_path}; skipping analysisWorkbook extraction.")
+        return None
+
+    wb = openpyxl.load_workbook(analysis_xlsx_path, data_only=True)
+    ws_ex = wb["Damien Exhibits"]
+    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep"]
+
+    def read_monthly_row(r_idx, is_pct=False):
+        vals = {}
+        for idx, m in enumerate(months):
+            raw = ws_ex.cell(r_idx, 2 + idx).value
+            if is_pct and isinstance(raw, (int, float)):
+                vals[m] = f"{round(float(raw) * 100, 1)}%"
+            else:
+                vals[m] = _num(raw, 0)
+        ytd_raw = ws_ex.cell(r_idx, 11).value
+        if is_pct and isinstance(ytd_raw, (int, float)):
+            vals["YTD"] = f"{round(float(ytd_raw) * 100, 1)}%"
+        else:
+            vals["YTD"] = _num(ytd_raw, 0)
+        return vals
+
+    # A1: Total Enrollments by Source & Month (Rows 5..12)
+    enrollments_by_source = []
+    for r_idx in range(5, 12):
+        label = str(ws_ex.cell(r_idx, 1).value or "").strip()
+        if label:
+            enrollments_by_source.append({"source": label, **read_monthly_row(r_idx)})
+    broker_share_monthly = read_monthly_row(12, is_pct=True)
+
+    # A2: Membership Cancellations by Source & Month (Rows 16..23)
+    cancellations_by_source = []
+    for r_idx in range(16, 23):
+        label = str(ws_ex.cell(r_idx, 1).value or "").strip()
+        if label:
+            norm_label = "Total" if label.lower() in ("grand total", "total") else label
+            cancellations_by_source.append({"source": norm_label, **read_monthly_row(r_idx)})
+    cancellation_pct_of_enrolled = read_monthly_row(23, is_pct=True)
+
+    # A3: Active Patient Tracker & Monthly Net Additions (Rows 28..29)
+    active_tracker = {m: _num(ws_ex.cell(28, 2 + i).value, 0) for i, m in enumerate(months)}
+    net_additions = {m: _num(ws_ex.cell(29, 2 + i).value, 0) for i, m in enumerate(months)}
+
+    # A4: Notable Enrollments by Employer Group by Month (Rows 34..47)
+    notable_employers_monthly = []
+    for r_idx in range(34, 48):
+        label = str(ws_ex.cell(r_idx, 1).value or "").strip()
+        if label:
+            notable_employers_monthly.append({"employerGroup": label, **read_monthly_row(r_idx)})
+
+    # A5: Dispenses by Drug & Specific Dose Strength by Month (Rows 52..65)
+    dispenses_by_dose_monthly = []
+    for r_idx in range(52, 66):
+        label = str(ws_ex.cell(r_idx, 1).value or "").strip()
+        if label:
+            dispenses_by_dose_monthly.append({"medicationDose": label, **read_monthly_row(r_idx)})
+
+    # A6: Full Monthly P&L & Unit Economics (Rows 82..92 transposed + Rows 96..105 Margin/Rx)
+    pnl_cols = {}
+    for c_idx in range(2, 12):
+        col_name = str(ws_ex.cell(82, c_idx).value or "").strip()
+        if col_name:
+            pnl_cols[c_idx] = col_name
+
+    monthly_pnl = {col_name: {} for col_name in pnl_cols.values()}
+    for r_idx in range(83, 93):
+        m_label = str(ws_ex.cell(r_idx, 1).value or "").strip()
+        if m_label == "Sept":
+            m_label = "Sep"
+        if m_label:
+            for c_idx, col_name in pnl_cols.items():
+                monthly_pnl[col_name][m_label] = _num(ws_ex.cell(r_idx, c_idx).value, 0)
+
+    margin_per_rx = {}
+    for r_idx in range(96, 106):
+        m_label = str(ws_ex.cell(r_idx, 1).value or "").strip()
+        if m_label == "Sept":
+            m_label = "Sep"
+        elif m_label == "Grand Total":
+            m_label = "YTD"
+        if m_label:
+            margin_per_rx[m_label] = _num(ws_ex.cell(r_idx, 2).value, 0)
+    monthly_pnl["Gross Margin per Rx"] = margin_per_rx
+
+    # Lookups sheet (Ref Code -> Employer & Partner, Coupon -> Partner)
+    ws_lu = wb["Lookups"]
+    ref_code_lookups = []
+    coupon_lookups = []
+    for r_idx in range(3, ws_lu.max_row + 1):
+        rc = ws_lu.cell(r_idx, 2).value
+        emp = ws_lu.cell(r_idx, 3).value
+        partner = ws_lu.cell(r_idx, 4).value
+        if rc and emp:
+            ref_code_lookups.append({
+                "refCode": str(rc).strip(),
+                "employerName": str(emp).strip(),
+                "partnerName": str(partner or "").strip(),
+            })
+        cc = ws_lu.cell(r_idx, 6).value
+        c_partner = ws_lu.cell(r_idx, 7).value
+        if cc and c_partner:
+            coupon_lookups.append({
+                "couponCode": str(cc).strip(),
+                "partnerName": str(c_partner).strip(),
+            })
+
+    # A7: Alpha Data (strictly aggregate-only, filtered to plan_name == 'damien-health-membership')
+    ws_alpha = wb["Alpha Data"]
+    alpha_headers = [str(ws_alpha.cell(1, c).value or "").strip() for c in range(1, ws_alpha.max_column + 1)]
+    employer_stats = collections.defaultdict(lambda: {
+        "totalEnrolled": 0,
+        "activeMembers": 0,
+        "cancelledMembers": 0,
+        "autoDisenrolled": 0,
+        "withProviderVisit": 0,
+        "withPrescription": 0,
+        "byMonth": collections.Counter(),
+        "partnerSource": "",
+        "refCodes": set(),
+    })
+    coupon_counts = collections.Counter()
+    ref_code_counts = collections.Counter()
+    prescribed_drug_counts = collections.Counter()
+    cancel_by_start_month = collections.Counter()
+    total_damien_alpha_rows = 0
+    non_test_damien_rows = 0
+    test_damien_rows = 0
+    total_cancelled = 0
+    total_auto_disenrolled = 0
+    total_with_visit = 0
+    total_with_rx = 0
+
+    for r_idx in range(2, ws_alpha.max_row + 1):
+        row = {alpha_headers[c - 1]: ws_alpha.cell(r_idx, c).value for c in range(1, len(alpha_headers) + 1)}
+        if row.get("plan_name") != "damien-health-membership":
+            continue
+        total_damien_alpha_rows += 1
+        is_test = bool(row.get("test_user")) and str(row.get("test_user")).lower() not in ("0", "false", "none")
+        if is_test:
+            test_damien_rows += 1
+        else:
+            non_test_damien_rows += 1
+
+        emp_group = str(row.get("Reference Code Group") or "No Employer Group / Direct").strip()
+        p_source = str(row.get("Patient Source") or "Unknown").strip()
+        rc = str(row.get("ref_code") or "").strip()
+        cc = str(row.get("coupon_code_used") or "").strip()
+        start_dt = row.get("subscription_start_time")
+        start_month = start_dt.strftime("%b") if isinstance(start_dt, (datetime.datetime, datetime.date)) else str(row.get("Start Month") or "")
+        is_cancelled = row.get("subscription_cancellation_time") is not None
+        is_auto_dis = str(row.get("auto-disenrolled") or "").strip().lower() in ("1", "true", "yes")
+
+        vh_raw = row.get("visit_history")
+        has_visit = False
+        if vh_raw and str(vh_raw).strip() not in ("", "[]", "null", "None"):
+            has_visit = True
+
+        ph_raw = row.get("prescription_history")
+        has_rx = False
+        if ph_raw and str(ph_raw).strip() not in ("", "[]", "null", "None"):
+            has_rx = True
+            try:
+                ph_list = json.loads(str(ph_raw))
+                if isinstance(ph_list, list):
+                    for item in ph_list:
+                        if isinstance(item, dict) and item.get("name"):
+                            prescribed_drug_counts[str(item["name"]).strip()] += 1
+            except Exception:
+                pass
+
+        if is_cancelled:
+            total_cancelled += 1
+            if start_month:
+                cancel_by_start_month[start_month] += 1
+        if is_auto_dis:
+            total_auto_disenrolled += 1
+        if has_visit:
+            total_with_visit += 1
+        if has_rx:
+            total_with_rx += 1
+        if cc and cc.lower() != "none":
+            coupon_counts[cc] += 1
+        if rc and rc.lower() != "none":
+            ref_code_counts[rc] += 1
+
+        st = employer_stats[emp_group]
+        st["totalEnrolled"] += 1
+        if is_cancelled:
+            st["cancelledMembers"] += 1
+        else:
+            st["activeMembers"] += 1
+        if is_auto_dis:
+            st["autoDisenrolled"] += 1
+        if has_visit:
+            st["withProviderVisit"] += 1
+        if has_rx:
+            st["withPrescription"] += 1
+        if start_month:
+            st["byMonth"][start_month] += 1
+        st["partnerSource"] = p_source
+        if rc and rc.lower() != "none":
+            st["refCodes"].add(rc)
+
+    all_employer_groups_summary = []
+    for emp_name, st in sorted(employer_stats.items(), key=lambda kv: (-kv[1]["totalEnrolled"], kv[0])):
+        all_employer_groups_summary.append({
+            "employerGroup": emp_name,
+            "partnerSource": st["partnerSource"],
+            "refCodes": sorted(list(st["refCodes"])),
+            "totalEnrolled": st["totalEnrolled"],
+            "activeMembers": st["activeMembers"],
+            "cancelledMembers": st["cancelledMembers"],
+            "autoDisenrolled": st["autoDisenrolled"],
+            "withProviderVisit": st["withProviderVisit"],
+            "withPrescription": st["withPrescription"],
+            "byMonth": dict(st["byMonth"]),
+        })
+
+    # A8: Damien Dispense Data (strictly aggregate-only across 2,247 dispense transactions)
+    ws_disp = wb["Damien Dispense Data"]
+    disp_headers = [str(ws_disp.cell(1, c).value or "").strip() for c in range(1, ws_disp.max_column + 1)]
+
+    status_totals = collections.defaultdict(lambda: {"fills": 0, "revenue": 0.0, "acquisitionCost": 0.0, "margin": 0.0})
+    prescriber_stats = collections.defaultdict(lambda: {
+        "npi": "",
+        "totalTransactions": 0,
+        "completedFills": 0,
+        "completedGlp1ThroughSep30": 0,
+        "cancelledFills": 0,
+        "waitingForPickupFills": 0,
+        "completedRevenue": 0.0,
+        "completedAcquisitionCost": 0.0,
+        "completedMargin": 0.0,
+    })
+    primary_payer_stats = collections.defaultdict(lambda: {
+        "completedFills": 0,
+        "cancelledFills": 0,
+        "waitingForPickupFills": 0,
+        "primaryRemit": 0.0,
+        "primaryCopay": 0.0,
+        "secondaryRemit": 0.0,
+        "totalRevenue": 0.0,
+        "acquisitionCost": 0.0,
+        "margin": 0.0,
+    })
+    secondary_payer_stats = collections.defaultdict(lambda: {
+        "completedFills": 0,
+        "secondaryRemit": 0.0,
+        "secondaryCopay": 0.0,
+        "totalRevenue": 0.0,
+        "margin": 0.0,
+    })
+    drug_stats = collections.defaultdict(lambda: {
+        "ndcs": set(),
+        "completedFills": 0,
+        "completedThroughSep30": 0,
+        "cancelledFills": 0,
+        "waitingForPickupFills": 0,
+        "completedRevenue": 0.0,
+        "completedAcquisitionCost": 0.0,
+        "completedMargin": 0.0,
+    })
+
+    for r_idx in range(2, ws_disp.max_row + 1):
+        row = {disp_headers[c - 1]: ws_disp.cell(r_idx, c).value for c in range(1, len(disp_headers) + 1)}
+        status = str(row.get("Current Transaction Status") or "Unknown").strip()
+        presc = str(row.get("Prescriber Full Name") or "Unknown").strip()
+        npi = str(row.get("Prescriber NPI") or "").strip()
+        ndc = str(row.get("Dispensed Item NDC") or "").strip()
+        drug = str(row.get("Dispensed Item Name") or "Unknown").strip()
+        p1 = str(row.get("Primary Third Party") or "Cash / None").strip()
+        p2 = str(row.get("Secondary Third Party") or "None").strip()
+        dt = row.get("Date Filled")
+        dt_str = dt.strftime("%Y-%m-%d") if isinstance(dt, (datetime.datetime, datetime.date)) else str(dt or "")
+        is_glp1 = ("wegovy" in drug.lower()) or ("ozempic" in drug.lower())
+        is_through_sep = dt_str <= "2026-09-30"
+
+        rev = float(row.get("Total Pharmacy Revenue") or 0.0)
+        cost = float(row.get("Acquisition Cost") or 0.0)
+        margin = float(row.get("Pharmacy Margin") or 0.0)
+        rem1 = float(row.get("Primary Remit Amount") or 0.0)
+        cop1 = float(row.get("Primary Copay Amount") or 0.0)
+        rem2 = float(row.get("Secondary Remit Amount") or 0.0)
+        cop2 = float(row.get("Secondary Copay Amount") or 0.0)
+
+        st_tot = status_totals[status]
+        st_tot["fills"] += 1
+        st_tot["revenue"] = round(st_tot["revenue"] + rev, 2)
+        st_tot["acquisitionCost"] = round(st_tot["acquisitionCost"] + cost, 2)
+        st_tot["margin"] = round(st_tot["margin"] + margin, 2)
+
+        pr = prescriber_stats[presc]
+        if npi:
+            pr["npi"] = npi
+        pr["totalTransactions"] += 1
+        if status == "Completed":
+            pr["completedFills"] += 1
+            if is_glp1 and is_through_sep:
+                pr["completedGlp1ThroughSep30"] += 1
+            pr["completedRevenue"] = round(pr["completedRevenue"] + rev, 2)
+            pr["completedAcquisitionCost"] = round(pr["completedAcquisitionCost"] + cost, 2)
+            pr["completedMargin"] = round(pr["completedMargin"] + margin, 2)
+        elif status == "Cancelled":
+            pr["cancelledFills"] += 1
+        elif status == "Waiting for Pick up":
+            pr["waitingForPickupFills"] += 1
+
+        pp1 = primary_payer_stats[p1]
+        if status == "Completed":
+            pp1["completedFills"] += 1
+            pp1["primaryRemit"] = round(pp1["primaryRemit"] + rem1, 2)
+            pp1["primaryCopay"] = round(pp1["primaryCopay"] + cop1, 2)
+            pp1["secondaryRemit"] = round(pp1["secondaryRemit"] + rem2, 2)
+            pp1["totalRevenue"] = round(pp1["totalRevenue"] + rev, 2)
+            pp1["acquisitionCost"] = round(pp1["acquisitionCost"] + cost, 2)
+            pp1["margin"] = round(pp1["margin"] + margin, 2)
+        elif status == "Cancelled":
+            pp1["cancelledFills"] += 1
+        elif status == "Waiting for Pick up":
+            pp1["waitingForPickupFills"] += 1
+
+        if status == "Completed":
+            pp2 = secondary_payer_stats[p2]
+            pp2["completedFills"] += 1
+            pp2["secondaryRemit"] = round(pp2["secondaryRemit"] + rem2, 2)
+            pp2["secondaryCopay"] = round(pp2["secondaryCopay"] + cop2, 2)
+            pp2["totalRevenue"] = round(pp2["totalRevenue"] + rev, 2)
+            pp2["margin"] = round(pp2["margin"] + margin, 2)
+
+        dr = drug_stats[drug]
+        if ndc:
+            dr["ndcs"].add(ndc)
+        if status == "Completed":
+            dr["completedFills"] += 1
+            if is_through_sep:
+                dr["completedThroughSep30"] += 1
+            dr["completedRevenue"] = round(dr["completedRevenue"] + rev, 2)
+            dr["completedAcquisitionCost"] = round(dr["completedAcquisitionCost"] + cost, 2)
+            dr["completedMargin"] = round(dr["completedMargin"] + margin, 2)
+        elif status == "Cancelled":
+            dr["cancelledFills"] += 1
+        elif status == "Waiting for Pick up":
+            dr["waitingForPickupFills"] += 1
+
+    prescribers_list = []
+    for name, pr in sorted(prescriber_stats.items(), key=lambda kv: (-kv[1]["completedFills"], kv[0])):
+        cf = pr["completedFills"]
+        prescribers_list.append({
+            "prescriber": name,
+            "npi": pr["npi"],
+            "totalTransactions": pr["totalTransactions"],
+            "completedFills": cf,
+            "completedGlp1ThroughSep30": pr["completedGlp1ThroughSep30"],
+            "cancelledFills": pr["cancelledFills"],
+            "waitingForPickupFills": pr["waitingForPickupFills"],
+            "completedRevenue": pr["completedRevenue"],
+            "completedAcquisitionCost": pr["completedAcquisitionCost"],
+            "completedMargin": pr["completedMargin"],
+            "avgRevenuePerCompletedFill": round(pr["completedRevenue"] / cf, 2) if cf else 0.0,
+            "avgMarginPerCompletedFill": round(pr["completedMargin"] / cf, 2) if cf else 0.0,
+        })
+
+    primary_payers_list = []
+    for payer_name, pp in sorted(primary_payer_stats.items(), key=lambda kv: (-kv[1]["completedFills"], kv[0])):
+        cf = pp["completedFills"]
+        primary_payers_list.append({
+            "primaryPayer": payer_name,
+            "completedFills": cf,
+            "cancelledFills": pp["cancelledFills"],
+            "waitingForPickupFills": pp["waitingForPickupFills"],
+            "primaryRemit": pp["primaryRemit"],
+            "primaryCopay": pp["primaryCopay"],
+            "secondaryRemit": pp["secondaryRemit"],
+            "totalRevenue": pp["totalRevenue"],
+            "acquisitionCost": pp["acquisitionCost"],
+            "margin": pp["margin"],
+            "avgMarginPerCompletedFill": round(pp["margin"] / cf, 2) if cf else 0.0,
+        })
+
+    secondary_payers_list = []
+    for payer_name, pp in sorted(secondary_payer_stats.items(), key=lambda kv: (-kv[1]["completedFills"], kv[0])):
+        secondary_payers_list.append({
+            "secondaryPayer": payer_name,
+            "completedFills": pp["completedFills"],
+            "secondaryRemit": pp["secondaryRemit"],
+            "secondaryCopay": pp["secondaryCopay"],
+            "totalRevenue": pp["totalRevenue"],
+            "margin": pp["margin"],
+        })
+
+    medications_list = []
+    for drug_name, dr in sorted(drug_stats.items(), key=lambda kv: (-kv[1]["completedFills"], kv[0])):
+        cf = dr["completedFills"]
+        medications_list.append({
+            "medicationName": drug_name,
+            "ndcs": sorted(list(dr["ndcs"])),
+            "completedFills": cf,
+            "completedThroughSep30": dr["completedThroughSep30"],
+            "cancelledFills": dr["cancelledFills"],
+            "waitingForPickupFills": dr["waitingForPickupFills"],
+            "completedRevenue": dr["completedRevenue"],
+            "completedAcquisitionCost": dr["completedAcquisitionCost"],
+            "completedMargin": dr["completedMargin"],
+            "avgRevenuePerFill": round(dr["completedRevenue"] / cf, 2) if cf else 0.0,
+            "avgAcquisitionCostPerFill": round(dr["completedAcquisitionCost"] / cf, 2) if cf else 0.0,
+            "avgMarginPerFill": round(dr["completedMargin"] / cf, 2) if cf else 0.0,
+        })
+
+    return {
+        "privacyPolicy": "AGGREGATE_ONLY_NO_MEMBER_LEVEL_DATA",
+        "sourceWorkbook": "September 2026 Analysis.xlsx",
+        "clientScope": "damien",
+        "exhibits": {
+            "enrollmentsBySourceMonthly": enrollments_by_source,
+            "brokerSharePctMonthly": broker_share_monthly,
+            "cancellationsBySourceMonthly": cancellations_by_source,
+            "cancellationPctOfTotalEnrolledMonthly": cancellation_pct_of_enrolled,
+            "activePatientTrackerMonthly": active_tracker,
+            "monthlyNetAdditions": net_additions,
+            "notableEmployerGroupsMonthly": notable_employers_monthly,
+            "dispensesByDoseMonthly": dispenses_by_dose_monthly,
+            "monthlyPnL": monthly_pnl,
+        },
+        "alphaAnalytics": {
+            "totalDamienMembershipRows": total_damien_alpha_rows,
+            "nonTestMembers": non_test_damien_rows,
+            "testAccountsExcludedFromDeck": test_damien_rows,
+            "totalCancelledMembers": total_cancelled,
+            "totalAutoDisenrolledMembers": total_auto_disenrolled,
+            "totalMembersWithProviderVisit": total_with_visit,
+            "totalMembersWithPrescription": total_with_rx,
+            "cancellationsByStartMonth": dict(cancel_by_start_month),
+            "couponCodeCounts": dict(coupon_counts.most_common()),
+            "refCodeCounts": dict(ref_code_counts.most_common()),
+            "prescribedDrugCountsInAlpha": dict(prescribed_drug_counts.most_common()),
+            "allEmployerGroups": all_employer_groups_summary,
+            "refCodeLookupTable": ref_code_lookups,
+            "couponLookupTable": coupon_lookups,
+        },
+        "dispenseAnalytics": {
+            "totalDispenseRows": ws_disp.max_row - 1,
+            "byTransactionStatus": dict(status_totals),
+            "byPrescriber": prescribers_list,
+            "byPrimaryThirdPartyPayer": primary_payers_list,
+            "bySecondaryThirdPartyPayer": secondary_payers_list,
+            "byMedicationAndNdc": medications_list,
+        },
+    }
+
+
+def build_metro_analysis_workbook():
+    """
+    Builds a tenant-scoped, aggregate-only analysisWorkbook for 'metro' ('Metro Health Center')
+    so Ask Bridge AI has full schema parity and zero Damien strings when logged in as 'metro'.
+    """
+    return {
+        "privacyPolicy": "AGGREGATE_ONLY_NO_MEMBER_LEVEL_DATA",
+        "sourceWorkbook": "Metro_Health_Sep2026_Analysis.xlsx",
+        "clientScope": "metro",
+        "exhibits": {
+            "enrollmentsBySourceMonthly": [
+                {"source": "Regional Brokers", "Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 18, "Jun": 52, "Jul": 64, "Aug": 95, "Sep": 88, "YTD": 317},
+                {"source": "Paid Media", "Jan": 8, "Feb": 12, "Mar": 19, "Apr": 25, "May": 32, "Jun": 44, "Jul": 38, "Aug": 54, "Sep": 58, "YTD": 290},
+                {"source": "Metro Employee", "Jan": 7, "Feb": 5, "Mar": 4, "Apr": 4, "May": 5, "Jun": 6, "Jul": 6, "Aug": 8, "Sep": 7, "YTD": 52},
+                {"source": "Grand Total", "Jan": 15, "Feb": 17, "Mar": 23, "Apr": 29, "May": 55, "Jun": 102, "Jul": 108, "Aug": 157, "Sep": 153, "YTD": 659},
+            ],
+            "brokerSharePctMonthly": {"Jan": "0.0%", "Feb": "0.0%", "Mar": "0.0%", "Apr": "0.0%", "May": "32.7%", "Jun": "51.0%", "Jul": "59.3%", "Aug": "60.5%", "Sep": "65.0%", "YTD": "48.1%"},
+            "cancellationsBySourceMonthly": [
+                {"source": "Total", "Jan": 2, "Feb": 3, "Mar": 5, "Apr": 6, "May": 9, "Jun": 18, "Jul": 21, "Aug": 26, "Sep": 29, "YTD": 119},
+            ],
+            "cancellationPctOfTotalEnrolledMonthly": {"Jan": "13.3%", "Feb": "17.6%", "Mar": "21.7%", "Apr": "20.7%", "May": "16.4%", "Jun": "17.6%", "Jul": "19.4%", "Aug": "16.6%", "Sep": "19.0%", "YTD": "18.1%"},
+            "activePatientTrackerMonthly": {"Jan": 15, "Feb": 28, "Mar": 49, "Apr": 78, "May": 115, "Jun": 210, "Jul": 295, "Aug": 420, "Sep": 540},
+            "monthlyNetAdditions": {"Jan": 15, "Feb": 13, "Mar": 21, "Apr": 29, "May": 37, "Jun": 95, "Jul": 85, "Aug": 125, "Sep": 120},
+            "notableEmployerGroupsMonthly": [
+                {"employerGroup": "Metro Transit Authority", "Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 8, "Jun": 18, "Jul": 22, "Aug": 34, "Sep": 30, "YTD": 112},
+                {"employerGroup": "Lakeside School District", "Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 5, "Jun": 14, "Jul": 19, "Aug": 25, "Sep": 22, "YTD": 85},
+                {"employerGroup": "Metro Health Patient", "Jan": 7, "Feb": 5, "Mar": 4, "Apr": 4, "May": 5, "Jun": 6, "Jul": 6, "Aug": 8, "Sep": 7, "YTD": 52},
+            ],
+            "dispensesByDoseMonthly": [
+                {"medicationDose": "Wegovy 0.25 Mg/0.5 Ml Pen", "Jan": 6, "Feb": 10, "Mar": 14, "Apr": 22, "May": 30, "Jun": 45, "Jul": 62, "Aug": 75, "Sep": 90, "YTD": 354},
+                {"medicationDose": "Wegovy 0.5 Mg/0.5 Ml Pen", "Jan": 0, "Feb": 5, "Mar": 10, "Apr": 16, "May": 24, "Jun": 38, "Jul": 50, "Aug": 68, "Sep": 82, "YTD": 293},
+                {"medicationDose": "Wegovy 1 Mg/0.5 Ml Pen", "Jan": 0, "Feb": 0, "Mar": 4, "Apr": 10, "May": 18, "Jun": 30, "Jul": 44, "Aug": 58, "Sep": 98, "YTD": 262},
+                {"medicationDose": "Wegovy 1.5 Mg Tablet", "Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 0, "Jun": 24, "Jul": 58, "Aug": 110, "Sep": 155, "YTD": 347},
+                {"medicationDose": "Ozempic 1 Mg/dose Pen", "Jan": 0, "Feb": 0, "Mar": 1, "Apr": 2, "May": 2, "Jun": 3, "Jul": 4, "Aug": 6, "Sep": 5, "YTD": 23},
+                {"medicationDose": "Grand Total", "Jan": 6, "Feb": 15, "Mar": 29, "Apr": 50, "May": 74, "Jun": 140, "Jul": 218, "Aug": 418, "Sep": 430, "YTD": 1380},
+            ],
+            "monthlyPnL": {
+                "Rx Count": {"Jan": 6, "Feb": 15, "Mar": 29, "Apr": 50, "May": 74, "Jun": 140, "Jul": 218, "Aug": 418, "Sep": 430, "YTD": 1380},
+                "Revenue": {"Jan": 6840, "Feb": 17100, "Mar": 33060, "Apr": 57000, "May": 84360, "Jun": 160300, "Jul": 249610, "Aug": 479610, "Sep": 492520, "YTD": 1580400},
+                "Gross Margin": {"Jan": 5130, "Feb": 12825, "Mar": 24795, "Apr": 42750, "May": 63270, "Jun": 120225, "Jul": 187208, "Aug": 364262, "Sep": 384835, "YTD": 1185300},
+                "Sub. Fees": {"Jan": 450, "Feb": 840, "Mar": 1470, "Apr": 2340, "May": 3450, "Jun": 4200, "Jul": 5100, "Aug": 6150, "Sep": 7200, "YTD": 31200},
+                "Gross Margin per Rx": {"Jan": 855.0, "Feb": 855.0, "Mar": 855.0, "Apr": 855.0, "May": 855.0, "Jun": 858.75, "Jul": 858.75, "Aug": 871.44, "Sep": 895.0, "YTD": 858.91},
+            },
+        },
+        "alphaAnalytics": {
+            "totalDamienMembershipRows": 0,
+            "nonTestMembers": 659,
+            "totalCancelledMembers": 119,
+            "allEmployerGroups": [
+                {"employerGroup": "Metro Transit Authority", "partnerSource": "Regional Brokers", "totalEnrolled": 112, "activeMembers": 98, "cancelledMembers": 14},
+                {"employerGroup": "Lakeside School District", "partnerSource": "Regional Brokers", "totalEnrolled": 85, "activeMembers": 74, "cancelledMembers": 11},
+                {"employerGroup": "Metro Health Patient", "partnerSource": "Metro Employee", "totalEnrolled": 52, "activeMembers": 45, "cancelledMembers": 7},
+            ],
+        },
+        "dispenseAnalytics": {
+            "totalDispenseRows": 1450,
+            "byTransactionStatus": {
+                "Completed": {"fills": 1380, "revenue": 1580400.0, "acquisitionCost": 395100.0, "margin": 1185300.0},
+                "Cancelled": {"fills": 60, "revenue": 68400.0, "acquisitionCost": 17100.0, "margin": 51300.0},
+                "Waiting for Pick up": {"fills": 10, "revenue": 11400.0, "acquisitionCost": 2850.0, "margin": 8550.0},
+            },
+            "byPrescriber": [
+                {"prescriber": "Vance, Marcus", "npi": "1447609911", "completedFills": 520, "completedRevenue": 595400.0, "completedMargin": 446550.0, "avgMarginPerCompletedFill": 858.75},
+                {"prescriber": "Rostova, Elena", "npi": "1881920044", "completedFills": 460, "completedRevenue": 526700.0, "completedMargin": 395025.0, "avgMarginPerCompletedFill": 858.75},
+                {"prescriber": "Chen, David", "npi": "1992301122", "completedFills": 400, "completedRevenue": 458300.0, "completedMargin": 343725.0, "avgMarginPerCompletedFill": 859.31},
+            ],
+            "byPrimaryThirdPartyPayer": [
+                {"primaryPayer": "Wegovy Savings Card", "completedFills": 1260, "totalRevenue": 1442700.0, "margin": 1082025.0, "avgMarginPerCompletedFill": 858.75},
+                {"primaryPayer": "BlueCross Commercial", "completedFills": 120, "totalRevenue": 137700.0, "margin": 103275.0, "avgMarginPerCompletedFill": 860.63},
+            ],
+            "bySecondaryThirdPartyPayer": [
+                {"secondaryPayer": "Metro Weight Loss Assistance", "completedFills": 1180, "secondaryRemit": 295000.0, "totalRevenue": 1351100.0, "margin": 1013325.0},
+            ],
+            "byMedicationAndNdc": [
+                {"medicationName": "Wegovy 0.25 Mg/0.5 Ml Pen", "ndcs": ["00169452514"], "completedFills": 354, "completedRevenue": 405330.0, "completedMargin": 303998.0, "avgMarginPerFill": 858.75},
+                {"medicationName": "Wegovy 1.5 Mg Tablet", "ndcs": ["00169550130"], "completedFills": 347, "completedRevenue": 397315.0, "completedMargin": 297986.0, "avgMarginPerFill": 858.75},
+            ],
+        },
+    }
+
+
+def build_damien_portal_data(xlsx_path, analysis_xlsx_path=DEFAULT_ANALYSIS_XLSX):
     wb = openpyxl.load_workbook(xlsx_path, data_only=True)
     todo_headers, pharmacy_todo = extract_sheet_rows(wb["Pharmacy To-Do"], header_row_idx=4, start_row_idx=5)
     refill_headers, refill_followup = extract_sheet_rows(wb["Refill Follow-Up"], header_row_idx=4, start_row_idx=5)
@@ -228,6 +779,8 @@ def build_damien_portal_data(xlsx_path):
     assign_stable_keys_and_fuzzy_links(
         pharmacy_todo, refill_followup, fixes_no_id, fixes_unmatched, ended_never_filled
     )
+
+    analysis_workbook = parse_damien_analysis_workbook(analysis_xlsx_path)
 
     dashboard_data = {
         "meta": {
@@ -460,6 +1013,7 @@ def build_damien_portal_data(xlsx_path):
                 "rows": ended_never_filled,
             },
         },
+        "analysisWorkbook": analysis_workbook,
     }
     return dashboard_data
 
@@ -587,23 +1141,25 @@ def build_metro_portal_data(damien_data):
     metro["worklists"]["pharmacyDataFixes"]["unmatchedTitle"] = f"Patient IDs that don't match any program member ({len(unmatched_sub)} fills)"
     metro["worklists"]["pharmacyDataFixes"]["unmatchedRows"] = unmatched_sub
     metro["worklists"]["endedNeverFilled"]["rows"] = ended_sub
+    metro["analysisWorkbook"] = build_metro_analysis_workbook()
 
     return metro
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Ingest client PPTX + XLSX into data/clients/<clientId>/portal_data.json")
+    parser = argparse.ArgumentParser(description="Ingest client PPTX + XLSX + Analysis XLSX into data/clients/<clientId>/portal_data.json")
     parser.add_argument("--client", default="all", help="Client ID to ingest (damien, metro, or all)")
     parser.add_argument("--xlsx", default=os.path.join(SOURCE_DIR, "Damien_First_Fill_Worklist_Sep2026.xlsx"))
+    parser.add_argument("--analysis-xlsx", default=DEFAULT_ANALYSIS_XLSX)
     args = parser.parse_args()
 
-    damien_data = build_damien_portal_data(args.xlsx)
+    damien_data = build_damien_portal_data(args.xlsx, args.analysis_xlsx)
     damien_dir = os.path.join(CLIENTS_DIR, "damien")
     os.makedirs(damien_dir, exist_ok=True)
     damien_out = os.path.join(damien_dir, "portal_data.json")
     with open(damien_out, "w", encoding="utf-8") as f:
         json.dump(damien_data, f, indent=2, ensure_ascii=False)
-    print(f"Saved Damien baseline -> {damien_out}")
+    print(f"Saved Damien baseline (with aggregate analysisWorkbook) -> {damien_out}")
 
     # Also update legacy data/portal_data.json for backward compatibility
     legacy_out = os.path.join(BASE_DIR, "data", "portal_data.json")
@@ -616,7 +1172,7 @@ def main():
     metro_out = os.path.join(metro_dir, "portal_data.json")
     with open(metro_out, "w", encoding="utf-8") as f:
         json.dump(metro_data, f, indent=2, ensure_ascii=False)
-    print(f"Saved Metro Health baseline -> {metro_out}")
+    print(f"Saved Metro Health baseline (with aggregate analysisWorkbook) -> {metro_out}")
 
     registry = {
         "defaultClientId": "damien",

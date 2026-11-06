@@ -3949,5 +3949,434 @@
         }
       ]
     }
+  },
+  "analysisWorkbook": {
+    "privacyPolicy": "AGGREGATE_ONLY_NO_MEMBER_LEVEL_DATA",
+    "sourceWorkbook": "Metro_Health_Sep2026_Analysis.xlsx",
+    "clientScope": "metro",
+    "exhibits": {
+      "enrollmentsBySourceMonthly": [
+        {
+          "source": "Regional Brokers",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 18,
+          "Jun": 52,
+          "Jul": 64,
+          "Aug": 95,
+          "Sep": 88,
+          "YTD": 317
+        },
+        {
+          "source": "Paid Media",
+          "Jan": 8,
+          "Feb": 12,
+          "Mar": 19,
+          "Apr": 25,
+          "May": 32,
+          "Jun": 44,
+          "Jul": 38,
+          "Aug": 54,
+          "Sep": 58,
+          "YTD": 290
+        },
+        {
+          "source": "Metro Employee",
+          "Jan": 7,
+          "Feb": 5,
+          "Mar": 4,
+          "Apr": 4,
+          "May": 5,
+          "Jun": 6,
+          "Jul": 6,
+          "Aug": 8,
+          "Sep": 7,
+          "YTD": 52
+        },
+        {
+          "source": "Grand Total",
+          "Jan": 15,
+          "Feb": 17,
+          "Mar": 23,
+          "Apr": 29,
+          "May": 55,
+          "Jun": 102,
+          "Jul": 108,
+          "Aug": 157,
+          "Sep": 153,
+          "YTD": 659
+        }
+      ],
+      "brokerSharePctMonthly": {
+        "Jan": "0.0%",
+        "Feb": "0.0%",
+        "Mar": "0.0%",
+        "Apr": "0.0%",
+        "May": "32.7%",
+        "Jun": "51.0%",
+        "Jul": "59.3%",
+        "Aug": "60.5%",
+        "Sep": "65.0%",
+        "YTD": "48.1%"
+      },
+      "cancellationsBySourceMonthly": [
+        {
+          "source": "Total",
+          "Jan": 2,
+          "Feb": 3,
+          "Mar": 5,
+          "Apr": 6,
+          "May": 9,
+          "Jun": 18,
+          "Jul": 21,
+          "Aug": 26,
+          "Sep": 29,
+          "YTD": 119
+        }
+      ],
+      "cancellationPctOfTotalEnrolledMonthly": {
+        "Jan": "13.3%",
+        "Feb": "17.6%",
+        "Mar": "21.7%",
+        "Apr": "20.7%",
+        "May": "16.4%",
+        "Jun": "17.6%",
+        "Jul": "19.4%",
+        "Aug": "16.6%",
+        "Sep": "19.0%",
+        "YTD": "18.1%"
+      },
+      "activePatientTrackerMonthly": {
+        "Jan": 15,
+        "Feb": 28,
+        "Mar": 49,
+        "Apr": 78,
+        "May": 115,
+        "Jun": 210,
+        "Jul": 295,
+        "Aug": 420,
+        "Sep": 540
+      },
+      "monthlyNetAdditions": {
+        "Jan": 15,
+        "Feb": 13,
+        "Mar": 21,
+        "Apr": 29,
+        "May": 37,
+        "Jun": 95,
+        "Jul": 85,
+        "Aug": 125,
+        "Sep": 120
+      },
+      "notableEmployerGroupsMonthly": [
+        {
+          "employerGroup": "Metro Transit Authority",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 8,
+          "Jun": 18,
+          "Jul": 22,
+          "Aug": 34,
+          "Sep": 30,
+          "YTD": 112
+        },
+        {
+          "employerGroup": "Lakeside School District",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 5,
+          "Jun": 14,
+          "Jul": 19,
+          "Aug": 25,
+          "Sep": 22,
+          "YTD": 85
+        },
+        {
+          "employerGroup": "Metro Health Patient",
+          "Jan": 7,
+          "Feb": 5,
+          "Mar": 4,
+          "Apr": 4,
+          "May": 5,
+          "Jun": 6,
+          "Jul": 6,
+          "Aug": 8,
+          "Sep": 7,
+          "YTD": 52
+        }
+      ],
+      "dispensesByDoseMonthly": [
+        {
+          "medicationDose": "Wegovy 0.25 Mg/0.5 Ml Pen",
+          "Jan": 6,
+          "Feb": 10,
+          "Mar": 14,
+          "Apr": 22,
+          "May": 30,
+          "Jun": 45,
+          "Jul": 62,
+          "Aug": 75,
+          "Sep": 90,
+          "YTD": 354
+        },
+        {
+          "medicationDose": "Wegovy 0.5 Mg/0.5 Ml Pen",
+          "Jan": 0,
+          "Feb": 5,
+          "Mar": 10,
+          "Apr": 16,
+          "May": 24,
+          "Jun": 38,
+          "Jul": 50,
+          "Aug": 68,
+          "Sep": 82,
+          "YTD": 293
+        },
+        {
+          "medicationDose": "Wegovy 1 Mg/0.5 Ml Pen",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 4,
+          "Apr": 10,
+          "May": 18,
+          "Jun": 30,
+          "Jul": 44,
+          "Aug": 58,
+          "Sep": 98,
+          "YTD": 262
+        },
+        {
+          "medicationDose": "Wegovy 1.5 Mg Tablet",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 24,
+          "Jul": 58,
+          "Aug": 110,
+          "Sep": 155,
+          "YTD": 347
+        },
+        {
+          "medicationDose": "Ozempic 1 Mg/dose Pen",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 1,
+          "Apr": 2,
+          "May": 2,
+          "Jun": 3,
+          "Jul": 4,
+          "Aug": 6,
+          "Sep": 5,
+          "YTD": 23
+        },
+        {
+          "medicationDose": "Grand Total",
+          "Jan": 6,
+          "Feb": 15,
+          "Mar": 29,
+          "Apr": 50,
+          "May": 74,
+          "Jun": 140,
+          "Jul": 218,
+          "Aug": 418,
+          "Sep": 430,
+          "YTD": 1380
+        }
+      ],
+      "monthlyPnL": {
+        "Rx Count": {
+          "Jan": 6,
+          "Feb": 15,
+          "Mar": 29,
+          "Apr": 50,
+          "May": 74,
+          "Jun": 140,
+          "Jul": 218,
+          "Aug": 418,
+          "Sep": 430,
+          "YTD": 1380
+        },
+        "Revenue": {
+          "Jan": 6840,
+          "Feb": 17100,
+          "Mar": 33060,
+          "Apr": 57000,
+          "May": 84360,
+          "Jun": 160300,
+          "Jul": 249610,
+          "Aug": 479610,
+          "Sep": 492520,
+          "YTD": 1580400
+        },
+        "Gross Margin": {
+          "Jan": 5130,
+          "Feb": 12825,
+          "Mar": 24795,
+          "Apr": 42750,
+          "May": 63270,
+          "Jun": 120225,
+          "Jul": 187208,
+          "Aug": 364262,
+          "Sep": 384835,
+          "YTD": 1185300
+        },
+        "Sub. Fees": {
+          "Jan": 450,
+          "Feb": 840,
+          "Mar": 1470,
+          "Apr": 2340,
+          "May": 3450,
+          "Jun": 4200,
+          "Jul": 5100,
+          "Aug": 6150,
+          "Sep": 7200,
+          "YTD": 31200
+        },
+        "Gross Margin per Rx": {
+          "Jan": 855.0,
+          "Feb": 855.0,
+          "Mar": 855.0,
+          "Apr": 855.0,
+          "May": 855.0,
+          "Jun": 858.75,
+          "Jul": 858.75,
+          "Aug": 871.44,
+          "Sep": 895.0,
+          "YTD": 858.91
+        }
+      }
+    },
+    "alphaAnalytics": {
+      "totalDamienMembershipRows": 0,
+      "nonTestMembers": 659,
+      "totalCancelledMembers": 119,
+      "allEmployerGroups": [
+        {
+          "employerGroup": "Metro Transit Authority",
+          "partnerSource": "Regional Brokers",
+          "totalEnrolled": 112,
+          "activeMembers": 98,
+          "cancelledMembers": 14
+        },
+        {
+          "employerGroup": "Lakeside School District",
+          "partnerSource": "Regional Brokers",
+          "totalEnrolled": 85,
+          "activeMembers": 74,
+          "cancelledMembers": 11
+        },
+        {
+          "employerGroup": "Metro Health Patient",
+          "partnerSource": "Metro Employee",
+          "totalEnrolled": 52,
+          "activeMembers": 45,
+          "cancelledMembers": 7
+        }
+      ]
+    },
+    "dispenseAnalytics": {
+      "totalDispenseRows": 1450,
+      "byTransactionStatus": {
+        "Completed": {
+          "fills": 1380,
+          "revenue": 1580400.0,
+          "acquisitionCost": 395100.0,
+          "margin": 1185300.0
+        },
+        "Cancelled": {
+          "fills": 60,
+          "revenue": 68400.0,
+          "acquisitionCost": 17100.0,
+          "margin": 51300.0
+        },
+        "Waiting for Pick up": {
+          "fills": 10,
+          "revenue": 11400.0,
+          "acquisitionCost": 2850.0,
+          "margin": 8550.0
+        }
+      },
+      "byPrescriber": [
+        {
+          "prescriber": "Vance, Marcus",
+          "npi": "1447609911",
+          "completedFills": 520,
+          "completedRevenue": 595400.0,
+          "completedMargin": 446550.0,
+          "avgMarginPerCompletedFill": 858.75
+        },
+        {
+          "prescriber": "Rostova, Elena",
+          "npi": "1881920044",
+          "completedFills": 460,
+          "completedRevenue": 526700.0,
+          "completedMargin": 395025.0,
+          "avgMarginPerCompletedFill": 858.75
+        },
+        {
+          "prescriber": "Chen, David",
+          "npi": "1992301122",
+          "completedFills": 400,
+          "completedRevenue": 458300.0,
+          "completedMargin": 343725.0,
+          "avgMarginPerCompletedFill": 859.31
+        }
+      ],
+      "byPrimaryThirdPartyPayer": [
+        {
+          "primaryPayer": "Wegovy Savings Card",
+          "completedFills": 1260,
+          "totalRevenue": 1442700.0,
+          "margin": 1082025.0,
+          "avgMarginPerCompletedFill": 858.75
+        },
+        {
+          "primaryPayer": "BlueCross Commercial",
+          "completedFills": 120,
+          "totalRevenue": 137700.0,
+          "margin": 103275.0,
+          "avgMarginPerCompletedFill": 860.63
+        }
+      ],
+      "bySecondaryThirdPartyPayer": [
+        {
+          "secondaryPayer": "Metro Weight Loss Assistance",
+          "completedFills": 1180,
+          "secondaryRemit": 295000.0,
+          "totalRevenue": 1351100.0,
+          "margin": 1013325.0
+        }
+      ],
+      "byMedicationAndNdc": [
+        {
+          "medicationName": "Wegovy 0.25 Mg/0.5 Ml Pen",
+          "ndcs": [
+            "00169452514"
+          ],
+          "completedFills": 354,
+          "completedRevenue": 405330.0,
+          "completedMargin": 303998.0,
+          "avgMarginPerFill": 858.75
+        },
+        {
+          "medicationName": "Wegovy 1.5 Mg Tablet",
+          "ndcs": [
+            "00169550130"
+          ],
+          "completedFills": 347,
+          "completedRevenue": 397315.0,
+          "completedMargin": 297986.0,
+          "avgMarginPerFill": 858.75
+        }
+      ]
+    }
   }
 }

@@ -662,7 +662,8 @@ app.get('/api/worklist/export/:sheet', async (req, res) => {
 });
 
 // ============================================================================
-// TENANT-ISOLATED NATURAL-LANGUAGE ANALYTICS & WORKLIST Q&A ENGINE (/api/ask)
+// TENANT-ISOLATED AGGREGATE ANALYTICS & WORKLIST Q&A ENGINE (/api/ask)
+// ZERO MEMBER-LEVEL / PATIENT-LEVEL DATA EXPOSED IN AI Q&A
 // ============================================================================
 function countByField(rows, field) {
   const counts = {};
@@ -673,69 +674,233 @@ function countByField(rows, field) {
   return counts;
 }
 
+function isMemberLevelQuery(state, rawQuestion) {
+  const q = String(rawQuestion || '').trim();
+  const ql = q.toLowerCase();
+  const wl = state.worklists || {};
+  const allRows = getAllWorklistRows(wl);
+
+  // Explicit member/patient record lookup phrases (excluding aggregate data-fix summary questions)
+  const isAggregateFixQuestion =
+    ql.includes('how many') || ql.includes('count') || ql.includes('total') ||
+    ql.includes('summary') || ql.includes('unmatched') || ql.includes('no patient') ||
+    ql.includes('missing') || ql.includes('fuzzy');
+
+  if (
+    !isAggregateFixQuestion &&
+    (ql.includes('member id') || ql.includes('patient id') || ql.includes('uuid') ||
+     ql.includes('individual member') || ql.includes('individual patient') ||
+     ql.includes('specific patient') || ql.includes('specific member') ||
+     ql.includes('patient record') || ql.includes('member record'))
+  ) {
+    return true;
+  }
+
+  // Check if any token matches a known member/patient ID in the worklist or looks like an 8-char hex member ID
+  const tokens = ql.split(/[\s,?;:!()'"]+/).filter(t => t.length >= 6);
+  for (const tok of tokens) {
+    if (/^[0-9a-f]{8}(-[0-9a-f]{4,})?$/.test(tok) || tok === 'trinidad') {
+      return true;
+    }
+    const cleanTok = tok.replace(/^todo-|^refill-|^ended-|^fix-noid-|^fix-unmatched-/, '');
+    if (cleanTok.length >= 6 && /[0-9]/.test(cleanTok)) {
+      const matched = allRows.some(r =>
+        String(r['Pharmacy patient ID'] || '').toLowerCase() === cleanTok ||
+        String(r['Alpha member ID'] || '').toLowerCase().startsWith(cleanTok) ||
+        String(r['Patient ID on file'] || '').toLowerCase() === cleanTok
+      );
+      if (matched) return true;
+    }
+  }
+  return false;
+}
+
+function buildMemberPrivacyGuardrailReply(state, rawQuestion) {
+  const meta = state.meta || {};
+  return {
+    question: String(rawQuestion || '').trim(),
+    memberLevelBlocked: true,
+    answer:
+      `For member privacy, **Ask Bridge AI** only provides **aggregate** program, financial, channel, employer, prescriber, payer, medication, and worklist summary analytics for **${meta.client || 'this program'}**—individual member-level and patient-level records are not included in AI Q&A.\n\n` +
+      `To look up or update a specific patient ID, please use the search bar in the **Pharmacy To-Do**, **Refill Follow-Up**, **Pharmacy Data Fixes**, or **Ended Memberships** tabs.`
+  };
+}
+
 function answerQuestion(state, rawQuestion) {
   const q = String(rawQuestion || '').trim();
   const ql = q.toLowerCase();
   const wl = state.worklists;
   const meta = state.meta || {};
   const summary = computeWorklistSummary(wl);
+  const aw = state.analysisWorkbook || {};
+  const ex = aw.exhibits || {};
+  const alpha = aw.alphaAnalytics || {};
+  const disp = aw.dispenseAnalytics || {};
 
-  const allTodo = wl.pharmacyTodo.rows;
-  const allRefill = wl.refillFollowup.rows;
-  const allNoId = wl.pharmacyDataFixes.noIdRows;
-  const allUnmatched = wl.pharmacyDataFixes.unmatchedRows;
-  const allEnded = wl.endedNeverFilled.rows;
-  const totalWlRecords = allTodo.length + allRefill.length + allNoId.length + allUnmatched.length + allEnded.length;
-
-  const tokens = ql.split(/[\s,?;:!()'"]+/).filter(t => t.length >= 4);
-  const stopWords = new Set([
-    'what', 'where', 'when', 'which', 'who', 'whom', 'whose', 'why', 'how', 'many', 'much',
-    'show', 'tell', 'give', 'list', 'find', 'search', 'about', 'from', 'with', 'without',
-    'have', 'does', 'were', 'been', 'this', 'that', 'these', 'those', 'their', 'there',
-    'program', 'damien', 'metro', 'bridge', 'health', 'alpha', 'member', 'members', 'patient', 'patients',
-    'fill', 'fills', 'first', 'refill', 'refills', 'month', 'months', 'september', 'august',
-    'july', 'june', 'total', 'proceeds', 'revenue', 'margin', 'spend', 'media', 'paid',
-    'epic', 'broker', 'partners', 'source', 'sources', 'wegovy', 'ozempic', 'pill', 'pen',
-    'worklist', 'todo', 'to-do', 'urgent', 'cancellation', 'pending', 'cancelled', 'status',
-    'fixes', 'unmatched', 'alternate', 'ended', 'never', 'filled', 'funnel', 'provider',
-    'visit', 'prescribed', 'retention', 'cohort', 'staying', 'long', 'employer', 'group',
-    'groups', 'prescriber', 'prescribers', 'payer', 'payers', 'cost', 'fees', 'commission',
-    'commissions', 'gross', 'return', 'roas', 'started', 'therapy', 'step', 'steps', 'time',
-    'median', 'between', 'rate', 'rates', 'share', 'table', 'chart', 'data', 'notes', 'appendix'
-  ]);
-
-  // 1. Direct patient ID match across all sheets
-  for (const tok of tokens) {
-    if (stopWords.has(tok)) continue;
-    const isIdCandidate = (/[0-9]/.test(tok) && /^[0-9a-z-]{6,}$/.test(tok)) || tok === 'trinidad';
-    if (!isIdCandidate) continue;
-    const matchedTodo = allTodo.filter(r =>
-      String(r['Pharmacy patient ID'] || '').toLowerCase().includes(tok) ||
-      String(r['Alpha member ID'] || '').toLowerCase().includes(tok)
-    );
-    const matchedRefill = allRefill.filter(r =>
-      String(r['Pharmacy patient ID'] || '').toLowerCase().includes(tok) ||
-      String(r['Alpha member ID'] || '').toLowerCase().includes(tok)
-    );
-    const matchedUnmatched = allUnmatched.filter(r =>
-      String(r['Patient ID on file'] || '').toLowerCase().includes(tok) ||
-      (r.suggestedMatch && String(r.suggestedMatch.suggestedPatientId).toLowerCase().includes(tok))
-    );
-    const matchedEnded = allEnded.filter(r =>
-      String(r['Pharmacy patient ID'] || '').toLowerCase().includes(tok) ||
-      String(r['Alpha member ID'] || '').toLowerCase().includes(tok)
-    );
-
-    const totalHits = matchedTodo.length + matchedRefill.length + matchedUnmatched.length + matchedEnded.length;
-    if (totalHits > 0 && totalHits <= 15) {
-      return {
-        question: q,
-        answer: `I searched all ${totalWlRecords} operational records for **${meta.client}** across **Pharmacy To-Do**, **Refill Follow-Up**, **Pharmacy Data Fixes**, and **Ended – Never Filled** for \`${tok}\` and found **${totalHits} matching record(s)**.`
-      };
-    }
+  // 0. Strict Member-Level Privacy Guardrail (Zero member/patient records in AI Q&A)
+  if (isMemberLevelQuery(state, q)) {
+    return buildMemberPrivacyGuardrailReply(state, q);
   }
 
-  // 2. Fuzzy ID / Unmatched Patient ID / Data Fixes
+  const allTodo = wl.pharmacyTodo.rows;
+  const allUnmatched = wl.pharmacyDataFixes.unmatchedRows;
+
+  // 1. Prescriber questions (from Dispense Data in September 2026 Analysis.xlsx)
+  const prescribers = disp.byPrescriber || [];
+  const matchedPrescriber = prescribers.find(p => {
+    const parts = String(p.prescriber || '').toLowerCase().split(/[,\s]+/).filter(x => x.length >= 4);
+    return parts.some(part => ql.includes(part)) || (p.npi && ql.includes(String(p.npi)));
+  });
+  if (matchedPrescriber || ql.includes('prescriber') || ql.includes('provider') && (ql.includes('fill') || ql.includes('revenue') || ql.includes('margin') || ql.includes('top') || ql.includes('most'))) {
+    if (matchedPrescriber) {
+      return {
+        question: q,
+        answer:
+          `For **${meta.client}** at **${meta.pharmacyPartner}**, prescriber **${matchedPrescriber.prescriber}** (NPI \`${matchedPrescriber.npi || 'N/A'}\`) has **${matchedPrescriber.completedFills} completed fills**` +
+          (matchedPrescriber.cancelledFills !== undefined ? ` (${matchedPrescriber.cancelledFills} cancelled, ${matchedPrescriber.waitingForPickupFills || 0} waiting for pickup)` : '') +
+          `, generating **$${Number(matchedPrescriber.completedRevenue || 0).toLocaleString()}** in total pharmacy revenue and **$${Number(matchedPrescriber.completedMargin || 0).toLocaleString()}** in pharmacy gross margin (**$${Number(matchedPrescriber.avgMarginPerCompletedFill || 0).toLocaleString()}** average margin per completed fill).`
+      };
+    }
+    const topP = prescribers.slice(0, 6).map(p =>
+      `• **${p.prescriber}** (NPI \`${p.npi}\`): **${p.completedFills}** completed fills · **$${Number(p.completedRevenue).toLocaleString()}** revenue · **$${Number(p.completedMargin).toLocaleString()}** margin ($${Number(p.avgMarginPerCompletedFill).toLocaleString()}/fill)`
+    ).join('\n');
+    return {
+      question: q,
+      answer:
+        `**Top Prescribers by Completed Fills at ${meta.pharmacyPartner} (${meta.client})**:\n${topP}`
+    };
+  }
+
+  // 2. Payer / Third-Party / Savings Card / Remit / Copay / Acquisition Cost questions (from Dispense Data)
+  if (
+    ql.includes('payer') || ql.includes('third party') || ql.includes('savings card') ||
+    ql.includes('connective') || ql.includes('anthem') || ql.includes('loyalty') ||
+    ql.includes('remit') || ql.includes('copay') || ql.includes('acquisition cost') ||
+    ql.includes('dc inj') || ql.includes('secondary')
+  ) {
+    const p1List = (disp.byPrimaryThirdPartyPayer || []).slice(0, 6).map(p =>
+      `• **${p.primaryPayer}**: **${p.completedFills.toLocaleString()}** completed fills · **$${Number(p.totalRevenue).toLocaleString()}** revenue · **$${Number(p.acquisitionCost || 0).toLocaleString()}** acquisition cost · **$${Number(p.margin).toLocaleString()}** margin`
+    ).join('\n');
+    const p2List = (disp.bySecondaryThirdPartyPayer || []).slice(0, 4).map(p =>
+      `• **${p.secondaryPayer}**: **${p.completedFills.toLocaleString()}** completed fills · **$${Number(p.secondaryRemit || 0).toLocaleString()}** secondary remit`
+    ).join('\n');
+    return {
+      question: q,
+      answer:
+        `**Third-Party Payer & Savings Card Breakdown at ${meta.pharmacyPartner} (${meta.client})**:\n` +
+        `**Primary Third-Party Payers:**\n${p1List}\n\n` +
+        `**Secondary Third-Party Payers / Programs:**\n${p2List}`
+    };
+  }
+
+  // 3. Specific Medication Dose Strengths / NDC / Pill vs Pen questions (from Exhibits & Dispense Data)
+  if (
+    ql.includes('dose') || ql.includes('strength') || ql.includes('0.25') || ql.includes('0.5') ||
+    ql.includes('1.7') || ql.includes('2.4') || ql.includes('7.2') || ql.includes('1.5') ||
+    ql.includes('25 mg') || ql.includes('25mg') || ql.includes('4 mg') || ql.includes('4mg') ||
+    ql.includes('9 mg') || ql.includes('9mg') || ql.includes('tablet') || ql.includes('ndc') ||
+    (ql.includes('wegovy') && (ql.includes('breakdown') || ql.includes('month') || ql.includes('by drug'))) ||
+    (ql.includes('ozempic') && (ql.includes('breakdown') || ql.includes('month') || ql.includes('dose')))
+  ) {
+    const doses = ex.dispensesByDoseMonthly || [];
+    const doseLines = doses
+      .filter(d => d.medicationDose !== 'Grand Total')
+      .map(d => `• **${d.medicationDose}**: **${d.Sep}** in Sep · **${d.Aug}** in Aug · **${d.YTD}** YTD`)
+      .join('\n');
+    const totalRow = doses.find(d => d.medicationDose === 'Grand Total');
+    return {
+      question: q,
+      answer:
+        `**GLP-1 Dispenses by Specific Medication & Dose Strength (${meta.client})**:\n${doseLines}\n` +
+        (totalRow ? `\n**Total GLP-1 Fills**: **${totalRow.Sep}** in September (**${totalRow.YTD.toLocaleString()}** YTD).` : '')
+    };
+  }
+
+  // 4. Cancellations / Churn / Auto-Disenrolled by Source & Month (from Exhibits & Alpha Data)
+  if (
+    ql.includes('cancel') || ql.includes('churn') || ql.includes('disenroll') || ql.includes('attrition')
+  ) {
+    const cancRows = ex.cancellationsBySourceMonthly || [];
+    const totalCancRow = cancRows.find(r => r.source === 'Total') || {};
+    const pctRow = ex.cancellationPctOfTotalEnrolledMonthly || {};
+    const bySourceLines = cancRows
+      .filter(r => r.source !== 'Total')
+      .map(r => `• **${r.source}**: **${r.Sep || 0}** in Sep · **${r.Aug || 0}** in Aug · **${r.YTD || 0}** YTD`)
+      .join('\n');
+    return {
+      question: q,
+      answer:
+        `**Membership Cancellations by Source & Month (${meta.client})**:\n` +
+        `• **Total Cancellations**: **${totalCancRow.YTD ?? alpha.totalCancelledMembers ?? 264}** YTD (**${pctRow.YTD || '25.5%'}** of total enrolled), with **${totalCancRow.Sep ?? 91}** in September (**${pctRow.Sep || '33.3%'}**) and **${totalCancRow.Aug ?? 75}** in August (**${pctRow.Aug || '27.1%'}**).\n` +
+        (alpha.totalAutoDisenrolledMembers ? `• **Auto-Disenrolled Members**: **${alpha.totalAutoDisenrolledMembers}** YTD.\n` : '') +
+        (bySourceLines ? `\n**Cancellations by Channel:**\n${bySourceLines}` : '')
+    };
+  }
+
+  // 5. Active Patient Tracker & Monthly Net Additions (from Exhibits)
+  if (
+    ql.includes('tracker') || ql.includes('net addition') || ql.includes('additions by month') ||
+    (ql.includes('active') && ql.includes('by month'))
+  ) {
+    const tr = ex.activePatientTrackerMonthly || {};
+    const add = ex.monthlyNetAdditions || {};
+    const months = Object.keys(tr);
+    const line = months.map(m => `**${m}**: ${tr[m]} active (${add[m] ? `+${add[m]} net` : 'baseline'})`).join(' · ');
+    return {
+      question: q,
+      answer: `**Month-End Active Patient Tracker & Net Monthly Additions (${meta.client})**:\n${line}`
+    };
+  }
+
+  // 6. Employer Groups, Referral Codes (ref_code) & Coupon Codes (from Exhibits, Alpha Data & Lookups)
+  if (
+    ql.includes('employer') || ql.includes('evansville') || ql.includes('putnam') ||
+    ql.includes('hamilton') || ql.includes('gcs') || ql.includes('benton') ||
+    ql.includes('therapy services') || ql.includes('warrick') || ql.includes('lawrence') ||
+    ql.includes('imcu') || ql.includes('pcsc') || ql.includes('terre haute') ||
+    ql.includes('drg') || ql.includes('bose') || ql.includes('kvc') || ql.includes('clay county') ||
+    ql.includes('four rivers') || ql.includes('jennings') || ql.includes('little star') ||
+    ql.includes('first financial') || ql.includes('ref code') || ql.includes('ref_code') ||
+    ql.includes('referral code') || ql.includes('coupon') || ql.includes('company') ||
+    ql.includes('companies') || ql.includes('metro transit') || ql.includes('lakeside')
+  ) {
+    const allGroups = alpha.allEmployerGroups || [];
+    const matchedGroup = allGroups.find(g =>
+      g.employerGroup !== 'No Employer Group / Direct' &&
+      ql.includes(g.employerGroup.toLowerCase())
+    );
+    const notableMonthly = ex.notableEmployerGroupsMonthly || [];
+    const matchedNotable = notableMonthly.find(n => ql.includes(n.employerGroup.toLowerCase()));
+
+    if (matchedGroup || matchedNotable) {
+      const gName = (matchedNotable && matchedNotable.employerGroup) || matchedGroup.employerGroup;
+      const mLine = matchedNotable
+        ? `Monthly enrollments: Jun **${matchedNotable.Jun || 0}**, Jul **${matchedNotable.Jul || 0}**, Aug **${matchedNotable.Aug || 0}**, Sep **${matchedNotable.Sep || 0}** (**${matchedNotable.YTD}** YTD). `
+        : '';
+      const aLine = matchedGroup
+        ? `Across Alpha membership data, **${gName}** (${matchedGroup.partnerSource || 'Employer Partner'}, ref code: \`${(matchedGroup.refCodes || []).join(', ') || 'N/A'}\`) has **${matchedGroup.totalEnrolled} total enrolled** (**${matchedGroup.activeMembers} active**, **${matchedGroup.cancelledMembers} cancelled**).`
+        : '';
+      return {
+        question: q,
+        answer: `**${gName} — ${meta.client} Employer Enrollment Summary**:\n${mLine}${aLine}`
+      };
+    }
+
+    const topNotable = notableMonthly.slice(0, 14).map(n =>
+      `• **${n.employerGroup}**: **${n.YTD}** YTD (Aug: ${n.Aug || 0}, Sep: ${n.Sep || 0})`
+    ).join('\n');
+    const couponSummary = alpha.couponCodeCounts
+      ? Object.entries(alpha.couponCodeCounts).map(([k, v]) => `\`${k}\` (${v})`).join(', ')
+      : '';
+    return {
+      question: q,
+      answer:
+        `**Top Employer Groups by YTD Enrollment (${meta.client})**:\n${topNotable}` +
+        (couponSummary ? `\n\n**Coupon Codes Used**: ${couponSummary}` : '')
+    };
+  }
+
+  // 7. Fuzzy ID / Unmatched Patient ID / Data Fixes (Aggregate summary only)
   if (
     ql.includes('fuzzy') || ql.includes('unmatched') || ql.includes('data fix') ||
     ql.includes('alternate id') || ql.includes('don\'t match') || ql.includes('dont match') ||
@@ -750,36 +915,35 @@ function answerQuestion(state, rawQuestion) {
     };
   }
 
-  // 3. Employer group questions
-  if (ql.includes('employer') || ql.includes('evansville') || ql.includes('warrick') || ql.includes('hamilton') || ql.includes('harsha') || ql.includes('company') || ql.includes('companies')) {
-    const groupCountsTodo = countByField(allTodo, 'Employer group');
-    const topGroups = Object.entries(groupCountsTodo)
-      .filter(([g]) => g !== 'Unlisted / None')
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 4)
-      .map(([g, c]) => `**${g}** (${c} active To-Do)`)
-      .join(', ');
-    return {
-      question: q,
-      answer: `Across **${meta.client}**'s **Pharmacy To-Do** (${summary.todoTotal} active unfilled patients) and **Ended – Never Filled** (${summary.endedTotal} members) queues, the top employer groups are ${topGroups || 'individual enrollees'}.`
-    };
-  }
-
-  // 4. Financials / P&L / Proceeds / Revenue
-  if (ql.includes('financial') || ql.includes('proceeds') || ql.includes('p&l') || ql.includes('pnl') || ql.includes('revenue') || ql.includes('profit') || ql.includes('fee') || ql.includes('commission') || ql.includes('962k') || ql.includes('371k') || ql.includes('911') || ql.includes('cost to fill')) {
+  // 8. Financials / Monthly P&L / Proceeds / Revenue / Margin per Rx / Fees
+  if (
+    ql.includes('financial') || ql.includes('proceeds') || ql.includes('p&l') || ql.includes('pnl') ||
+    ql.includes('revenue') || ql.includes('profit') || ql.includes('fee') || ql.includes('commission') ||
+    ql.includes('962k') || ql.includes('371k') || ql.includes('911') || ql.includes('cost to fill') ||
+    ql.includes('margin') || ql.includes('monthly') || ql.includes('august') || ql.includes('july') ||
+    ql.includes('june')
+  ) {
     const s3 = state.slide3_financials;
     const revRow = s3.ytdTable.find(r => r.item === 'Pharmacy revenue');
+    const gmRow = s3.ytdTable.find(r => r.item === 'Pharmacy gross margin');
     const feesRow = s3.ytdTable.find(r => r.item === 'Membership fees collected');
     const procRow = s3.ytdTable.find(r => r.item === 'Program proceeds');
     const sepProceeds = s3.monthlyProceeds.values[s3.monthlyProceeds.values.length - 1];
+    const mpnl = ex.monthlyPnL || {};
+    const mRev = mpnl['Revenue'] || {};
+    const mGm = mpnl['Gross Margin'] || {};
+    const mRx = mpnl['Rx Count'] || {};
+    const mSub = mpnl['Sub. Fees'] || {};
+    const mPerRx = mpnl['Gross Margin per Rx'] || {};
+
     return {
       question: q,
       answer:
-        `**${meta.client} Revenue & Net Proceeds Through ${meta.asOfDateFormatted || 'September 30, 2026'}**:\n` +
-        `• **Pharmacy revenue (YTD)**: **${revRow ? revRow.formatted : '$2,336,983'}** (across ${s3.totalFillsInPnl.toLocaleString()} completed GLP-1 fills)\n` +
-        `• **Membership fees collected (YTD)**: **+${feesRow ? feesRow.formatted : '$44,164'}**\n` +
-        `• **Net Program Proceeds (September)**: **$${sepProceeds.toLocaleString()}** (after ad spend; monthly top-line pharmacy revenue is not broken out separately by month)\n` +
-        `• **Net Program Proceeds (YTD)**: **${procRow ? procRow.formatted : '$961,691'}** net of platform fees, media spend, broker commissions, and $${s3.costPerFill}/fill dispensing cost.`
+        `**${meta.client} Financial Performance & Monthly P&L Through ${meta.asOfDateFormatted || 'September 30, 2026'}**:\n` +
+        `• **Pharmacy Revenue**: **${revRow ? revRow.formatted : '$2,336,983'}** YTD across **${s3.totalFillsInPnl.toLocaleString()}** GLP-1 fills (Monthly: Jun **$${Number(mRev.Jun || 0).toLocaleString()}**, Jul **$${Number(mRev.Jul || 0).toLocaleString()}**, Aug **$${Number(mRev.Aug || 0).toLocaleString()}**, Sep **$${Number(mRev.Sep || 0).toLocaleString()}**)\n` +
+        `• **Pharmacy Gross Margin**: **${gmRow ? gmRow.formatted : '$1,758,625'}** YTD deck headline / **$${Number(mGm.YTD || 0).toLocaleString()}** pre-adjustment worksheet (Sep: **$${Number(mGm.Sep || 0).toLocaleString()}** or **$${mPerRx.Sep || s3.septemberGrossMarginPerFill}/Rx**; Aug: **$${Number(mGm.Aug || 0).toLocaleString()}** or **$${mPerRx.Aug || 922.70}/Rx**; YTD avg: **$${mPerRx.YTD || 863.10}/Rx**)\n` +
+        `• **Membership Fees Collected**: **+${feesRow ? feesRow.formatted : '$44,164'}** YTD (Sep: **$${Number(mSub.Sep || 0).toLocaleString()}**, Aug: **$${Number(mSub.Aug || 0).toLocaleString()}**)\n` +
+        `• **Net Program Proceeds (After Ad Spend & Fees)**: **$${sepProceeds.toLocaleString()}** in September (on **${mRx.Sep || 673}** fills) and **${procRow ? procRow.formatted : '$961,691'}** YTD.`
     };
   }
 
@@ -803,7 +967,7 @@ function answerQuestion(state, rawQuestion) {
   };
 }
 
-function buildGeminiDataContext(state, question) {
+function buildGeminiDataContext(state) {
   const wl = state.worklists;
   const todoRows = wl.pharmacyTodo.rows;
   const refillRows = wl.refillFollowup.rows;
@@ -811,37 +975,9 @@ function buildGeminiDataContext(state, question) {
   const unmatchedRows = wl.pharmacyDataFixes.unmatchedRows;
   const endedRows = wl.endedNeverFilled.rows;
 
-  const ql = String(question || '').toLowerCase();
-  const stop = new Set([
-    'what', 'where', 'when', 'which', 'who', 'whom', 'whose', 'why', 'how', 'many', 'much',
-    'show', 'tell', 'give', 'list', 'find', 'search', 'about', 'from', 'with', 'without',
-    'have', 'does', 'were', 'been', 'this', 'that', 'these', 'those', 'their', 'there',
-    'program', 'damien', 'metro', 'bridge', 'health', 'alpha', 'member', 'members', 'patient', 'patients',
-    'fill', 'fills', 'first', 'refill', 'refills', 'month', 'months', 'september', 'total',
-    'worklist', 'todo', 'to-do', 'status', 'stage', 'source', 'sources', 'prescribed', 'filled',
-    'between', 'the', 'and', 'for', 'are', 'was', 'not', 'all', 'any', 'can', 'you', 'our'
-  ]);
-  const kwTokens = ql.split(/[\s,?;:!()'"]+/).filter(t => t.length >= 3 && !stop.has(t));
-
-  const matchedRecords = [];
-  if (kwTokens.length > 0) {
-    const scanSheet = (sheetName, rows) => {
-      for (const r of rows) {
-        const hay = JSON.stringify(r).toLowerCase();
-        if (kwTokens.some(tok => hay.includes(tok))) {
-          matchedRecords.push({ queue: sheetName, record: r });
-          if (matchedRecords.length >= 35) break;
-        }
-      }
-    };
-    scanSheet('Pharmacy To-Do', todoRows);
-    if (matchedRecords.length < 35) scanSheet('Refill Follow-Up', refillRows);
-    if (matchedRecords.length < 35) scanSheet('Pharmacy Data Fixes (Unmatched ID)', unmatchedRows);
-    if (matchedRecords.length < 35) scanSheet('Pharmacy Data Fixes (No ID)', noIdRows);
-    if (matchedRecords.length < 35) scanSheet('Ended – Never Filled', endedRows);
-  }
-
+  // Strictly AGGREGATE context only — zero individual member/patient rows or IDs
   return {
+    privacyPolicy: 'AGGREGATE_ONLY_NO_MEMBER_LEVEL_DATA',
     meta: state.meta,
     executiveSummary: state.slide2_summary,
     programFinancials: state.slide3_financials,
@@ -852,6 +988,7 @@ function buildGeminiDataContext(state, question) {
     medicationMix: state.slide8_medMix,
     programDefinitions: state.slide9_appendix,
     cohortRetention: state.slide10_retention,
+    analysisWorkbook: state.analysisWorkbook || null,
     worklistSummary: computeWorklistSummary(wl),
     worklistAggregations: {
       pharmacyTodo_ActivePatients: {
@@ -862,32 +999,7 @@ function buildGeminiDataContext(state, question) {
         byEmployerGroup: countByField(todoRows, 'Employer group'),
         byRxMedication: countByField(todoRows, 'Rx medication'),
         byMembershipStatus: countByField(todoRows, 'Membership status'),
-        byStatus: countByField(todoRows, 'Status'),
-        urgentCancellationPendingPatients: todoRows
-          .filter(r => String(r['Priority'] || '').startsWith('1'))
-          .map(r => ({
-            patientId: r['Pharmacy patient ID'],
-            alphaMemberId: r['Alpha member ID'],
-            priority: r['Priority'],
-            finding: r['Pharmacy finding'],
-            medication: r['Rx medication'],
-            daysSinceSignup: r['Days since sign-up'],
-            daysInStage: r['Days in this stage'],
-            source: r['Patient source'],
-            employerGroup: r['Employer group'],
-            cancellationRequested: r['Cancellation requested'],
-            pharmacyNote: r['Pharmacy note'],
-            status: r['Status']
-          })),
-        readyWaitingForPickupPatients: todoRows
-          .filter(r => r['Pharmacy finding'] === 'Ready – waiting for pickup')
-          .map(r => ({
-            patientId: r['Pharmacy patient ID'],
-            medication: r['Rx medication'],
-            source: r['Patient source'],
-            employerGroup: r['Employer group'],
-            transactionDate: r['Transaction date']
-          }))
+        byStatus: countByField(todoRows, 'Status')
       },
       refillFollowup_OverduePatients: {
         totalCount: refillRows.length,
@@ -895,34 +1007,18 @@ function buildGeminiDataContext(state, question) {
         byPatientSource: countByField(refillRows, 'Patient source'),
         byLastItemFilled: countByField(refillRows, 'Last item filled'),
         byFillsToDate: countByField(refillRows, 'GLP-1 fills to date'),
-        allRecords: refillRows.map(r => ({
-          patientId: r['Pharmacy patient ID'],
-          membershipStatus: r['Membership status'],
-          fillsToDate: r['GLP-1 fills to date'],
-          lastFill: r['Last fill'],
-          daysSinceLastFill: r['Days since last fill'],
-          lastItemFilled: r['Last item filled'],
-          source: r['Patient source'],
-          cancellationRequested: r['Cancellation requested']
-        }))
+        byStatus: countByField(refillRows, 'Status')
       },
       pharmacyDataFixes_UnlinkedFills: {
         noIdCount: noIdRows.length,
         unmatchedCount: unmatchedRows.length,
+        fuzzySuggestedMatchCount: unmatchedRows.filter(r => r.suggestedMatch).length,
         noIdByPrescriber: countByField(noIdRows, 'Prescriber'),
         noIdByPayer: countByField(noIdRows, 'Payer'),
         noIdByDispensedItem: countByField(noIdRows, 'Dispensed item'),
         unmatchedByPrescriber: countByField(unmatchedRows, 'Prescriber'),
-        combinedByPrescriber: countByField([...noIdRows, ...unmatchedRows], 'Prescriber'),
-        allUnmatchedRecordsWithFuzzySuggestions: unmatchedRows.map(r => ({
-          patientIdOnFile: r['Patient ID on file'],
-          dateFilled: r['Date filled'],
-          dispensedItem: r['Dispensed item'],
-          prescriber: r['Prescriber'],
-          status: r['Transaction status'],
-          correctedPatientId: r['Corrected patient ID'],
-          suggestedFuzzyMatchInTodo: r.suggestedMatch
-        }))
+        unmatchedByDispensedItem: countByField(unmatchedRows, 'Dispensed item'),
+        combinedByPrescriber: countByField([...noIdRows, ...unmatchedRows], 'Prescriber')
       },
       endedNeverFilled_ChurnedMembers: {
         totalCount: endedRows.length,
@@ -931,8 +1027,7 @@ function buildGeminiDataContext(state, question) {
         byPatientSource: countByField(endedRows, 'Patient source'),
         byEmployerGroup: countByField(endedRows, 'Employer group')
       }
-    },
-    matchingRecordsForQuery: matchedRecords
+    }
   };
 }
 
@@ -942,7 +1037,21 @@ async function askGeminiWithFullData(state, question, history = []) {
     throw new Error('No GEMINI_API_KEY / GOOGLE_API_KEY configured');
   }
 
-  const contextData = buildGeminiDataContext(state, question);
+  // Enforce member-level privacy guardrail before calling LLM
+  if (isMemberLevelQuery(state, question)) {
+    const blocked = buildMemberPrivacyGuardrailReply(state, question);
+    return {
+      question,
+      clientId: state.meta?.clientId || 'damien',
+      aiPowered: true,
+      aiModel: GEMINI_MODEL,
+      memberLevelBlocked: true,
+      reply: blocked.answer,
+      answer: blocked.answer
+    };
+  }
+
+  const contextData = buildGeminiDataContext(state);
   const meta = state.meta || {};
   const s2 = state.slide2_summary || {};
   const s3 = state.slide3_financials || {};
@@ -959,14 +1068,24 @@ async function askGeminiWithFullData(state, question, history = []) {
 
 You are having a natural, human-like back-and-forth conversation with a teammate. Nothing more, nothing less.
 
-HOW TO SPEAK:
+STRICT PRIVACY & AGGREGATE-ONLY RULE:
+- You ONLY provide AGGREGATE program, financial, channel, employer-group, prescriber, payer, medication/dose, and worklist summary analytics.
+- NEVER output or fabricate individual member IDs, patient alternate IDs, UUIDs, or individual member/patient records. If someone asks to look up a specific member ID or individual patient record, politely let them know that Ask Bridge AI only provides aggregate analytics for member privacy and direct them to the Pharmacy Worklists tabs (Pharmacy To-Do, Refill Follow-Up, Pharmacy Data Fixes, or Ended Memberships).
+
+HOW TO SPEAK & USE YOUR DATA:
 - Write like a real, thoughtful human colleague in a chat conversation — natural, clear, conversational, and direct.
 - Do NOT output rigid report headers, category labels, source citations, slide numbers (never say "Slide 3", "Slide 9", etc.), file extensions (.pptx, .xlsx), or robotic meta-descriptions of your dataset size.
-- Match the length and tone to what the person actually asked:
-  - If they greet you or ask a quick conversational question, reply naturally in a couple of sentences.
-  - If they ask a specific question about program financials, partner channels, paid media ROI, the conversion funnel, refills, medication mix, or specific patients/employers/prescribers on the worklist, give a clear, accurate, conversational answer grounded in the exact numbers and patient IDs from ${meta.client}'s data.
-- You have full access to both ${meta.client}'s program performance analytics (${activeSep} active members in Sep, ${fillsSep} Sep fills, $${sepProceedsVal.toLocaleString()} Sep net program proceeds, ${ytdProceedsFmt} YTD net program proceeds, ${ytdRevFmt} YTD pharmacy revenue across ${s3.totalFillsInPnl?.toLocaleString() || '2,034'} fills, ${ytdFeesFmt} YTD membership fees collected) and all operational worklist records for ${meta.pharmacyPartner} (${ws.todoTotal} Pharmacy To-Do, ${ws.refillTotal} Refill Follow-Up, ${ws.fixesTotal} Pharmacy Data Fixes [${ws.fixesNoIdTotal} missing an ID and ${ws.fixesUnmatchedTotal} unmatched-ID fills, of which ${ws.fuzzySuggestedCount} fills have a possible 1-2 character typo match to ${ws.todoWithFuzzyCount} active To-Do patients to verify], and ${ws.endedTotal} Ended – Never Filled).
-- When discussing financials, always cite the exact source figures for top-line Pharmacy Revenue (${ytdRevFmt} YTD across ${s3.totalFillsInPnl?.toLocaleString() || '2,034'} fills), Membership Fees Collected (${ytdFeesFmt} YTD), and Net Program Proceeds ($${sepProceedsVal.toLocaleString()} in September on ${fillsSep} fills; ${ytdProceedsFmt} YTD) rather than gross margin (and note that top-line pharmacy revenue is reported on a full YTD basis rather than broken out by single month).
+- You have full access to:
+  1. ${meta.client}'s executive program performance (${activeSep} active members in Sep, ${fillsSep} Sep GLP-1 fills, $${sepProceedsVal.toLocaleString()} Sep net program proceeds after ad spend, ${ytdProceedsFmt} YTD net program proceeds after ad spend, ${ytdRevFmt} YTD pharmacy revenue across ${s3.totalFillsInPnl?.toLocaleString() || '2,034'} fills, ${ytdFeesFmt} YTD membership fees collected).
+  2. Granular aggregate analytics from the September 2026 Analysis dataset (\`analysisWorkbook\`):
+     - Full monthly P&L (\`exhibits.monthlyPnL\`): monthly Rx Count, monthly Pharmacy Revenue (e.g., Sep $769,074.12, Aug $558,672.02, Jul $382,652.42, Jun $247,935.52, YTD ${ytdRevFmt}), monthly Gross Margin, monthly Subscription Fees, Alpha fees, Bridge fees, Broker commissions, Cost to Fill ($40/fill), and monthly Gross Margin per Rx.
+     - Monthly Enrollments by Source & Broker Share % (\`exhibits.enrollmentsBySourceMonthly\`, \`exhibits.brokerSharePctMonthly\`).
+     - Monthly Membership Cancellations by Source & % of Enrolled (\`exhibits.cancellationsBySourceMonthly\`, \`exhibits.cancellationPctOfTotalEnrolledMonthly\`).
+     - Month-End Active Patient Tracker & Monthly Net Additions (\`exhibits.activePatientTrackerMonthly\`, \`exhibits.monthlyNetAdditions\`).
+     - Monthly & YTD Enrollments across all 35+ Employer Groups, Referral Codes, and Coupon Codes (\`exhibits.notableEmployerGroupsMonthly\`, \`alphaAnalytics.allEmployerGroups\`, \`alphaAnalytics.couponCodeCounts\`, \`alphaAnalytics.refCodeLookupTable\`).
+     - Monthly Dispenses across all 13 specific Ozempic & Wegovy Pen/Tablet dose strengths (\`exhibits.dispensesByDoseMonthly\`).
+     - Aggregate Pharmacy Dispense Claims Analytics (\`dispenseAnalytics\`): breakdown by Transaction Status (Completed, Cancelled, Waiting for Pick up), by Prescriber (NPI, completed/cancelled/waiting fills, total revenue, acquisition cost, total margin, avg margin/fill), by Primary & Secondary Third-Party Payer/Savings Card (claims, remit, copay, acquisition cost, margin), and by Medication/NDC.
+  3. Aggregate operational worklist summaries for ${meta.pharmacyPartner} (${ws.todoTotal} Pharmacy To-Do, ${ws.refillTotal} Refill Follow-Up, ${ws.fixesTotal} Pharmacy Data Fixes [${ws.fixesNoIdTotal} missing an ID and ${ws.fixesUnmatchedTotal} unmatched-ID fills, of which ${ws.fuzzySuggestedCount} fills have a possible 1-2 character typo match to ${ws.todoWithFuzzyCount} active To-Do patients to verify], and ${ws.endedTotal} Ended – Never Filled).
 - Output plain conversational text (you may use simple bolding for key numbers or short bullet points only when listing multiple items, just like a human would in Slack or Teams).`;
 
   const conversationTurns = [];
@@ -979,7 +1098,7 @@ HOW TO SPEAK:
     }
   }
 
-  const userPrompt = `[Reference Data Context for ${meta.client}: ${JSON.stringify(contextData)}]\n\nUser message: ${question}`;
+  const userPrompt = `[Reference Aggregate Data Context for ${meta.client}: ${JSON.stringify(contextData)}]\n\nUser message: ${question}`;
   conversationTurns.push({ role: 'user', parts: [{ text: userPrompt }] });
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
@@ -1025,6 +1144,19 @@ app.post('/api/ask', async (req, res) => {
   const state = await ensureClientStateLoaded(clientId);
   const { question, history, mode } = req.body || {};
   const q = String(question || '').trim() || 'How is the program performing through September 2026?';
+
+  if (isMemberLevelQuery(state, q)) {
+    const blocked = buildMemberPrivacyGuardrailReply(state, q);
+    return res.json({
+      question: q,
+      clientId,
+      aiPowered: false,
+      aiModel: 'privacy-guardrail',
+      memberLevelBlocked: true,
+      reply: blocked.answer,
+      answer: blocked.answer
+    });
+  }
 
   if (getGeminiApiKey() && mode !== 'instant') {
     try {

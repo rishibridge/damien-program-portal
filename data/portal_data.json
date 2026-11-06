@@ -8648,5 +8648,2775 @@
         }
       ]
     }
+  },
+  "analysisWorkbook": {
+    "privacyPolicy": "AGGREGATE_ONLY_NO_MEMBER_LEVEL_DATA",
+    "sourceWorkbook": "September 2026 Analysis.xlsx",
+    "clientScope": "damien",
+    "exhibits": {
+      "enrollmentsBySourceMonthly": [
+        {
+          "source": "EPIC",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 87,
+          "Jul": 80,
+          "Aug": 165,
+          "Sep": 120,
+          "YTD": 452
+        },
+        {
+          "source": "Paid Media",
+          "Jan": 4,
+          "Feb": 4,
+          "Mar": 21,
+          "Apr": 37,
+          "May": 48,
+          "Jun": 73,
+          "Jul": 45,
+          "Aug": 89,
+          "Sep": 93,
+          "YTD": 417
+        },
+        {
+          "source": "Employee",
+          "Jan": 16,
+          "Feb": 9,
+          "Mar": 4,
+          "Apr": 2,
+          "May": 6,
+          "Jun": 1,
+          "Jul": 8,
+          "Aug": 2,
+          "Sep": 6,
+          "YTD": 54
+        },
+        {
+          "source": "LHD",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 0,
+          "Jul": 0,
+          "Aug": 11,
+          "Sep": 43,
+          "YTD": 54
+        },
+        {
+          "source": "Other",
+          "Jan": 0,
+          "Feb": 3,
+          "Mar": 5,
+          "Apr": 8,
+          "May": 11,
+          "Jun": 7,
+          "Jul": 5,
+          "Aug": 8,
+          "Sep": 4,
+          "YTD": 51
+        },
+        {
+          "source": "McGohan Brabender",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 0,
+          "Jul": 0,
+          "Aug": 1,
+          "Sep": 7,
+          "YTD": 8
+        },
+        {
+          "source": "Grand Total",
+          "Jan": 20,
+          "Feb": 16,
+          "Mar": 30,
+          "Apr": 47,
+          "May": 65,
+          "Jun": 168,
+          "Jul": 138,
+          "Aug": 276,
+          "Sep": 273,
+          "YTD": 1036
+        }
+      ],
+      "brokerSharePctMonthly": {
+        "Jan": "0.0%",
+        "Feb": "0.0%",
+        "Mar": "0.0%",
+        "Apr": "0.0%",
+        "May": "0.0%",
+        "Jun": "51.8%",
+        "Jul": "58.0%",
+        "Aug": "64.1%",
+        "Sep": "62.3%",
+        "YTD": 0
+      },
+      "cancellationsBySourceMonthly": [
+        {
+          "source": "EPIC",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 0,
+          "Jul": 17,
+          "Aug": 20,
+          "Sep": 31,
+          "YTD": 68
+        },
+        {
+          "source": "Paid Media",
+          "Jan": 0,
+          "Feb": 2,
+          "Mar": 5,
+          "Apr": 4,
+          "May": 13,
+          "Jun": 21,
+          "Jul": 30,
+          "Aug": 28,
+          "Sep": 48,
+          "YTD": 151
+        },
+        {
+          "source": "Employee",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 2,
+          "Apr": 4,
+          "May": 1,
+          "Jun": 5,
+          "Jul": 5,
+          "Aug": 3,
+          "Sep": 3,
+          "YTD": 23
+        },
+        {
+          "source": "LHD",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 0,
+          "Jul": 0,
+          "Aug": 0,
+          "Sep": 3,
+          "YTD": 3
+        },
+        {
+          "source": "Other",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 1,
+          "May": 1,
+          "Jun": 3,
+          "Jul": 4,
+          "Aug": 4,
+          "Sep": 5,
+          "YTD": 18
+        },
+        {
+          "source": "McGohan Brabender",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 0,
+          "Jul": 0,
+          "Aug": 0,
+          "Sep": 1,
+          "YTD": 1
+        },
+        {
+          "source": "Total",
+          "Jan": 0,
+          "Feb": 2,
+          "Mar": 7,
+          "Apr": 9,
+          "May": 15,
+          "Jun": 29,
+          "Jul": 56,
+          "Aug": 55,
+          "Sep": 91,
+          "YTD": 264
+        }
+      ],
+      "cancellationPctOfTotalEnrolledMonthly": {
+        "Jan": "0.0%",
+        "Feb": "12.5%",
+        "Mar": "23.3%",
+        "Apr": "19.1%",
+        "May": "23.1%",
+        "Jun": "17.3%",
+        "Jul": "40.6%",
+        "Aug": "19.9%",
+        "Sep": "33.3%",
+        "YTD": "25.5%"
+      },
+      "activePatientTrackerMonthly": {
+        "Jan": 25,
+        "Feb": 37,
+        "Mar": 69,
+        "Apr": 114,
+        "May": 179,
+        "Jun": 223,
+        "Jul": 448,
+        "Aug": 655,
+        "Sep": 862
+      },
+      "monthlyNetAdditions": {
+        "Jan": 0,
+        "Feb": 12,
+        "Mar": 32,
+        "Apr": 45,
+        "May": 65,
+        "Jun": 44,
+        "Jul": 225,
+        "Aug": 207,
+        "Sep": 207
+      },
+      "notableEmployerGroupsMonthly": [
+        {
+          "employerGroup": "City of Evansville",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 0,
+          "Jul": 0,
+          "Aug": 52,
+          "Sep": 28,
+          "YTD": 80
+        },
+        {
+          "employerGroup": "Putnam County",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 6,
+          "Jul": 8,
+          "Aug": 9,
+          "Sep": 8,
+          "YTD": 31
+        },
+        {
+          "employerGroup": "Hamilton Center",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 0,
+          "Jul": 0,
+          "Aug": 13,
+          "Sep": 16,
+          "YTD": 29
+        },
+        {
+          "employerGroup": "GCS",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 0,
+          "Jul": 0,
+          "Aug": 0,
+          "Sep": 27,
+          "YTD": 27
+        },
+        {
+          "employerGroup": "Benton County",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 6,
+          "Jul": 11,
+          "Aug": 6,
+          "Sep": 3,
+          "YTD": 26
+        },
+        {
+          "employerGroup": "Healthcare Therapy Services",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 6,
+          "Jul": 10,
+          "Aug": 4,
+          "Sep": 0,
+          "YTD": 20
+        },
+        {
+          "employerGroup": "Warrick County",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 0,
+          "Jul": 0,
+          "Aug": 13,
+          "Sep": 4,
+          "YTD": 17
+        },
+        {
+          "employerGroup": "City of Lawrence",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 0,
+          "Jul": 0,
+          "Aug": 10,
+          "Sep": 6,
+          "YTD": 16
+        },
+        {
+          "employerGroup": "Epic Employees",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 1,
+          "Jul": 6,
+          "Aug": 5,
+          "Sep": 4,
+          "YTD": 16
+        },
+        {
+          "employerGroup": "IMCU",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 0,
+          "Jul": 0,
+          "Aug": 4,
+          "Sep": 11,
+          "YTD": 15
+        },
+        {
+          "employerGroup": "PCSC",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 0,
+          "Jul": 0,
+          "Aug": 0,
+          "Sep": 13,
+          "YTD": 13
+        },
+        {
+          "employerGroup": "The City of Terre Haute",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 0,
+          "Jul": 0,
+          "Aug": 9,
+          "Sep": 3,
+          "YTD": 12
+        },
+        {
+          "employerGroup": "DRG",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 0,
+          "Jul": 3,
+          "Aug": 5,
+          "Sep": 4,
+          "YTD": 12
+        },
+        {
+          "employerGroup": "Bose Mckinney & Evans",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 0,
+          "Jul": 0,
+          "Aug": 6,
+          "Sep": 4,
+          "YTD": 10
+        }
+      ],
+      "dispensesByDoseMonthly": [
+        {
+          "medicationDose": "Ozempic 0.25-0.5 Mg/dose (2 Mg/3 Ml) Pen",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 2,
+          "Apr": 1,
+          "May": 1,
+          "Jun": 4,
+          "Jul": 4,
+          "Aug": 1,
+          "Sep": 2,
+          "YTD": 15
+        },
+        {
+          "medicationDose": "Ozempic 1 Mg/dose (4 Mg/3 Ml) Pen",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 1,
+          "May": 1,
+          "Jun": 1,
+          "Jul": 1,
+          "Aug": 5,
+          "Sep": 3,
+          "YTD": 12
+        },
+        {
+          "medicationDose": "Ozempic 2 Mg/dose (8 Mg/3 Ml) Pen",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 0,
+          "Jul": 0,
+          "Aug": 2,
+          "Sep": 1,
+          "YTD": 3
+        },
+        {
+          "medicationDose": "Wegovy 0.25 Mg/0.5 Ml Pen",
+          "Jan": 17,
+          "Feb": 13,
+          "Mar": 13,
+          "Apr": 32,
+          "May": 29,
+          "Jun": 53,
+          "Jul": 68,
+          "Aug": 77,
+          "Sep": 98,
+          "YTD": 400
+        },
+        {
+          "medicationDose": "Wegovy 0.5 Mg/0.5 Ml Pen",
+          "Jan": 2,
+          "Feb": 15,
+          "Mar": 12,
+          "Apr": 23,
+          "May": 25,
+          "Jun": 34,
+          "Jul": 49,
+          "Aug": 69,
+          "Sep": 103,
+          "YTD": 332
+        },
+        {
+          "medicationDose": "Wegovy 1 Mg/0.5 Ml Pen",
+          "Jan": 1,
+          "Feb": 5,
+          "Mar": 13,
+          "Apr": 15,
+          "May": 27,
+          "Jun": 31,
+          "Jul": 38,
+          "Aug": 47,
+          "Sep": 69,
+          "YTD": 246
+        },
+        {
+          "medicationDose": "Wegovy 1.7 Mg/0.75 Ml Pen",
+          "Jan": 0,
+          "Feb": 4,
+          "Mar": 6,
+          "Apr": 9,
+          "May": 17,
+          "Jun": 29,
+          "Jul": 45,
+          "Aug": 43,
+          "Sep": 49,
+          "YTD": 202
+        },
+        {
+          "medicationDose": "Wegovy 2.4 Mg/0.75 Ml Pen",
+          "Jan": 2,
+          "Feb": 4,
+          "Mar": 7,
+          "Apr": 13,
+          "May": 16,
+          "Jun": 32,
+          "Jul": 45,
+          "Aug": 69,
+          "Sep": 72,
+          "YTD": 260
+        },
+        {
+          "medicationDose": "Wegovy Hd 7.2 Mg/0.75 Ml Pen",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 0,
+          "Jul": 0,
+          "Aug": 2,
+          "Sep": 20,
+          "YTD": 22
+        },
+        {
+          "medicationDose": "Wegovy 1.5 Mg Tablet",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 31,
+          "Jul": 47,
+          "Aug": 86,
+          "Sep": 99,
+          "YTD": 263
+        },
+        {
+          "medicationDose": "Wegovy 25 Mg Tablet",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 0,
+          "Jul": 1,
+          "Aug": 11,
+          "Sep": 22,
+          "YTD": 34
+        },
+        {
+          "medicationDose": "Wegovy 4 Mg Tablet",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 2,
+          "Jul": 29,
+          "Aug": 49,
+          "Sep": 89,
+          "YTD": 169
+        },
+        {
+          "medicationDose": "Wegovy 9 Mg Tablet",
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 0,
+          "Jul": 8,
+          "Aug": 22,
+          "Sep": 46,
+          "YTD": 76
+        },
+        {
+          "medicationDose": "Grand Total",
+          "Jan": 22,
+          "Feb": 41,
+          "Mar": 53,
+          "Apr": 94,
+          "May": 116,
+          "Jun": 217,
+          "Jul": 335,
+          "Aug": 483,
+          "Sep": 673,
+          "YTD": 2034
+        }
+      ],
+      "monthlyPnL": {
+        "Rx Count": {
+          "Jan": 22,
+          "Feb": 41,
+          "Mar": 53,
+          "Apr": 94,
+          "May": 116,
+          "Jun": 217,
+          "Jul": 335,
+          "Aug": 483,
+          "Sep": 673,
+          "YTD": 2034
+        },
+        "Revenue": {
+          "Jan": 28745.7,
+          "Feb": 48653.35,
+          "Mar": 60022.05,
+          "Apr": 108863.21,
+          "May": 132364.86,
+          "Jun": 247935.52,
+          "Jul": 382652.42,
+          "Aug": 558672.02,
+          "Sep": 769074.12,
+          "YTD": 2336983.25
+        },
+        "Gross Margin": {
+          "Jan": 20388.68,
+          "Feb": 30963.65,
+          "Mar": 36945.87,
+          "Apr": 67722.43,
+          "May": 81530.88,
+          "Jun": 160459.5,
+          "Jul": 298744.13,
+          "Aug": 445664.51,
+          "Sep": 613123.94,
+          "YTD": 1755543.59
+        },
+        "Sub. Fees": {
+          "Jan": 191.79,
+          "Feb": 278.85,
+          "Mar": 719.09,
+          "Apr": 1662.17,
+          "May": 3042.02,
+          "Jun": 4728.78,
+          "Jul": 7116.36,
+          "Aug": 10680.93,
+          "Sep": 15744,
+          "YTD": 44163.99
+        },
+        "Ad Spend": {
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": 0,
+          "Jul": 0,
+          "Aug": 0,
+          "Sep": 0,
+          "YTD": 0
+        },
+        "Alpha": {
+          "Jan": -3990,
+          "Feb": -6270,
+          "Mar": -9910,
+          "Apr": -16490,
+          "May": -24020,
+          "Jun": -47250,
+          "Jul": -67330,
+          "Aug": -102335,
+          "Sep": -134150,
+          "YTD": -411745
+        },
+        "Bridge": {
+          "Jan": -1875,
+          "Feb": -2775,
+          "Mar": -5175,
+          "Apr": -8550,
+          "May": -13425,
+          "Jun": -16725,
+          "Jul": -33600,
+          "Aug": -49125,
+          "Sep": -64650,
+          "YTD": -195900
+        },
+        "Brokers": {
+          "Jan": 0,
+          "Feb": 0,
+          "Mar": 0,
+          "Apr": 0,
+          "May": 0,
+          "Jun": -940,
+          "Jul": -1800,
+          "Aug": -3170,
+          "Sep": -4150,
+          "YTD": -10060
+        },
+        "Cost to Fill": {
+          "Jan": -880,
+          "Feb": -1640,
+          "Mar": -2120,
+          "Apr": -3760,
+          "May": -4640,
+          "Jun": -8680,
+          "Jul": -13400,
+          "Aug": -19320,
+          "Sep": -26920,
+          "YTD": -81360
+        },
+        "Proceeds": {
+          "Jan": 13835.47,
+          "Feb": 20557.5,
+          "Mar": 20459.96,
+          "Apr": 40584.6,
+          "May": 42487.9,
+          "Jun": 91593.28,
+          "Jul": 189730.49,
+          "Aug": 282395.44,
+          "Sep": 398997.94,
+          "YTD": 1100642.58
+        },
+        "Gross Margin per Rx": {
+          "Jan": 926.76,
+          "Feb": 755.21,
+          "Mar": 697.09,
+          "Apr": 720.45,
+          "May": 702.85,
+          "Jun": 739.44,
+          "Jul": 891.77,
+          "Aug": 922.7,
+          "Sep": 911.03,
+          "YTD": 863.1
+        }
+      }
+    },
+    "alphaAnalytics": {
+      "totalDamienMembershipRows": 1036,
+      "nonTestMembers": 1033,
+      "testAccountsExcludedFromDeck": 3,
+      "totalCancelledMembers": 305,
+      "totalAutoDisenrolledMembers": 95,
+      "totalMembersWithProviderVisit": 938,
+      "totalMembersWithPrescription": 822,
+      "cancellationsByStartMonth": {
+        "May": 38,
+        "Jun": 75,
+        "Jan": 7,
+        "Aug": 51,
+        "Feb": 10,
+        "Jul": 51,
+        "Mar": 19,
+        "Apr": 28,
+        "Sep": 25,
+        "Dec": 1
+      },
+      "couponCodeCounts": {
+        "[]": 438,
+        "['firstmonth']": 432,
+        "['firstmonthlhd']": 53,
+        "['damienemployee']": 48,
+        "['damienfriend']": 43,
+        "['firstmonthmb']": 8,
+        "['damienemployee', 'damienemployee']": 5,
+        "['helloalphatestuser']": 3,
+        "['firstmonthconner']": 1,
+        "['damienemployee', 'damienemployee', 'damienemployee']": 1,
+        "['glp1pill']": 1,
+        "['firstmonthcoi']": 1,
+        "['alphacircle']": 1,
+        "['spring25']": 1
+      },
+      "refCodeCounts": {
+        "CoE": 79,
+        "damienpatient": 46,
+        "EpicPutnam": 31,
+        "HCtr": 29,
+        "GCS": 27,
+        "EpicBentonCounty": 25,
+        "EpicHTSIndiana": 20,
+        "WC": 17,
+        "CoL": 16,
+        "IMCU": 15,
+        "EpicEmployees": 14,
+        "PCSC": 13,
+        "EpicTerreHaute": 12,
+        "DRG": 12,
+        "EpicAcuity": 9,
+        "BMcE": 9,
+        "MGB": 8,
+        "EpicJDH": 8,
+        "EpicWVHC": 6,
+        "EpicAlliedPhysiciansSC": 5,
+        "EpicNorthernLights": 5,
+        "EpicPeabody": 5,
+        "HBH": 5,
+        "EpicAdaptecSystems": 4,
+        "EVSC": 4,
+        "EpicAdams": 3,
+        "EpicGGL": 3,
+        "EpicAlliedPhysiciansSC?coupon=firstmonth": 3,
+        "EpicCVR": 3,
+        "damienpatientorganic2": 2,
+        "Granite": 2,
+        "damienpatientorganic1": 2,
+        "EpicHCFNR": 2,
+        "JWSC": 1,
+        "epicemployee": 1,
+        "bmce": 1,
+        "epicbentoncounty": 1,
+        "EpicFirstPresFW": 1,
+        "EpicStateBank": 1,
+        "EpicCnT?coupon=firstmonth": 1,
+        "City": 1,
+        "epicpeabody": 1,
+        "CoE@coupon=firstmonth": 1,
+        "EpicPeadbody": 1,
+        "EpicEmployees?coupon=firstmonth": 1,
+        "EpicSmithBrothers": 1,
+        "EpicNVBPlayground": 1
+      },
+      "prescribedDrugCountsInAlpha": {},
+      "allEmployerGroups": [
+        {
+          "employerGroup": "No Employer Group / Direct",
+          "partnerSource": "Other",
+          "refCodes": [
+            "damienpatientorganic1",
+            "damienpatientorganic2"
+          ],
+          "totalEnrolled": 582,
+          "activeMembers": 352,
+          "cancelledMembers": 230,
+          "autoDisenrolled": 80,
+          "withProviderVisit": 498,
+          "withPrescription": 441,
+          "byMonth": {
+            "Aug": 102,
+            "May": 65,
+            "Jun": 129,
+            "Jul": 66,
+            "Jan": 20,
+            "Sep": 104,
+            "Feb": 16,
+            "Mar": 30,
+            "Apr": 47,
+            "Dec": 3
+          }
+        },
+        {
+          "employerGroup": "City of Evansville",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "CoE",
+            "CoE@coupon=firstmonth"
+          ],
+          "totalEnrolled": 80,
+          "activeMembers": 71,
+          "cancelledMembers": 9,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 79,
+          "withPrescription": 71,
+          "byMonth": {
+            "Aug": 52,
+            "Sep": 28
+          }
+        },
+        {
+          "employerGroup": "Damien Patient",
+          "partnerSource": "Paid Media",
+          "refCodes": [
+            "damienpatient"
+          ],
+          "totalEnrolled": 46,
+          "activeMembers": 35,
+          "cancelledMembers": 11,
+          "autoDisenrolled": 3,
+          "withProviderVisit": 44,
+          "withPrescription": 40,
+          "byMonth": {
+            "Jun": 5,
+            "Sep": 16,
+            "Aug": 15,
+            "Jul": 10
+          }
+        },
+        {
+          "employerGroup": "Putnam County",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "EpicPutnam"
+          ],
+          "totalEnrolled": 31,
+          "activeMembers": 27,
+          "cancelledMembers": 4,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 30,
+          "withPrescription": 28,
+          "byMonth": {
+            "Jun": 6,
+            "Aug": 9,
+            "Jul": 8,
+            "Sep": 8
+          }
+        },
+        {
+          "employerGroup": "Hamilton Center",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "HCtr"
+          ],
+          "totalEnrolled": 29,
+          "activeMembers": 27,
+          "cancelledMembers": 2,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 27,
+          "withPrescription": 22,
+          "byMonth": {
+            "Sep": 16,
+            "Aug": 13
+          }
+        },
+        {
+          "employerGroup": "GCS",
+          "partnerSource": "LHD",
+          "refCodes": [
+            "GCS"
+          ],
+          "totalEnrolled": 27,
+          "activeMembers": 23,
+          "cancelledMembers": 4,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 27,
+          "withPrescription": 20,
+          "byMonth": {
+            "Sep": 27
+          }
+        },
+        {
+          "employerGroup": "Benton County",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "EpicBentonCounty",
+            "epicbentoncounty"
+          ],
+          "totalEnrolled": 26,
+          "activeMembers": 19,
+          "cancelledMembers": 7,
+          "autoDisenrolled": 1,
+          "withProviderVisit": 26,
+          "withPrescription": 23,
+          "byMonth": {
+            "Jun": 6,
+            "Aug": 6,
+            "Jul": 11,
+            "Sep": 3
+          }
+        },
+        {
+          "employerGroup": "Healthcare Therapy Services",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "EpicHTSIndiana"
+          ],
+          "totalEnrolled": 20,
+          "activeMembers": 14,
+          "cancelledMembers": 6,
+          "autoDisenrolled": 3,
+          "withProviderVisit": 19,
+          "withPrescription": 18,
+          "byMonth": {
+            "Jun": 6,
+            "Jul": 10,
+            "Aug": 4
+          }
+        },
+        {
+          "employerGroup": "Warrick County",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "WC"
+          ],
+          "totalEnrolled": 17,
+          "activeMembers": 13,
+          "cancelledMembers": 4,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 17,
+          "withPrescription": 13,
+          "byMonth": {
+            "Sep": 4,
+            "Aug": 13
+          }
+        },
+        {
+          "employerGroup": "City of Lawrence",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "CoL"
+          ],
+          "totalEnrolled": 16,
+          "activeMembers": 13,
+          "cancelledMembers": 3,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 16,
+          "withPrescription": 13,
+          "byMonth": {
+            "Aug": 10,
+            "Sep": 6
+          }
+        },
+        {
+          "employerGroup": "Epic Employees",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "EpicEmployees",
+            "EpicEmployees?coupon=firstmonth",
+            "epicemployee"
+          ],
+          "totalEnrolled": 16,
+          "activeMembers": 10,
+          "cancelledMembers": 6,
+          "autoDisenrolled": 3,
+          "withProviderVisit": 15,
+          "withPrescription": 9,
+          "byMonth": {
+            "Jun": 1,
+            "Sep": 4,
+            "Jul": 6,
+            "Aug": 5
+          }
+        },
+        {
+          "employerGroup": "IMCU",
+          "partnerSource": "LHD",
+          "refCodes": [
+            "IMCU"
+          ],
+          "totalEnrolled": 15,
+          "activeMembers": 12,
+          "cancelledMembers": 3,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 14,
+          "withPrescription": 12,
+          "byMonth": {
+            "Sep": 11,
+            "Aug": 4
+          }
+        },
+        {
+          "employerGroup": "PCSC",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "PCSC"
+          ],
+          "totalEnrolled": 13,
+          "activeMembers": 12,
+          "cancelledMembers": 1,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 12,
+          "withPrescription": 10,
+          "byMonth": {
+            "Sep": 13
+          }
+        },
+        {
+          "employerGroup": "DRG",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "DRG"
+          ],
+          "totalEnrolled": 12,
+          "activeMembers": 11,
+          "cancelledMembers": 1,
+          "autoDisenrolled": 1,
+          "withProviderVisit": 12,
+          "withPrescription": 9,
+          "byMonth": {
+            "Aug": 5,
+            "Jul": 3,
+            "Sep": 4
+          }
+        },
+        {
+          "employerGroup": "The City of Terre Haute",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "EpicTerreHaute"
+          ],
+          "totalEnrolled": 12,
+          "activeMembers": 12,
+          "cancelledMembers": 0,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 12,
+          "withPrescription": 11,
+          "byMonth": {
+            "Aug": 9,
+            "Sep": 3
+          }
+        },
+        {
+          "employerGroup": "Bose Mckinney & Evans",
+          "partnerSource": "LHD",
+          "refCodes": [
+            "BMcE",
+            "bmce"
+          ],
+          "totalEnrolled": 10,
+          "activeMembers": 10,
+          "cancelledMembers": 0,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 9,
+          "withPrescription": 9,
+          "byMonth": {
+            "Sep": 4,
+            "Aug": 6
+          }
+        },
+        {
+          "employerGroup": "Acuity Group Operations",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "EpicAcuity"
+          ],
+          "totalEnrolled": 9,
+          "activeMembers": 6,
+          "cancelledMembers": 3,
+          "autoDisenrolled": 1,
+          "withProviderVisit": 9,
+          "withPrescription": 9,
+          "byMonth": {
+            "Jul": 4,
+            "Aug": 3,
+            "Jun": 2
+          }
+        },
+        {
+          "employerGroup": "Allied Physicians Surgery Center",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "EpicAlliedPhysiciansSC",
+            "EpicAlliedPhysiciansSC?coupon=firstmonth"
+          ],
+          "totalEnrolled": 8,
+          "activeMembers": 7,
+          "cancelledMembers": 1,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 8,
+          "withPrescription": 7,
+          "byMonth": {
+            "Jul": 4,
+            "Aug": 3,
+            "Jun": 1
+          }
+        },
+        {
+          "employerGroup": "JDH Infrastructure Group",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "EpicJDH"
+          ],
+          "totalEnrolled": 8,
+          "activeMembers": 6,
+          "cancelledMembers": 2,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 8,
+          "withPrescription": 8,
+          "byMonth": {
+            "Jun": 3,
+            "Aug": 1,
+            "Jul": 3,
+            "Sep": 1
+          }
+        },
+        {
+          "employerGroup": "McGohan Brabender",
+          "partnerSource": "McGohan Brabender",
+          "refCodes": [
+            "MGB"
+          ],
+          "totalEnrolled": 8,
+          "activeMembers": 7,
+          "cancelledMembers": 1,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 7,
+          "withPrescription": 6,
+          "byMonth": {
+            "Sep": 7,
+            "Aug": 1
+          }
+        },
+        {
+          "employerGroup": "Peabody Retirement Community",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "EpicPeabody",
+            "EpicPeadbody",
+            "epicpeabody"
+          ],
+          "totalEnrolled": 7,
+          "activeMembers": 6,
+          "cancelledMembers": 1,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 7,
+          "withPrescription": 7,
+          "byMonth": {
+            "Aug": 5,
+            "Jun": 2
+          }
+        },
+        {
+          "employerGroup": "Wabash Valley Health",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "EpicWVHC"
+          ],
+          "totalEnrolled": 6,
+          "activeMembers": 3,
+          "cancelledMembers": 3,
+          "autoDisenrolled": 1,
+          "withProviderVisit": 5,
+          "withPrescription": 5,
+          "byMonth": {
+            "Jul": 4,
+            "Sep": 2
+          }
+        },
+        {
+          "employerGroup": "Harsha Behavioral Health",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "HBH"
+          ],
+          "totalEnrolled": 5,
+          "activeMembers": 5,
+          "cancelledMembers": 0,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 5,
+          "withPrescription": 3,
+          "byMonth": {
+            "Sep": 3,
+            "Aug": 2
+          }
+        },
+        {
+          "employerGroup": "Northern Lights",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "EpicNorthernLights"
+          ],
+          "totalEnrolled": 5,
+          "activeMembers": 4,
+          "cancelledMembers": 1,
+          "autoDisenrolled": 1,
+          "withProviderVisit": 4,
+          "withPrescription": 4,
+          "byMonth": {
+            "Jun": 3,
+            "Sep": 2
+          }
+        },
+        {
+          "employerGroup": "Adaptek Systems LLC",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "EpicAdaptecSystems"
+          ],
+          "totalEnrolled": 4,
+          "activeMembers": 3,
+          "cancelledMembers": 1,
+          "autoDisenrolled": 1,
+          "withProviderVisit": 4,
+          "withPrescription": 4,
+          "byMonth": {
+            "Aug": 2,
+            "Jul": 2
+          }
+        },
+        {
+          "employerGroup": "EVSC",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "EVSC"
+          ],
+          "totalEnrolled": 4,
+          "activeMembers": 4,
+          "cancelledMembers": 0,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 4,
+          "withPrescription": 2,
+          "byMonth": {
+            "Sep": 4
+          }
+        },
+        {
+          "employerGroup": "Adams Remco",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "EpicAdams"
+          ],
+          "totalEnrolled": 3,
+          "activeMembers": 3,
+          "cancelledMembers": 0,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 3,
+          "withPrescription": 3,
+          "byMonth": {
+            "Jul": 1,
+            "Sep": 1,
+            "Aug": 1
+          }
+        },
+        {
+          "employerGroup": "CVR Indy",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "EpicCVR"
+          ],
+          "totalEnrolled": 3,
+          "activeMembers": 3,
+          "cancelledMembers": 0,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 3,
+          "withPrescription": 3,
+          "byMonth": {
+            "Jul": 2,
+            "Sep": 1
+          }
+        },
+        {
+          "employerGroup": "Gillette Generators LLC",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "EpicGGL"
+          ],
+          "totalEnrolled": 3,
+          "activeMembers": 2,
+          "cancelledMembers": 1,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 3,
+          "withPrescription": 2,
+          "byMonth": {
+            "Jul": 2,
+            "Aug": 1
+          }
+        },
+        {
+          "employerGroup": "Granite Management",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "Granite"
+          ],
+          "totalEnrolled": 2,
+          "activeMembers": 2,
+          "cancelledMembers": 0,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 2,
+          "withPrescription": 2,
+          "byMonth": {
+            "Aug": 2
+          }
+        },
+        {
+          "employerGroup": "Honey Creek Fire & Rescue",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "EpicHCFNR"
+          ],
+          "totalEnrolled": 2,
+          "activeMembers": 2,
+          "cancelledMembers": 0,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 2,
+          "withPrescription": 2,
+          "byMonth": {
+            "Aug": 2
+          }
+        },
+        {
+          "employerGroup": "C&T Design",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "EpicCnT?coupon=firstmonth"
+          ],
+          "totalEnrolled": 1,
+          "activeMembers": 1,
+          "cancelledMembers": 0,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 1,
+          "withPrescription": 1,
+          "byMonth": {
+            "Jun": 1
+          }
+        },
+        {
+          "employerGroup": "City",
+          "partnerSource": "City of Indianapolis",
+          "refCodes": [
+            "City"
+          ],
+          "totalEnrolled": 1,
+          "activeMembers": 1,
+          "cancelledMembers": 0,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 1,
+          "withPrescription": 0,
+          "byMonth": {
+            "Sep": 1
+          }
+        },
+        {
+          "employerGroup": "First Presbyterian Ft Wayne",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "EpicFirstPresFW"
+          ],
+          "totalEnrolled": 1,
+          "activeMembers": 1,
+          "cancelledMembers": 0,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 1,
+          "withPrescription": 1,
+          "byMonth": {
+            "Jun": 1
+          }
+        },
+        {
+          "employerGroup": "JWSC",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "JWSC"
+          ],
+          "totalEnrolled": 1,
+          "activeMembers": 1,
+          "cancelledMembers": 0,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 1,
+          "withPrescription": 1,
+          "byMonth": {
+            "Jul": 1
+          }
+        },
+        {
+          "employerGroup": "NVB Playground",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "EpicNVBPlayground"
+          ],
+          "totalEnrolled": 1,
+          "activeMembers": 1,
+          "cancelledMembers": 0,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 1,
+          "withPrescription": 1,
+          "byMonth": {
+            "Jun": 1
+          }
+        },
+        {
+          "employerGroup": "Smith Brothers of Berne Inc",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "EpicSmithBrothers"
+          ],
+          "totalEnrolled": 1,
+          "activeMembers": 1,
+          "cancelledMembers": 0,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 1,
+          "withPrescription": 1,
+          "byMonth": {
+            "Jul": 1
+          }
+        },
+        {
+          "employerGroup": "State Bank",
+          "partnerSource": "EPIC",
+          "refCodes": [
+            "EpicStateBank"
+          ],
+          "totalEnrolled": 1,
+          "activeMembers": 1,
+          "cancelledMembers": 0,
+          "autoDisenrolled": 0,
+          "withProviderVisit": 1,
+          "withPrescription": 1,
+          "byMonth": {
+            "Jun": 1
+          }
+        }
+      ],
+      "refCodeLookupTable": [
+        {
+          "refCode": "City of Evansville",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "City of Evansville",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "City of Lawrence",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "DRG",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "Acuity Group Operations",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "Adams Remco",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "Adaptek Systems LLC",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "Allied Physicians Surgery Center",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "Allied Physicians Surgery Center",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "Benton County",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "C&T Design",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "CVR Indy",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "Epic Employees",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "Epic Employees",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "Epic Employees",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "First Presbyterian Ft Wayne",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "Gillette Generators LLC",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "Honey Creek Fire & Rescue",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "Healthcare Therapy Services",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "JDH Infrastructure Group",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "Northern Lights",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "NVB Playground",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "Peabody Retirement Community",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "Peabody Retirement Community",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "Putnam County",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "Smith Brothers of Berne Inc",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "State Bank",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "The City of Terre Haute",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "Wabash Valley Health",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "Harsha Behavioral Health",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "Hamilton Center",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "JWSC",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "McGohan Brabender",
+          "employerName": "McGohan Brabender",
+          "partnerName": ""
+        },
+        {
+          "refCode": "Warrick County",
+          "employerName": "EPIC",
+          "partnerName": ""
+        },
+        {
+          "refCode": "IMCU",
+          "employerName": "LHD",
+          "partnerName": ""
+        }
+      ],
+      "couponLookupTable": [
+        {
+          "couponCode": "['alphacircle']",
+          "partnerName": "Other"
+        },
+        {
+          "couponCode": "['damienemployee', 'damienemployee', 'damienemployee']",
+          "partnerName": "Employee"
+        },
+        {
+          "couponCode": "['damienemployee', 'damienemployee']",
+          "partnerName": "Employee"
+        },
+        {
+          "couponCode": "['damienemployee']",
+          "partnerName": "Employee"
+        },
+        {
+          "couponCode": "['damienfriend']",
+          "partnerName": "Other"
+        },
+        {
+          "couponCode": "['firstmonth']",
+          "partnerName": "EPIC"
+        },
+        {
+          "couponCode": "['firstmonthcoi']",
+          "partnerName": "City of Indianapolis"
+        },
+        {
+          "couponCode": "['firstmonthconner']",
+          "partnerName": "Other"
+        },
+        {
+          "couponCode": "['firstmonthlhd']",
+          "partnerName": "LHD"
+        },
+        {
+          "couponCode": "['firstmonthmb']",
+          "partnerName": "McGohan Brabender"
+        },
+        {
+          "couponCode": "['glp1pill']",
+          "partnerName": "Other"
+        },
+        {
+          "couponCode": "['helloalphatestuser']",
+          "partnerName": "Other"
+        },
+        {
+          "couponCode": "['spring25']",
+          "partnerName": "Other"
+        },
+        {
+          "couponCode": "['fhsemployee']",
+          "partnerName": "Employee"
+        },
+        {
+          "couponCode": "['fhsfaf']",
+          "partnerName": "Other"
+        },
+        {
+          "couponCode": "['fhshuron']",
+          "partnerName": "Huron"
+        },
+        {
+          "couponCode": "['fhsops']",
+          "partnerName": "Tom & Jen"
+        },
+        {
+          "couponCode": "['fhswlp']",
+          "partnerName": "WLP"
+        },
+        {
+          "couponCode": "['glp1pill', 'spring25']",
+          "partnerName": "Other"
+        },
+        {
+          "couponCode": "['helloalphatestuser']",
+          "partnerName": "Other"
+        },
+        {
+          "couponCode": "['mbfirstmonth']",
+          "partnerName": "McGohan Brabender"
+        }
+      ]
+    },
+    "dispenseAnalytics": {
+      "totalDispenseRows": 2247,
+      "byTransactionStatus": {
+        "Completed": {
+          "fills": 2059,
+          "revenue": 2338212.6,
+          "acquisitionCost": 581723.93,
+          "margin": 1756488.67
+        },
+        "Cancelled": {
+          "fills": 173,
+          "revenue": 0.0,
+          "acquisitionCost": 53674.61,
+          "margin": 0.0
+        },
+        "Waiting for Pick up": {
+          "fills": 15,
+          "revenue": 17386.93,
+          "acquisitionCost": 3389.98,
+          "margin": 13996.95
+        }
+      },
+      "byPrescriber": [
+        {
+          "prescriber": "Townsend, Fawn",
+          "npi": "1467960955",
+          "totalTransactions": 424,
+          "completedFills": 402,
+          "completedGlp1ThroughSep30": 394,
+          "cancelledFills": 19,
+          "waitingForPickupFills": 3,
+          "completedRevenue": 450231.66,
+          "completedAcquisitionCost": 110384.27,
+          "completedMargin": 339847.39,
+          "avgRevenuePerCompletedFill": 1119.98,
+          "avgMarginPerCompletedFill": 845.39
+        },
+        {
+          "prescriber": "Staiger, Lydia",
+          "npi": "1477047504",
+          "totalTransactions": 388,
+          "completedFills": 370,
+          "completedGlp1ThroughSep30": 366,
+          "cancelledFills": 15,
+          "waitingForPickupFills": 3,
+          "completedRevenue": 422181.89,
+          "completedAcquisitionCost": 111403.73,
+          "completedMargin": 310778.16,
+          "avgRevenuePerCompletedFill": 1141.03,
+          "avgMarginPerCompletedFill": 839.94
+        },
+        {
+          "prescriber": "Pedersen, Martha",
+          "npi": "1437789658",
+          "totalTransactions": 399,
+          "completedFills": 366,
+          "completedGlp1ThroughSep30": 362,
+          "cancelledFills": 30,
+          "waitingForPickupFills": 3,
+          "completedRevenue": 415064.63,
+          "completedAcquisitionCost": 92239.23,
+          "completedMargin": 322825.4,
+          "avgRevenuePerCompletedFill": 1134.06,
+          "avgMarginPerCompletedFill": 882.04
+        },
+        {
+          "prescriber": "Lyon, Shannon",
+          "npi": "1700895141",
+          "totalTransactions": 400,
+          "completedFills": 318,
+          "completedGlp1ThroughSep30": 315,
+          "cancelledFills": 82,
+          "waitingForPickupFills": 0,
+          "completedRevenue": 363212.05,
+          "completedAcquisitionCost": 89806.83,
+          "completedMargin": 273405.22,
+          "avgRevenuePerCompletedFill": 1142.18,
+          "avgMarginPerCompletedFill": 859.76
+        },
+        {
+          "prescriber": "Fields, Taryn",
+          "npi": "1609395169",
+          "totalTransactions": 255,
+          "completedFills": 245,
+          "completedGlp1ThroughSep30": 243,
+          "cancelledFills": 7,
+          "waitingForPickupFills": 3,
+          "completedRevenue": 280743.38,
+          "completedAcquisitionCost": 63978.75,
+          "completedMargin": 216764.63,
+          "avgRevenuePerCompletedFill": 1145.89,
+          "avgMarginPerCompletedFill": 884.75
+        },
+        {
+          "prescriber": "Votypka, Vanessa",
+          "npi": "1144665761",
+          "totalTransactions": 189,
+          "completedFills": 181,
+          "completedGlp1ThroughSep30": 178,
+          "cancelledFills": 8,
+          "waitingForPickupFills": 0,
+          "completedRevenue": 202373.86,
+          "completedAcquisitionCost": 50372.53,
+          "completedMargin": 152001.33,
+          "avgRevenuePerCompletedFill": 1118.09,
+          "avgMarginPerCompletedFill": 839.79
+        },
+        {
+          "prescriber": "Campagna, Lauren",
+          "npi": "1679946040",
+          "totalTransactions": 102,
+          "completedFills": 95,
+          "completedGlp1ThroughSep30": 94,
+          "cancelledFills": 4,
+          "waitingForPickupFills": 3,
+          "completedRevenue": 107548.43,
+          "completedAcquisitionCost": 35036.56,
+          "completedMargin": 72511.87,
+          "avgRevenuePerCompletedFill": 1132.09,
+          "avgMarginPerCompletedFill": 763.28
+        },
+        {
+          "prescriber": "Smith, Laura",
+          "npi": "1447892443",
+          "totalTransactions": 76,
+          "completedFills": 71,
+          "completedGlp1ThroughSep30": 71,
+          "cancelledFills": 5,
+          "waitingForPickupFills": 0,
+          "completedRevenue": 83833.85,
+          "completedAcquisitionCost": 25464.37,
+          "completedMargin": 58369.48,
+          "avgRevenuePerCompletedFill": 1180.76,
+          "avgMarginPerCompletedFill": 822.11
+        },
+        {
+          "prescriber": "Belyea, Loni, MD",
+          "npi": "1801213160",
+          "totalTransactions": 13,
+          "completedFills": 11,
+          "completedGlp1ThroughSep30": 11,
+          "cancelledFills": 2,
+          "waitingForPickupFills": 0,
+          "completedRevenue": 13022.85,
+          "completedAcquisitionCost": 3037.66,
+          "completedMargin": 9985.19,
+          "avgRevenuePerCompletedFill": 1183.9,
+          "avgMarginPerCompletedFill": 907.74
+        },
+        {
+          "prescriber": "Morrell, Melissa",
+          "npi": "1770040347",
+          "totalTransactions": 1,
+          "completedFills": 0,
+          "completedGlp1ThroughSep30": 0,
+          "cancelledFills": 1,
+          "waitingForPickupFills": 0,
+          "completedRevenue": 0.0,
+          "completedAcquisitionCost": 0.0,
+          "completedMargin": 0.0,
+          "avgRevenuePerCompletedFill": 0.0,
+          "avgMarginPerCompletedFill": 0.0
+        }
+      ],
+      "byPrimaryThirdPartyPayer": [
+        {
+          "primaryPayer": "Wegovy Savings Card",
+          "completedFills": 1897,
+          "cancelledFills": 110,
+          "waitingForPickupFills": 14,
+          "primaryRemit": 2029723.95,
+          "primaryCopay": 492053.0,
+          "secondaryRemit": 330250.0,
+          "totalRevenue": 2191526.95,
+          "acquisitionCost": 541121.44,
+          "margin": 1650405.51,
+          "avgMarginPerCompletedFill": 870.01
+        },
+        {
+          "primaryPayer": "Connective RX",
+          "completedFills": 54,
+          "cancelledFills": 2,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 46486.65,
+          "primaryCopay": 16746.0,
+          "secondaryRemit": 11500.0,
+          "totalRevenue": 51732.65,
+          "acquisitionCost": 17508.52,
+          "margin": 34224.13,
+          "avgMarginPerCompletedFill": 633.78
+        },
+        {
+          "primaryPayer": "Anthem",
+          "completedFills": 38,
+          "cancelledFills": 9,
+          "waitingForPickupFills": 1,
+          "primaryRemit": 10680.26,
+          "primaryCopay": 44199.37,
+          "secondaryRemit": 25737.05,
+          "totalRevenue": 39176.65,
+          "acquisitionCost": 8975.15,
+          "margin": 30201.5,
+          "avgMarginPerCompletedFill": 794.78
+        },
+        {
+          "primaryPayer": "Damien Loyalty Plan",
+          "completedFills": 16,
+          "cancelledFills": 5,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 0.0,
+          "primaryCopay": 818.08,
+          "secondaryRemit": 311.71,
+          "totalRevenue": 459.71,
+          "acquisitionCost": 722.08,
+          "margin": -262.37,
+          "avgMarginPerCompletedFill": -16.4
+        },
+        {
+          "primaryPayer": "Advance",
+          "completedFills": 14,
+          "cancelledFills": 7,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 5397.31,
+          "primaryCopay": 13489.98,
+          "secondaryRemit": 7532.01,
+          "totalRevenue": 14073.56,
+          "acquisitionCost": 3709.62,
+          "margin": 10363.94,
+          "avgMarginPerCompletedFill": 740.28
+        },
+        {
+          "primaryPayer": "CareSource Marketplace",
+          "completedFills": 8,
+          "cancelledFills": 0,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 6406.19,
+          "primaryCopay": 3796.41,
+          "secondaryRemit": 2330.2,
+          "totalRevenue": 8218.52,
+          "acquisitionCost": 1773.3,
+          "margin": 6445.22,
+          "avgMarginPerCompletedFill": 805.65
+        },
+        {
+          "primaryPayer": "Optum RX - United Healthcare",
+          "completedFills": 7,
+          "cancelledFills": 2,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 4108.12,
+          "primaryCopay": 7253.56,
+          "secondaryRemit": 3940.93,
+          "totalRevenue": 8492.17,
+          "acquisitionCost": 1792.07,
+          "margin": 6700.1,
+          "avgMarginPerCompletedFill": 957.16
+        },
+        {
+          "primaryPayer": "Optum Rx - Informed RX",
+          "completedFills": 4,
+          "cancelledFills": 1,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 2054.06,
+          "primaryCopay": 4603.06,
+          "secondaryRemit": 2660.64,
+          "totalRevenue": 4910.76,
+          "acquisitionCost": 1069.34,
+          "margin": 3841.42,
+          "avgMarginPerCompletedFill": 960.36
+        },
+        {
+          "primaryPayer": "Maxor Drug Card Pgm",
+          "completedFills": 3,
+          "cancelledFills": 0,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 2104.06,
+          "primaryCopay": 2600.5,
+          "secondaryRemit": 1480.29,
+          "totalRevenue": 3581.41,
+          "acquisitionCost": 703.72,
+          "margin": 2877.69,
+          "avgMarginPerCompletedFill": 959.23
+        },
+        {
+          "primaryPayer": "Aetna",
+          "completedFills": 2,
+          "cancelledFills": 1,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 1027.03,
+          "primaryCopay": 2301.53,
+          "secondaryRemit": 1230.32,
+          "totalRevenue": 2455.38,
+          "acquisitionCost": 512.02,
+          "margin": 1943.36,
+          "avgMarginPerCompletedFill": 971.68
+        },
+        {
+          "primaryPayer": "BC/BC Federal Employees",
+          "completedFills": 2,
+          "cancelledFills": 0,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 0.0,
+          "primaryCopay": 3905.12,
+          "secondaryRemit": 1960.7,
+          "totalRevenue": 2658.7,
+          "acquisitionCost": 512.02,
+          "margin": 2146.68,
+          "avgMarginPerCompletedFill": 1073.34
+        },
+        {
+          "primaryPayer": "Bc/bs Kansas",
+          "completedFills": 2,
+          "cancelledFills": 0,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 2633.29,
+          "primaryCopay": 0.0,
+          "secondaryRemit": 0.0,
+          "totalRevenue": 0.0,
+          "acquisitionCost": 696.61,
+          "margin": -696.61,
+          "avgMarginPerCompletedFill": -348.31
+        },
+        {
+          "primaryPayer": "Cigna Commercial",
+          "completedFills": 2,
+          "cancelledFills": 0,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 2370.03,
+          "primaryCopay": 348.0,
+          "secondaryRemit": 250.0,
+          "totalRevenue": 2468.03,
+          "acquisitionCost": 406.69,
+          "margin": 2061.34,
+          "avgMarginPerCompletedFill": 1030.67
+        },
+        {
+          "primaryPayer": "Lost and Damaged Inventory",
+          "completedFills": 2,
+          "cancelledFills": 0,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 447.71,
+          "primaryCopay": 0.0,
+          "secondaryRemit": 0.0,
+          "totalRevenue": 0.0,
+          "acquisitionCost": 447.71,
+          "margin": -447.71,
+          "avgMarginPerCompletedFill": -223.85
+        },
+        {
+          "primaryPayer": "MHS/Ambetter Marketplace",
+          "completedFills": 2,
+          "cancelledFills": 2,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 1035.36,
+          "primaryCopay": 351.97,
+          "secondaryRemit": 249.97,
+          "totalRevenue": 1126.03,
+          "acquisitionCost": 256.59,
+          "margin": 869.44,
+          "avgMarginPerCompletedFill": 434.72
+        },
+        {
+          "primaryPayer": "Bc/bs North Carolina",
+          "completedFills": 1,
+          "cancelledFills": 0,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 0.0,
+          "primaryCopay": 1952.56,
+          "secondaryRemit": 980.35,
+          "totalRevenue": 1329.35,
+          "acquisitionCost": 256.01,
+          "margin": 1073.34,
+          "avgMarginPerCompletedFill": 1073.34
+        },
+        {
+          "primaryPayer": "Express Scripts",
+          "completedFills": 1,
+          "cancelledFills": 0,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 1010.0,
+          "primaryCopay": 349.0,
+          "secondaryRemit": 250.0,
+          "totalRevenue": 1109.0,
+          "acquisitionCost": 256.01,
+          "margin": 852.99,
+          "avgMarginPerCompletedFill": 852.99
+        },
+        {
+          "primaryPayer": "Paid",
+          "completedFills": 1,
+          "cancelledFills": 7,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 1010.0,
+          "primaryCopay": 349.0,
+          "secondaryRemit": 250.0,
+          "totalRevenue": 1109.0,
+          "acquisitionCost": 256.01,
+          "margin": 852.99,
+          "avgMarginPerCompletedFill": 852.99
+        },
+        {
+          "primaryPayer": "Proact",
+          "completedFills": 1,
+          "cancelledFills": 0,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 1077.03,
+          "primaryCopay": 298.97,
+          "secondaryRemit": 249.97,
+          "totalRevenue": 1126.03,
+          "acquisitionCost": 191.7,
+          "margin": 934.33,
+          "avgMarginPerCompletedFill": 934.33
+        },
+        {
+          "primaryPayer": "Sav-Rx",
+          "completedFills": 1,
+          "cancelledFills": 0,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 0.0,
+          "primaryCopay": 1952.56,
+          "secondaryRemit": 1130.35,
+          "totalRevenue": 1329.35,
+          "acquisitionCost": 365.62,
+          "margin": 963.73,
+          "avgMarginPerCompletedFill": 963.73
+        },
+        {
+          "primaryPayer": "True Scripts",
+          "completedFills": 1,
+          "cancelledFills": 0,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 0.0,
+          "primaryCopay": 1952.56,
+          "secondaryRemit": 1180.35,
+          "totalRevenue": 1329.35,
+          "acquisitionCost": 191.7,
+          "margin": 1137.65,
+          "avgMarginPerCompletedFill": 1137.65
+        },
+        {
+          "primaryPayer": "Anthem HIP",
+          "completedFills": 0,
+          "cancelledFills": 8,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 0.0,
+          "primaryCopay": 0.0,
+          "secondaryRemit": 0.0,
+          "totalRevenue": 0.0,
+          "acquisitionCost": 0.0,
+          "margin": 0.0,
+          "avgMarginPerCompletedFill": 0.0
+        },
+        {
+          "primaryPayer": "Bc/bs Texas",
+          "completedFills": 0,
+          "cancelledFills": 1,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 0.0,
+          "primaryCopay": 0.0,
+          "secondaryRemit": 0.0,
+          "totalRevenue": 0.0,
+          "acquisitionCost": 0.0,
+          "margin": 0.0,
+          "avgMarginPerCompletedFill": 0.0
+        },
+        {
+          "primaryPayer": "CareSource HIP",
+          "completedFills": 0,
+          "cancelledFills": 1,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 0.0,
+          "primaryCopay": 0.0,
+          "secondaryRemit": 0.0,
+          "totalRevenue": 0.0,
+          "acquisitionCost": 0.0,
+          "margin": 0.0,
+          "avgMarginPerCompletedFill": 0.0
+        },
+        {
+          "primaryPayer": "Careplus D Humana Pdp",
+          "completedFills": 0,
+          "cancelledFills": 1,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 0.0,
+          "primaryCopay": 0.0,
+          "secondaryRemit": 0.0,
+          "totalRevenue": 0.0,
+          "acquisitionCost": 0.0,
+          "margin": 0.0,
+          "avgMarginPerCompletedFill": 0.0
+        },
+        {
+          "primaryPayer": "Cash / None",
+          "completedFills": 0,
+          "cancelledFills": 4,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 0.0,
+          "primaryCopay": 0.0,
+          "secondaryRemit": 0.0,
+          "totalRevenue": 0.0,
+          "acquisitionCost": 0.0,
+          "margin": 0.0,
+          "avgMarginPerCompletedFill": 0.0
+        },
+        {
+          "primaryPayer": "DC Inj Weight Loss Program",
+          "completedFills": 0,
+          "cancelledFills": 2,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 0.0,
+          "primaryCopay": 0.0,
+          "secondaryRemit": 0.0,
+          "totalRevenue": 0.0,
+          "acquisitionCost": 0.0,
+          "margin": 0.0,
+          "avgMarginPerCompletedFill": 0.0
+        },
+        {
+          "primaryPayer": "Indiana Medicaid",
+          "completedFills": 0,
+          "cancelledFills": 3,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 0.0,
+          "primaryCopay": 0.0,
+          "secondaryRemit": 0.0,
+          "totalRevenue": 0.0,
+          "acquisitionCost": 0.0,
+          "margin": 0.0,
+          "avgMarginPerCompletedFill": 0.0
+        },
+        {
+          "primaryPayer": "Ingenio Rx Pdp",
+          "completedFills": 0,
+          "cancelledFills": 1,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 0.0,
+          "primaryCopay": 0.0,
+          "secondaryRemit": 0.0,
+          "totalRevenue": 0.0,
+          "acquisitionCost": 0.0,
+          "margin": 0.0,
+          "avgMarginPerCompletedFill": 0.0
+        },
+        {
+          "primaryPayer": "Managed Health Services HIP",
+          "completedFills": 0,
+          "cancelledFills": 4,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 0.0,
+          "primaryCopay": 0.0,
+          "secondaryRemit": 0.0,
+          "totalRevenue": 0.0,
+          "acquisitionCost": 0.0,
+          "margin": 0.0,
+          "avgMarginPerCompletedFill": 0.0
+        },
+        {
+          "primaryPayer": "PrEP MAP - True RX",
+          "completedFills": 0,
+          "cancelledFills": 1,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 0.0,
+          "primaryCopay": 0.0,
+          "secondaryRemit": 0.0,
+          "totalRevenue": 0.0,
+          "acquisitionCost": 0.0,
+          "margin": 0.0,
+          "avgMarginPerCompletedFill": 0.0
+        },
+        {
+          "primaryPayer": "Providence Health Plan",
+          "completedFills": 0,
+          "cancelledFills": 1,
+          "waitingForPickupFills": 0,
+          "primaryRemit": 0.0,
+          "primaryCopay": 0.0,
+          "secondaryRemit": 0.0,
+          "totalRevenue": 0.0,
+          "acquisitionCost": 0.0,
+          "margin": 0.0,
+          "avgMarginPerCompletedFill": 0.0
+        }
+      ],
+      "bySecondaryThirdPartyPayer": [
+        {
+          "secondaryPayer": "DC Inj Weight Loss Program",
+          "completedFills": 1450,
+          "secondaryRemit": 274562.47,
+          "secondaryCopay": 143550.0,
+          "totalRevenue": 1644437.45,
+          "margin": 1181406.99
+        },
+        {
+          "secondaryPayer": "DC Tab Weight Loss Program",
+          "completedFills": 537,
+          "secondaryRemit": 75598.37,
+          "secondaryCopay": 26313.0,
+          "totalRevenue": 637881.78,
+          "margin": 534007.28
+        },
+        {
+          "secondaryPayer": "Wegovy Savings Card",
+          "completedFills": 35,
+          "secondaryRemit": 37662.25,
+          "secondaryCopay": 8865.0,
+          "totalRevenue": 46527.25,
+          "margin": 36105.01
+        },
+        {
+          "secondaryPayer": "None",
+          "completedFills": 29,
+          "secondaryRemit": 0.0,
+          "secondaryCopay": 0.0,
+          "totalRevenue": 0.0,
+          "margin": -1428.59
+        },
+        {
+          "secondaryPayer": "Connective RX",
+          "completedFills": 8,
+          "secondaryRemit": 5651.75,
+          "secondaryCopay": 1749.85,
+          "totalRevenue": 9366.12,
+          "margin": 6397.98
+        }
+      ],
+      "byMedicationAndNdc": [
+        {
+          "medicationName": "Wegovy 0.25 Mg/0.5 Ml Pen",
+          "ndcs": [
+            "00169452514"
+          ],
+          "completedFills": 401,
+          "completedThroughSep30": 400,
+          "cancelledFills": 53,
+          "waitingForPickupFills": 2,
+          "completedRevenue": 488567.06,
+          "completedAcquisitionCost": 131821.53,
+          "completedMargin": 356745.53,
+          "avgRevenuePerFill": 1218.37,
+          "avgAcquisitionCostPerFill": 328.73,
+          "avgMarginPerFill": 889.64
+        },
+        {
+          "medicationName": "Wegovy 0.5 Mg/0.5 Ml Pen",
+          "ndcs": [
+            "00169450514"
+          ],
+          "completedFills": 332,
+          "completedThroughSep30": 332,
+          "cancelledFills": 30,
+          "waitingForPickupFills": 1,
+          "completedRevenue": 393241.61,
+          "completedAcquisitionCost": 105998.23,
+          "completedMargin": 287243.38,
+          "avgRevenuePerFill": 1184.46,
+          "avgAcquisitionCostPerFill": 319.27,
+          "avgMarginPerFill": 865.19
+        },
+        {
+          "medicationName": "Wegovy 1.5 Mg Tablet",
+          "ndcs": [
+            "00169441531"
+          ],
+          "completedFills": 263,
+          "completedThroughSep30": 263,
+          "cancelledFills": 24,
+          "waitingForPickupFills": 4,
+          "completedRevenue": 322133.46,
+          "completedAcquisitionCost": 51232.25,
+          "completedMargin": 270901.21,
+          "avgRevenuePerFill": 1224.84,
+          "avgAcquisitionCostPerFill": 194.8,
+          "avgMarginPerFill": 1030.04
+        },
+        {
+          "medicationName": "Wegovy 2.4 Mg/0.75 Ml Pen",
+          "ndcs": [
+            "00169452414"
+          ],
+          "completedFills": 260,
+          "completedThroughSep30": 260,
+          "cancelledFills": 23,
+          "waitingForPickupFills": 2,
+          "completedRevenue": 281813.66,
+          "completedAcquisitionCost": 80366.5,
+          "completedMargin": 201447.16,
+          "avgRevenuePerFill": 1083.9,
+          "avgAcquisitionCostPerFill": 309.1,
+          "avgMarginPerFill": 774.8
+        },
+        {
+          "medicationName": "Wegovy 1 Mg/0.5 Ml Pen",
+          "ndcs": [
+            "00169450114"
+          ],
+          "completedFills": 246,
+          "completedThroughSep30": 246,
+          "cancelledFills": 14,
+          "waitingForPickupFills": 0,
+          "completedRevenue": 266189.79,
+          "completedAcquisitionCost": 80254.94,
+          "completedMargin": 185934.85,
+          "avgRevenuePerFill": 1082.07,
+          "avgAcquisitionCostPerFill": 326.24,
+          "avgMarginPerFill": 755.83
+        },
+        {
+          "medicationName": "Wegovy 1.7 Mg/0.75 Ml Pen",
+          "ndcs": [
+            "00169451714"
+          ],
+          "completedFills": 202,
+          "completedThroughSep30": 202,
+          "cancelledFills": 14,
+          "waitingForPickupFills": 1,
+          "completedRevenue": 217746.03,
+          "completedAcquisitionCost": 64191.16,
+          "completedMargin": 153554.87,
+          "avgRevenuePerFill": 1077.95,
+          "avgAcquisitionCostPerFill": 317.78,
+          "avgMarginPerFill": 760.17
+        },
+        {
+          "medicationName": "Wegovy 4 Mg Tablet",
+          "ndcs": [
+            "00169440431"
+          ],
+          "completedFills": 169,
+          "completedThroughSep30": 169,
+          "cancelledFills": 6,
+          "waitingForPickupFills": 2,
+          "completedRevenue": 203276.53,
+          "completedAcquisitionCost": 32513.75,
+          "completedMargin": 170762.78,
+          "avgRevenuePerFill": 1202.82,
+          "avgAcquisitionCostPerFill": 192.39,
+          "avgMarginPerFill": 1010.43
+        },
+        {
+          "medicationName": "Wegovy 9 Mg Tablet",
+          "ndcs": [
+            "00169440931"
+          ],
+          "completedFills": 76,
+          "completedThroughSep30": 76,
+          "cancelledFills": 3,
+          "waitingForPickupFills": 1,
+          "completedRevenue": 80997.93,
+          "completedAcquisitionCost": 14569.2,
+          "completedMargin": 66428.73,
+          "avgRevenuePerFill": 1065.76,
+          "avgAcquisitionCostPerFill": 191.7,
+          "avgMarginPerFill": 874.06
+        },
+        {
+          "medicationName": "Wegovy 25 Mg Tablet",
+          "ndcs": [
+            "00169442531"
+          ],
+          "completedFills": 34,
+          "completedThroughSep30": 34,
+          "cancelledFills": 3,
+          "waitingForPickupFills": 0,
+          "completedRevenue": 36791.26,
+          "completedAcquisitionCost": 6517.8,
+          "completedMargin": 30273.46,
+          "avgRevenuePerFill": 1082.1,
+          "avgAcquisitionCostPerFill": 191.7,
+          "avgMarginPerFill": 890.4
+        },
+        {
+          "medicationName": "Wegovy Hd 7.2 Mg/0.75 Ml Pen",
+          "ndcs": [
+            "00169457214"
+          ],
+          "completedFills": 22,
+          "completedThroughSep30": 22,
+          "cancelledFills": 0,
+          "waitingForPickupFills": 2,
+          "completedRevenue": 22645.7,
+          "completedAcquisitionCost": 5632.22,
+          "completedMargin": 17013.48,
+          "avgRevenuePerFill": 1029.35,
+          "avgAcquisitionCostPerFill": 256.01,
+          "avgMarginPerFill": 773.34
+        },
+        {
+          "medicationName": "Ozempic 0.25-0.5 Mg/dose (2 Mg/3 Ml) Pen",
+          "ndcs": [
+            "00169418113"
+          ],
+          "completedFills": 15,
+          "completedThroughSep30": 15,
+          "cancelledFills": 2,
+          "waitingForPickupFills": 0,
+          "completedRevenue": 13532.95,
+          "completedAcquisitionCost": 4351.35,
+          "completedMargin": 9181.6,
+          "avgRevenuePerFill": 902.2,
+          "avgAcquisitionCostPerFill": 290.09,
+          "avgMarginPerFill": 612.11
+        },
+        {
+          "medicationName": "Ozempic 1 Mg/dose (4 Mg/3 Ml) Pen",
+          "ndcs": [
+            "00169413013"
+          ],
+          "completedFills": 12,
+          "completedThroughSep30": 12,
+          "cancelledFills": 0,
+          "waitingForPickupFills": 0,
+          "completedRevenue": 9438.82,
+          "completedAcquisitionCost": 3516.39,
+          "completedMargin": 5922.43,
+          "avgRevenuePerFill": 786.57,
+          "avgAcquisitionCostPerFill": 293.03,
+          "avgMarginPerFill": 493.54
+        },
+        {
+          "medicationName": "Bupropion Hcl Sr 200 Mg Tablet",
+          "ndcs": [
+            "50228017601"
+          ],
+          "completedFills": 4,
+          "completedThroughSep30": 4,
+          "cancelledFills": 0,
+          "waitingForPickupFills": 0,
+          "completedRevenue": 0.0,
+          "completedAcquisitionCost": 7.76,
+          "completedMargin": -7.76,
+          "avgRevenuePerFill": 0.0,
+          "avgAcquisitionCostPerFill": 1.94,
+          "avgMarginPerFill": -1.94
+        },
+        {
+          "medicationName": "Bupropion Hcl Xl 150 Mg Tablet",
+          "ndcs": [
+            "68180031909"
+          ],
+          "completedFills": 4,
+          "completedThroughSep30": 4,
+          "cancelledFills": 0,
+          "waitingForPickupFills": 0,
+          "completedRevenue": 0.0,
+          "completedAcquisitionCost": 3.52,
+          "completedMargin": -3.52,
+          "avgRevenuePerFill": 0.0,
+          "avgAcquisitionCostPerFill": 0.88,
+          "avgMarginPerFill": -0.88
+        },
+        {
+          "medicationName": "Metformin Hcl 500 Mg Tablet",
+          "ndcs": [
+            "59651085401"
+          ],
+          "completedFills": 4,
+          "completedThroughSep30": 4,
+          "cancelledFills": 0,
+          "waitingForPickupFills": 0,
+          "completedRevenue": 0.0,
+          "completedAcquisitionCost": 4.31,
+          "completedMargin": -4.31,
+          "avgRevenuePerFill": 0.0,
+          "avgAcquisitionCostPerFill": 1.08,
+          "avgMarginPerFill": -1.08
+        },
+        {
+          "medicationName": "Bupropion Hcl Xl 300 Mg Tablet",
+          "ndcs": [
+            "68180032009"
+          ],
+          "completedFills": 3,
+          "completedThroughSep30": 3,
+          "cancelledFills": 0,
+          "waitingForPickupFills": 0,
+          "completedRevenue": 0.0,
+          "completedAcquisitionCost": 4.1,
+          "completedMargin": -4.1,
+          "avgRevenuePerFill": 0.0,
+          "avgAcquisitionCostPerFill": 1.37,
+          "avgMarginPerFill": -1.37
+        },
+        {
+          "medicationName": "Ondansetron Odt 4 Mg Tablet",
+          "ndcs": [
+            "57237007710"
+          ],
+          "completedFills": 3,
+          "completedThroughSep30": 3,
+          "cancelledFills": 0,
+          "waitingForPickupFills": 0,
+          "completedRevenue": 0.0,
+          "completedAcquisitionCost": 1.25,
+          "completedMargin": -1.25,
+          "avgRevenuePerFill": 0.0,
+          "avgAcquisitionCostPerFill": 0.42,
+          "avgMarginPerFill": -0.42
+        },
+        {
+          "medicationName": "Ozempic 2 Mg/dose (8 Mg/3 Ml) Pen",
+          "ndcs": [
+            "00169477212"
+          ],
+          "completedFills": 3,
+          "completedThroughSep30": 3,
+          "cancelledFills": 0,
+          "waitingForPickupFills": 0,
+          "completedRevenue": 1837.8,
+          "completedAcquisitionCost": 730.35,
+          "completedMargin": 1107.45,
+          "avgRevenuePerFill": 612.6,
+          "avgAcquisitionCostPerFill": 243.45,
+          "avgMarginPerFill": 369.15
+        },
+        {
+          "medicationName": "Escitalopram 20 Mg Tablet",
+          "ndcs": [
+            "43547028210"
+          ],
+          "completedFills": 1,
+          "completedThroughSep30": 1,
+          "cancelledFills": 0,
+          "waitingForPickupFills": 0,
+          "completedRevenue": 0.0,
+          "completedAcquisitionCost": 2.61,
+          "completedMargin": -2.61,
+          "avgRevenuePerFill": 0.0,
+          "avgAcquisitionCostPerFill": 2.61,
+          "avgMarginPerFill": -2.61
+        },
+        {
+          "medicationName": "Minoxidil 2.5 Mg Tablet",
+          "ndcs": [
+            "49884025601"
+          ],
+          "completedFills": 1,
+          "completedThroughSep30": 0,
+          "cancelledFills": 0,
+          "waitingForPickupFills": 0,
+          "completedRevenue": 0.0,
+          "completedAcquisitionCost": 2.56,
+          "completedMargin": -2.56,
+          "avgRevenuePerFill": 0.0,
+          "avgAcquisitionCostPerFill": 2.56,
+          "avgMarginPerFill": -2.56
+        },
+        {
+          "medicationName": "Ondansetron Hcl 4 Mg Tablet",
+          "ndcs": [
+            "65862018730"
+          ],
+          "completedFills": 1,
+          "completedThroughSep30": 1,
+          "cancelledFills": 0,
+          "waitingForPickupFills": 0,
+          "completedRevenue": 0.0,
+          "completedAcquisitionCost": 0.24,
+          "completedMargin": -0.24,
+          "avgRevenuePerFill": 0.0,
+          "avgAcquisitionCostPerFill": 0.24,
+          "avgMarginPerFill": -0.24
+        },
+        {
+          "medicationName": "Rosuvastatin Calcium 20 Mg Tab",
+          "ndcs": [
+            "68462026390"
+          ],
+          "completedFills": 1,
+          "completedThroughSep30": 1,
+          "cancelledFills": 1,
+          "waitingForPickupFills": 0,
+          "completedRevenue": 0.0,
+          "completedAcquisitionCost": 0.76,
+          "completedMargin": -0.76,
+          "avgRevenuePerFill": 0.0,
+          "avgAcquisitionCostPerFill": 0.76,
+          "avgMarginPerFill": -0.76
+        },
+        {
+          "medicationName": "Sertraline Hcl 25 Mg Tablet",
+          "ndcs": [
+            "68180097801"
+          ],
+          "completedFills": 1,
+          "completedThroughSep30": 1,
+          "cancelledFills": 0,
+          "waitingForPickupFills": 0,
+          "completedRevenue": 0.0,
+          "completedAcquisitionCost": 0.58,
+          "completedMargin": -0.58,
+          "avgRevenuePerFill": 0.0,
+          "avgAcquisitionCostPerFill": 0.58,
+          "avgMarginPerFill": -0.58
+        },
+        {
+          "medicationName": "Venlafaxine Hcl Er 37.5 Mg Cap",
+          "ndcs": [
+            "65862052730"
+          ],
+          "completedFills": 1,
+          "completedThroughSep30": 1,
+          "cancelledFills": 0,
+          "waitingForPickupFills": 0,
+          "completedRevenue": 0.0,
+          "completedAcquisitionCost": 0.57,
+          "completedMargin": -0.57,
+          "avgRevenuePerFill": 0.0,
+          "avgAcquisitionCostPerFill": 0.57,
+          "avgMarginPerFill": -0.57
+        }
+      ]
+    }
   }
 }
