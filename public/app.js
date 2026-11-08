@@ -199,7 +199,33 @@ const VIEW_TITLES = {
   ask: 'Ask Bridge AI'
 };
 
+const SEARCH_AUDIT_TIMERS = {};
+
+function trackClientAuditEvent(eventType, details = {}) {
+  try {
+    fetch('/api/security/audit-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventType, details })
+    }).catch(() => {});
+  } catch (_) {}
+}
+
+function schedulePatientSearchAudit(sheet, query, matchCount) {
+  const clean = String(query || '').trim();
+  if (SEARCH_AUDIT_TIMERS[sheet]) clearTimeout(SEARCH_AUDIT_TIMERS[sheet]);
+  if (clean.length < 2) return;
+  SEARCH_AUDIT_TIMERS[sheet] = setTimeout(() => {
+    trackClientAuditEvent('PATIENT_SEARCH_QUERY', {
+      sheet,
+      query: clean.slice(0, 80),
+      matchCount: Number(matchCount || 0)
+    });
+  }, 550);
+}
+
 function switchView(viewId) {
+  const changed = CURRENT_VIEW !== viewId;
   CURRENT_VIEW = viewId;
   document.querySelectorAll('#sidebarNav .nav-btn').forEach(btn => {
     btn.classList.toggle('active', btn.getAttribute('data-view') === viewId);
@@ -210,6 +236,12 @@ function switchView(viewId) {
   const titleEl = document.getElementById('topbarTitle');
   if (titleEl && VIEW_TITLES[viewId]) {
     titleEl.textContent = VIEW_TITLES[viewId];
+  }
+  if (changed) {
+    trackClientAuditEvent('SECTION_VIEW', {
+      viewId,
+      viewTitle: VIEW_TITLES[viewId] || viewId
+    });
   }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -1644,7 +1676,15 @@ function renderMedMixChart() {
 /* ═══════════════════════════════════════════════════════════════════════════
    8. INTERACTIVE FIRST-FILL & OPS WORKLIST (All 4 Excel Sheets)
    ═══════════════════════════════════════════════════════════════════════════ */
+const WORKLIST_SUBTAB_TITLES = {
+  todo: 'Pharmacy To-Do (Active First-Fill Queue)',
+  refill: 'Refill Follow-Up (Overdue Refills)',
+  fixes: 'Pharmacy Data Fixes (Missing & Unmatched IDs)',
+  ended: 'Ended – Never Filled'
+};
+
 function switchWorklistSubtab(subtab) {
+  const changed = CURRENT_WL_SUBTAB !== subtab;
   CURRENT_WL_SUBTAB = subtab;
   ['todo', 'refill', 'fixes', 'ended'].forEach(key => {
     const btn = document.getElementById(`wlTabBtn-${key}`);
@@ -1652,6 +1692,12 @@ function switchWorklistSubtab(subtab) {
     if (btn) btn.classList.toggle('active', key === subtab);
     if (panel) panel.style.display = key === subtab ? 'block' : 'none';
   });
+  if (changed) {
+    trackClientAuditEvent('WORKLIST_SUBTAB_VIEW', {
+      subtab,
+      subtabTitle: WORKLIST_SUBTAB_TITLES[subtab] || subtab
+    });
+  }
 }
 
 function updateWorklistBadges() {
@@ -1735,6 +1781,7 @@ function renderTodoTable() {
   });
 
   document.getElementById('todoFilteredCountBadge').textContent = `Showing ${filtered.length} of ${rows.length}`;
+  if (q) schedulePatientSearchAudit('todo', q, filtered.length);
 
   const statusOptions = ['Not started', 'In progress', 'Contacted patient', 'Filled – ID Corrected', 'Filled', 'Cancelled by patient'];
 
@@ -1805,6 +1852,7 @@ function renderRefillTable() {
   });
 
   document.getElementById('refillFilteredCountBadge').textContent = `Showing ${filtered.length} of ${rows.length}`;
+  if (q) schedulePatientSearchAudit('refill', q, filtered.length);
   const statusOptions = ['Not started', 'Contacted – Refill Scheduled', 'Left Voicemail / Text', 'Refilled', 'Discontinued'];
 
   const tbody = document.getElementById('tbodyWorklistRefill');
@@ -1872,6 +1920,7 @@ function renderFixesTables() {
   }).join('');
 
   const filteredNoId = noIdRows.filter(r => !qNoId || JSON.stringify(r).toLowerCase().includes(qNoId));
+  if (qNoId) schedulePatientSearchAudit('fixes-noid', qNoId, filteredNoId.length);
   const tbodyNoId = document.getElementById('tbodyFixesNoId');
   tbodyNoId.innerHTML = filteredNoId.map(r => {
     const isGlp1 = /wegovy|ozempic/i.test(r['Dispensed item'] || '');
@@ -1925,6 +1974,7 @@ function renderEndedTable() {
   });
 
   document.getElementById('endedFilteredCountBadge').textContent = `Showing ${filtered.length} of ${rows.length}`;
+  if (q) schedulePatientSearchAudit('ended', q, filtered.length);
   const tbody = document.getElementById('tbodyWorklistEnded');
   tbody.innerHTML = filtered.map(r => `
     <tr>
@@ -1981,7 +2031,7 @@ async function applyAllFuzzyFixes() {
     const resp = await fetch('/api/worklist/apply-fuzzy-fixes', { method: 'POST' });
     const data = await resp.json();
     if (data.ok) {
-      const fresh = await fetch('/api/portal-data');
+      const fresh = await fetch('/api/portal-data?silent=1');
       PORTAL_DATA = await fresh.json();
       renderWorklistsView();
       updateWorklistBadges();
@@ -1994,7 +2044,7 @@ async function applyAllFuzzyFixes() {
 async function resetAllWorklistEdits() {
   try {
     await fetch('/api/worklist/reset', { method: 'POST' });
-    const fresh = await fetch('/api/portal-data');
+    const fresh = await fetch('/api/portal-data?silent=1');
     PORTAL_DATA = await fresh.json();
     renderWorklistsView();
     updateWorklistBadges();
@@ -2021,6 +2071,13 @@ function openPatientModal(sheet, id) {
   const row = rows.find(r => r.id === id);
   if (!row) return;
 
+  trackClientAuditEvent('PATIENT_RECORD_VIEW', {
+    sheet,
+    rowId: id,
+    patientId: row['Pharmacy patient ID'] || id,
+    alphaMemberId: row['Alpha member ID'] || ''
+  });
+
   const extraAuditHeaders = ['Updated by', 'Updated at'].filter(h => !baseHeaders.includes(h) && row[h]);
   const headers = [...baseHeaders, ...extraAuditHeaders];
 
@@ -2043,6 +2100,7 @@ function closePatientModal() {
 }
 
 function openDefinitionsModal() {
+  trackClientAuditEvent('DEFINITIONS_VIEW', { modal: 'Program Definitions & Data Notes' });
   document.getElementById('definitionsModal').classList.add('open');
 }
 
@@ -2426,10 +2484,13 @@ function escapeAttr(s) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   10. ENTERPRISE SECURITY, NAMED USERS, MFA & AUDIT LOG MODAL + IDLE TIMER
+   10. ENTERPRISE SECURITY, NAMED USERS, USAGE, AI Q&A HISTORY & AUDIT LOG
    ═══════════════════════════════════════════════════════════════════════════ */
 let IDLE_TIMER_HANDLE = null;
 const IDLE_TIMEOUT_CLIENT_MS = 30 * 60 * 1000;
+let LAST_SECURITY_OVERVIEW = null;
+let CURRENT_SEC_BOTTOM_TAB = 'audit';
+const EXPANDED_QA_IDS = new Set();
 
 function startIdleAutoLogoffTimer() {
   const resetIdle = () => {
@@ -2455,11 +2516,34 @@ function closeSecurityModal() {
   if (modal) modal.classList.remove('open');
 }
 
+function switchSecurityBottomTab(tab) {
+  CURRENT_SEC_BOTTOM_TAB = tab === 'qa' ? 'qa' : 'audit';
+  const btnAudit = document.getElementById('secBottomTabBtnAudit');
+  const btnQa = document.getElementById('secBottomTabBtnQa');
+  const panelAudit = document.getElementById('secBottomPanelAudit');
+  const panelQa = document.getElementById('secBottomPanelQa');
+
+  if (btnAudit) {
+    btnAudit.className = CURRENT_SEC_BOTTOM_TAB === 'audit' ? 'btn-bridge-primary' : 'btn-bridge-outline';
+  }
+  if (btnQa) {
+    btnQa.className = CURRENT_SEC_BOTTOM_TAB === 'qa' ? 'btn-bridge-primary' : 'btn-bridge-outline';
+  }
+  if (panelAudit) panelAudit.style.display = CURRENT_SEC_BOTTOM_TAB === 'audit' ? 'block' : 'none';
+  if (panelQa) panelQa.style.display = CURRENT_SEC_BOTTOM_TAB === 'qa' ? 'block' : 'none';
+}
+
+function formatShortTimestamp(iso) {
+  if (!iso) return 'Never';
+  return String(iso).replace('T', ' ').slice(0, 19) + ' UTC';
+}
+
 async function refreshSecurityModalData() {
   try {
     const resp = await fetch('/api/security/overview');
     if (!resp.ok) return;
     const data = await resp.json();
+    LAST_SECURITY_OVERVIEW = data;
 
     const cur = data.currentUser || {};
     const isBridgeAdmin = Boolean(data.isBridgeAdmin);
@@ -2468,6 +2552,24 @@ async function refreshSecurityModalData() {
     if (lbl) {
       lbl.textContent = `Signed in as ${cur.displayName || cur.username} (${cur.username}) · Role: ${cur.role || 'client_user'}`;
     }
+
+    // Populate Executive Usage KPI Row
+    const us = data.usageSummary || {};
+    const elLogins = document.getElementById('secKpiLogins');
+    const elOnlineSub = document.getElementById('secKpiOnlineSub');
+    const elViews = document.getElementById('secKpiViews');
+    const elPatientViews = document.getElementById('secKpiPatientViews');
+    const elEdits = document.getElementById('secKpiEdits');
+    const elAiQueries = document.getElementById('secKpiAiQueries');
+    const elExports = document.getElementById('secKpiExports');
+
+    if (elLogins) elLogins.textContent = String(us.totalLogins ?? 0);
+    if (elOnlineSub) elOnlineSub.textContent = `${us.activeUsersOnline ?? 1} of ${us.totalNamedUsers ?? 1} active now`;
+    if (elViews) elViews.textContent = String(us.totalPageAndPatientViews ?? 0);
+    if (elPatientViews) elPatientViews.textContent = String(us.totalPatientRecordViews ?? 0);
+    if (elEdits) elEdits.textContent = String(us.totalWorklistEdits ?? 0);
+    if (elAiQueries) elAiQueries.textContent = String(us.totalAiQuestions ?? 0);
+    if (elExports) elExports.textContent = String(us.totalExports ?? 0);
 
     const mfaSel = document.getElementById('secMyMfaMethod');
     const mfaEmail = document.getElementById('secMyMfaEmail');
@@ -2497,40 +2599,251 @@ async function refreshSecurityModalData() {
       rbacNotice.style.display = isBridgeAdmin ? 'none' : 'block';
     }
 
+    const thActions = document.getElementById('thAdminUserActions');
+    if (thActions) thActions.style.display = isBridgeAdmin ? 'table-cell' : 'none';
+
+    const btnExpAudit = document.getElementById('btnExportAuditCsv');
+    const btnExpQa = document.getElementById('btnExportQaCsv');
+    if (btnExpAudit) btnExpAudit.style.display = isBridgeAdmin ? 'inline-flex' : 'none';
+    if (btnExpQa) btnExpQa.style.display = isBridgeAdmin ? 'inline-flex' : 'none';
+
     const tbodyUsers = document.getElementById('tbodySecurityUsers');
     if (tbodyUsers) {
-      tbodyUsers.innerHTML = (data.users || []).map(u => `
-        <tr>
-          <td><strong>${escapeAttr(u.username)}</strong></td>
-          <td>${escapeAttr(u.displayName)}</td>
-          <td style="font-size:0.75rem;color:#334155">${escapeAttr(u.email || '')}</td>
-          <td><span style="color:#059669;font-weight:700">Mandatory (Email / App)</span></td>
-        </tr>
-      `).join('');
-    }
+      tbodyUsers.innerHTML = (data.users || []).map(u => {
+        const st = u.usage || {};
+        const roleBadgeColor = u.role === 'bridge_admin'
+          ? 'background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe'
+          : (u.role === 'pharmacist' ? 'background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd' : 'background:#f1f5f9;color:#334155;border:1px solid #cbd5e1');
+        const statusDot = st.isLockedOut
+          ? `<span class="badge" style="background:#fee2e2;color:#991b1b;font-size:0.65rem">Locked Out</span>`
+          : (st.isOnline ? `<span class="badge" style="background:#dcfce7;color:#166534;font-size:0.65rem">Online</span>` : '');
+        const lastActStr = st.lastActiveAt ? formatShortTimestamp(st.lastActiveAt).slice(5, 16) + ' UTC' : 'No activity yet';
 
-    const events = data.auditEvents || [];
-    const badge = document.getElementById('secAuditCountBadge');
-    if (badge) badge.textContent = `${events.length} Events`;
+        const adminBtns = isBridgeAdmin ? `
+          <td style="white-space:nowrap">
+            <div style="display:flex;gap:4px;flex-wrap:wrap">
+              ${st.isLockedOut ? `<button type="button" class="btn-bridge-outline" style="padding:2px 7px;font-size:0.68rem;color:#b91c1c;border-color:#fca5a5" onclick="adminUnlockUserAccount('${escapeAttr(u.username)}')">Unlock</button>` : ''}
+              <button type="button" class="btn-bridge-outline" style="padding:2px 7px;font-size:0.68rem" onclick="adminCycleUserRole('${escapeAttr(u.username)}', '${escapeAttr(u.role)}')" title="Cycle Role">Role</button>
+              ${!u.isBuiltIn ? `<button type="button" class="btn-bridge-outline" style="padding:2px 7px;font-size:0.68rem;color:#b91c1c" onclick="adminDeleteUserAccount('${escapeAttr(u.username)}')">Remove</button>` : ''}
+            </div>
+          </td>
+        ` : '';
 
-    const tbodyAudit = document.getElementById('tbodySecurityAuditLog');
-    if (tbodyAudit) {
-      tbodyAudit.innerHTML = events.map(ev => {
-        const ts = ev.timestamp ? ev.timestamp.replace('T', ' ').slice(0, 19) + ' UTC' : '—';
-        const detailsStr = ev.details ? JSON.stringify(ev.details) : '';
         return `
-          <tr>
-            <td style="white-space:nowrap;font-size:0.74rem;color:#475569">${escapeAttr(ts)}</td>
-            <td><strong>${escapeAttr(ev.displayName || ev.user)}</strong> <span style="color:#64748b;font-size:0.72rem">(${escapeAttr(ev.user)})</span></td>
-            <td><span class="know-badge">${escapeAttr(ev.eventType)}</span></td>
-            <td style="font-size:0.74rem">${escapeAttr(ev.ip || '')} (${escapeAttr(ev.country || 'US')})</td>
-            <td style="font-size:0.73rem;color:#334155;max-width:260px;overflow:hidden;text-overflow:ellipsis">${escapeAttr(detailsStr)}</td>
+          <tr data-username="${escapeAttr(u.username)}">
+            <td>
+              <div><strong>${escapeAttr(u.username)}</strong> ${statusDot}</div>
+              <div style="margin-top:2px"><span class="badge" style="font-size:0.65rem;padding:1px 6px;${roleBadgeColor}">${escapeAttr(u.role || 'client_user')}</span></div>
+            </td>
+            <td>
+              <div style="font-weight:600;font-size:0.78rem">${escapeAttr(u.displayName)}</div>
+              <div style="font-size:0.73rem;color:#475569">${escapeAttr(u.email || '')}</div>
+            </td>
+            <td style="font-size:0.72rem;color:#334155">
+              <div><strong>${st.loginCount || 0}</strong> logins · <strong>${st.viewCount || 0}</strong> views · <strong>${st.editCount || 0}</strong> edits · <strong>${st.aiQueryCount || 0}</strong> AI</div>
+              <div style="color:#64748b;font-size:0.69rem">Last active: ${escapeAttr(lastActStr)}</div>
+            </td>
+            <td><span style="color:#059669;font-weight:700;font-size:0.75rem">Mandatory (Email / App)</span></td>
+            ${adminBtns}
           </tr>
         `;
       }).join('');
     }
+
+    // Populate User Filter Dropdowns for Audit & Q&A Tabs
+    const userNames = Array.from(new Set([
+      ...(data.users || []).map(u => u.username),
+      ...(data.auditEvents || []).map(e => e.user).filter(Boolean),
+      ...(data.qaHistory || []).map(q => q.user).filter(Boolean)
+    ]));
+    const auditUserSel = document.getElementById('secAuditUserFilter');
+    if (auditUserSel) {
+      const prev = auditUserSel.value;
+      auditUserSel.innerHTML = `<option value="">All Users (${userNames.length})</option>` +
+        userNames.map(u => `<option value="${escapeAttr(u)}">${escapeAttr(u)}</option>`).join('');
+      if (prev && userNames.includes(prev)) auditUserSel.value = prev;
+    }
+    const qaUserSel = document.getElementById('secQaUserFilter');
+    if (qaUserSel) {
+      const prev = qaUserSel.value;
+      qaUserSel.innerHTML = `<option value="">All Users (${userNames.length})</option>` +
+        userNames.map(u => `<option value="${escapeAttr(u)}">${escapeAttr(u)}</option>`).join('');
+      if (prev && userNames.includes(prev)) qaUserSel.value = prev;
+    }
+
+    renderSecurityAuditTable();
+    renderSecurityQaHistoryTable();
   } catch (err) {
     console.error('Error loading security overview:', err);
+  }
+}
+
+function renderSecurityAuditTable() {
+  if (!LAST_SECURITY_OVERVIEW) return;
+  const allEvents = LAST_SECURITY_OVERVIEW.auditEvents || [];
+  const catFilter = document.getElementById('secAuditCategoryFilter')?.value || '';
+  const userFilter = (document.getElementById('secAuditUserFilter')?.value || '').toLowerCase();
+  const q = (document.getElementById('secAuditSearchInput')?.value || '').toLowerCase().trim();
+
+  const filtered = allEvents.filter(ev => {
+    if (catFilter && ev.category !== catFilter) return false;
+    if (userFilter && String(ev.user || '').toLowerCase() !== userFilter) return false;
+    if (q) {
+      const hay = `${ev.user} ${ev.displayName} ${ev.eventType} ${ev.summary || ''} ${JSON.stringify(ev.details || {})}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  const badge = document.getElementById('secAuditCountBadge');
+  if (badge) badge.textContent = `${filtered.length} Events`;
+
+  const tbodyAudit = document.getElementById('tbodySecurityAuditLog');
+  if (!tbodyAudit) return;
+
+  const catBadgeStyle = (cat) => {
+    if (cat === 'view_access') return 'background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd';
+    if (cat === 'worklist_edit') return 'background:#fef3c7;color:#92400e;border:1px solid #fde68a';
+    if (cat === 'ai_qa') return 'background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe';
+    if (cat === 'export') return 'background:#dcfce7;color:#166534;border:1px solid #bbf7d0';
+    return '';
+  };
+
+  tbodyAudit.innerHTML = filtered.map(ev => {
+    const ts = ev.timestamp ? ev.timestamp.replace('T', ' ').slice(0, 19) + ' UTC' : '—';
+    const summaryText = ev.summary || '';
+    const detailsStr = ev.details ? JSON.stringify(ev.details) : '';
+    return `
+      <tr data-event-type="${escapeAttr(ev.eventType)}" data-event-category="${escapeAttr(ev.category || '')}">
+        <td style="white-space:nowrap;font-size:0.73rem;color:#475569">${escapeAttr(ts)}</td>
+        <td>
+          <strong>${escapeAttr(ev.displayName || ev.user)}</strong>
+          <div style="color:#64748b;font-size:0.7rem">(${escapeAttr(ev.user)})</div>
+        </td>
+        <td><span class="know-badge" style="${catBadgeStyle(ev.category)}">${escapeAttr(ev.eventType)}</span></td>
+        <td style="font-size:0.73rem">${escapeAttr(ev.ip || '')} (${escapeAttr(ev.country || 'US')})</td>
+        <td style="font-size:0.74rem;color:#1e293b;max-width:340px">
+          <div style="font-weight:600">${escapeAttr(summaryText)}</div>
+          <div style="font-size:0.69rem;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeAttr(detailsStr)}">${escapeAttr(detailsStr)}</div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function toggleQaTranscriptExpand(qaId) {
+  if (EXPANDED_QA_IDS.has(qaId)) EXPANDED_QA_IDS.delete(qaId);
+  else EXPANDED_QA_IDS.add(qaId);
+  renderSecurityQaHistoryTable();
+}
+
+function renderSecurityQaHistoryTable() {
+  if (!LAST_SECURITY_OVERVIEW) return;
+  const allQa = LAST_SECURITY_OVERVIEW.qaHistory || [];
+  const userFilter = (document.getElementById('secQaUserFilter')?.value || '').toLowerCase();
+  const q = (document.getElementById('secQaSearchInput')?.value || '').toLowerCase().trim();
+
+  const filtered = allQa.filter(item => {
+    if (userFilter && String(item.user || '').toLowerCase() !== userFilter) return false;
+    if (q) {
+      const hay = `${item.user} ${item.displayName} ${item.question} ${item.answer} ${item.aiModel}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  const badge = document.getElementById('secQaCountBadge');
+  if (badge) badge.textContent = `${filtered.length} Questions`;
+
+  const tbodyQa = document.getElementById('tbodySecurityQaHistory');
+  if (!tbodyQa) return;
+
+  if (filtered.length === 0) {
+    tbodyQa.innerHTML = `<tr><td colspan="4" style="text-align:center;color:#64748b;padding:18px">No Ask Bridge AI questions recorded matching filter.</td></tr>`;
+    return;
+  }
+
+  tbodyQa.innerHTML = filtered.map(item => {
+    const ts = item.timestamp ? item.timestamp.replace('T', ' ').slice(0, 19) + ' UTC' : '—';
+    const isExpanded = EXPANDED_QA_IDS.has(item.id);
+    const ansPreview = String(item.answer || '').replace(/\s+/g, ' ').slice(0, 180);
+    const answerHtml = isExpanded
+      ? `<div style="margin-top:8px;padding:10px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;font-size:0.76rem">${formatMarkdownText(item.answer, false)}</div>`
+      : `<div style="margin-top:4px;font-size:0.74rem;color:#475569">${escapeAttr(ansPreview)}${String(item.answer || '').length > 180 ? '...' : ''}</div>`;
+
+    return `
+      <tr data-qa-id="${escapeAttr(item.id)}">
+        <td style="white-space:nowrap;font-size:0.73rem;color:#475569;vertical-align:top">${escapeAttr(ts)}</td>
+        <td style="vertical-align:top">
+          <strong>${escapeAttr(item.displayName || item.user)}</strong>
+          <div style="color:#64748b;font-size:0.7rem">(${escapeAttr(item.user)})</div>
+        </td>
+        <td style="vertical-align:top;max-width:480px">
+          <div style="font-weight:700;color:#0f172a;font-size:0.78rem">Q: ${escapeAttr(item.question)}</div>
+          ${answerHtml}
+          <button type="button" class="btn-bridge-outline" style="margin-top:6px;padding:2px 8px;font-size:0.69rem" onclick="toggleQaTranscriptExpand('${escapeAttr(item.id)}')">
+            ${isExpanded ? 'Hide Full AI Response' : 'View Full AI Response'}
+          </button>
+        </td>
+        <td style="vertical-align:top;font-size:0.72rem;white-space:nowrap">
+          <span class="know-badge">${escapeAttr(item.aiModel || 'gemini')}</span>
+          <div style="color:#64748b;margin-top:4px">${item.latencyMs ? `${item.latencyMs} ms` : ''}</div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function exportSecurityAuditCsv() {
+  window.location.href = '/api/security/export/audit-csv';
+}
+
+function exportSecurityQaCsv() {
+  window.location.href = '/api/security/export/qa-csv';
+}
+
+async function adminUnlockUserAccount(username) {
+  try {
+    const resp = await fetch(`/api/security/users/${encodeURIComponent(username)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ unlock: true })
+    });
+    if (resp.ok) {
+      await refreshSecurityModalData();
+    }
+  } catch (err) {
+    console.error('Error unlocking user:', err);
+  }
+}
+
+async function adminCycleUserRole(username, currentRole) {
+  const order = ['pharmacist', 'client_user', 'bridge_admin'];
+  const nextRole = order[(order.indexOf(currentRole) + 1) % order.length];
+  try {
+    const resp = await fetch(`/api/security/users/${encodeURIComponent(username)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: nextRole })
+    });
+    if (resp.ok) {
+      await refreshSecurityModalData();
+    }
+  } catch (err) {
+    console.error('Error updating user role:', err);
+  }
+}
+
+async function adminDeleteUserAccount(username) {
+  try {
+    const resp = await fetch(`/api/security/users/${encodeURIComponent(username)}`, {
+      method: 'DELETE'
+    });
+    if (resp.ok) {
+      await refreshSecurityModalData();
+    }
+  } catch (err) {
+    console.error('Error deleting user:', err);
   }
 }
 
@@ -2589,6 +2902,7 @@ async function handleCreateNamedUser(e) {
   const displayName = document.getElementById('newUserDisplayName').value.trim();
   const email = document.getElementById('newUserEmail').value.trim();
   const password = document.getElementById('newUserPassword').value;
+  const role = document.getElementById('newUserRole')?.value || 'pharmacist';
   const msgEl = document.getElementById('newUserMsg');
   try {
     const resp = await fetch('/api/security/users', {
@@ -2599,7 +2913,7 @@ async function handleCreateNamedUser(e) {
         displayName,
         email,
         password,
-        role: 'pharmacist',
+        role,
         mfaMethod: 'email'
       })
     });

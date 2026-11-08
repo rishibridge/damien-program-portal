@@ -1007,27 +1007,62 @@
     </div>
   </div>
 
-  <!-- ═══════════ ENTERPRISE SECURITY, NAMED USERS & AUDIT LOG MODAL ═══════════ -->
+  <!-- ═══════════ ENTERPRISE SECURITY, NAMED USERS, USAGE & AUDIT LOG MODAL ═══════════ -->
   <div class="modal-backdrop" id="securityModal" onclick="if(event.target===this)closeSecurityModal()">
-    <div class="modal-card" style="max-width:980px;max-height:90vh;overflow-y:auto">
-      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding-bottom:14px;margin-bottom:16px">
+    <div class="modal-card" style="max-width:1120px;max-height:92vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding-bottom:14px;margin-bottom:14px">
         <div>
-          <span class="slide-eyebrow">Enterprise Access Control &amp; Compliance</span>
-          <h3 style="color:var(--text);font-size:1.15rem;font-weight:700">Named-User Tracking, MFA &amp; Security Audit Log</h3>
+          <span class="slide-eyebrow">Enterprise Access Control, Usage Analytics &amp; Compliance</span>
+          <h3 style="color:var(--text);font-size:1.15rem;font-weight:700">Named-User Tracking, MFA, AI Q&amp;A History &amp; "Who Viewed What" Audit Log</h3>
         </div>
         <button class="btn-bridge-outline" id="btnCloseSecurityModal" onclick="closeSecurityModal()">Close</button>
       </div>
 
       <!-- Active Security Controls Banner -->
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px">
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">
         <span class="badge" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0">US-Only Geo-Fence Active</span>
         <span class="badge" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0">5-Attempt Lockout (15m)</span>
         <span class="badge" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0">Scrypt Hashing + 12-Char Policy</span>
         <span class="badge" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0">Dual-Mode MFA (Email + Authenticator)</span>
         <span class="badge" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0">30-Min Idle Auto-Logoff</span>
+        <span class="badge" style="background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe">Who-Viewed-What &amp; AI Q&amp;A Telemetry</span>
       </div>
 
-      <div class="g2" style="margin-bottom:18px">
+      <!-- Executive Usage & Activity KPI Summary Row -->
+      <div id="secUsageKpiRow" style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:16px">
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px">
+          <div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;color:#64748b">Sign-Ins</div>
+          <div id="secKpiLogins" style="font-size:1.25rem;font-weight:800;color:#0f172a">0</div>
+          <div id="secKpiOnlineSub" style="font-size:0.7rem;color:#059669;font-weight:600">1 active now</div>
+        </div>
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px">
+          <div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;color:#64748b">Section &amp; Tab Views</div>
+          <div id="secKpiViews" style="font-size:1.25rem;font-weight:800;color:#0f172a">0</div>
+          <div style="font-size:0.7rem;color:#64748b">Who viewed what</div>
+        </div>
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px">
+          <div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;color:#64748b">Patient Lookups</div>
+          <div id="secKpiPatientViews" style="font-size:1.25rem;font-weight:800;color:#0f172a">0</div>
+          <div style="font-size:0.7rem;color:#64748b">Details &amp; searches</div>
+        </div>
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px">
+          <div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;color:#64748b">Worklist Edits</div>
+          <div id="secKpiEdits" style="font-size:1.25rem;font-weight:800;color:#0f172a">0</div>
+          <div style="font-size:0.7rem;color:#64748b">Named-user stamped</div>
+        </div>
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px">
+          <div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;color:#64748b">AI Questions</div>
+          <div id="secKpiAiQueries" style="font-size:1.25rem;font-weight:800;color:#2563eb">0</div>
+          <div style="font-size:0.7rem;color:#64748b">Full Q&amp;A logged</div>
+        </div>
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px">
+          <div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;color:#64748b">CSV &amp; Prints</div>
+          <div id="secKpiExports" style="font-size:1.25rem;font-weight:800;color:#0f172a">0</div>
+          <div style="font-size:0.7rem;color:#64748b">Exports tracked</div>
+        </div>
+      </div>
+
+      <div class="g2" style="margin-bottom:18px;grid-template-columns:1fr 1.35fr">
         <!-- Left Card: My Account MFA & Password Change -->
         <div class="card" style="padding:16px">
           <div class="card-hd" style="margin-bottom:10px">
@@ -1079,23 +1114,24 @@
           </form>
         </div>
 
-        <!-- Right Card: Named Users Directory & Add Named User (Bridge Super-Admin Only) -->
+        <!-- Right Card: Named Users Directory, Per-User Usage & Admin Lifecycle Controls -->
         <div class="card" id="secAdminUsersCard" style="padding:16px">
           <div class="card-hd" style="margin-bottom:10px">
             <div>
-              Named Users Directory
-              <br /><small id="secUsersDirSubtitle">Individual accounts for named-user audit attribution</small>
+              Named Users Directory &amp; Per-User Usage
+              <br /><small id="secUsersDirSubtitle">Individual accounts, activity counters, and admin user lifecycle controls</small>
             </div>
           </div>
 
-          <div class="tbl-wrap" style="max-height:145px;overflow-y:auto;margin-bottom:12px">
+          <div class="tbl-wrap" style="max-height:195px;overflow-y:auto;margin-bottom:12px">
             <table>
               <thead>
                 <tr>
-                  <th>Username</th>
-                  <th>Display Name</th>
-                  <th>MFA Email</th>
+                  <th>Username &amp; Role</th>
+                  <th>Display Name &amp; MFA Email</th>
+                  <th>Usage &amp; Last Active</th>
                   <th>MFA Policy</th>
+                  <th id="thAdminUserActions" style="display:none">Admin Actions</th>
                 </tr>
               </thead>
               <tbody id="tbodySecurityUsers"></tbody>
@@ -1103,7 +1139,7 @@
           </div>
 
           <div id="secRbacNoticeForNonAdmin" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;border-radius:8px;padding:10px 12px;font-size:0.77rem;line-height:1.45">
-            <strong>Role-Based Access Control (RBAC):</strong> Adding or modifying named users and changing assigned MFA email addresses is restricted to <strong>Bridge Super-Admins</strong> (<code>bridge_admin</code>).
+            <strong>Role-Based Access Control (RBAC):</strong> Adding or modifying named users, viewing tenant-wide usage &amp; AI Q&amp;A history, and changing assigned MFA email addresses is restricted to <strong>Bridge Super-Admins</strong> (<code>bridge_admin</code>).
           </div>
 
           <form id="secCreateUserForm" onsubmit="handleCreateNamedUser(event)" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
@@ -1112,8 +1148,15 @@
             <input type="text" id="newUserDisplayName" placeholder="Full Name &amp; Title" required style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.78rem" />
             <input type="email" id="newUserEmail" placeholder="Email for MFA code" required style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.78rem" />
             <input type="password" id="newUserPassword" placeholder="Password (12+ chars)" required style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.78rem" />
-            <div style="grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;gap:8px">
-              <span style="font-size:0.74rem;color:#059669;font-weight:600">Mandatory MFA (Email + App) Enforced</span>
+            <div style="grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+              <div style="display:flex;align-items:center;gap:6px">
+                <span style="font-size:0.74rem;font-weight:600;color:#334155">Role:</span>
+                <select id="newUserRole" style="padding:4px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.75rem">
+                  <option value="pharmacist">Pharmacist (pharmacist)</option>
+                  <option value="client_user">Client User (client_user)</option>
+                  <option value="bridge_admin">Bridge Super-Admin (bridge_admin)</option>
+                </select>
+              </div>
               <span id="newUserMsg" style="font-size:0.74rem;color:#64748b"></span>
               <button type="submit" class="btn-bridge-primary" style="padding:5px 12px;font-size:0.76rem">Create User</button>
             </div>
@@ -1121,28 +1164,76 @@
         </div>
       </div>
 
-      <!-- Bottom Card: Named-User Audit Log -->
+      <!-- Bottom Card: Tabbed Audit Trail ("Who Viewed What") & Ask Bridge AI Q&A Transcript History -->
       <div class="card" style="padding:16px">
-        <div class="card-hd" style="margin-bottom:10px">
-          <div>
-            Named-User Activity &amp; Security Audit Trail
-            <br /><small>Tracks every sign-in, failed attempt, lockout, geo-block, worklist edit, CSV export, and AI query by named user</small>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;border-bottom:1px solid #e2e8f0;padding-bottom:10px;margin-bottom:12px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button type="button" id="secBottomTabBtnAudit" class="btn-bridge-primary" style="padding:6px 14px;font-size:0.78rem" onclick="switchSecurityBottomTab('audit')">
+              Activity &amp; "Who Viewed What" Audit Log (<span id="secAuditCountBadge">0 Events</span>)
+            </button>
+            <button type="button" id="secBottomTabBtnQa" class="btn-bridge-outline" style="padding:6px 14px;font-size:0.78rem" onclick="switchSecurityBottomTab('qa')">
+              Ask Bridge AI Q&amp;A History (<span id="secQaCountBadge">0 Questions</span>)
+            </button>
           </div>
-          <span class="know-badge" id="secAuditCountBadge">0 Events</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button type="button" id="btnExportAuditCsv" class="btn-bridge-outline" style="display:none;padding:5px 11px;font-size:0.74rem" onclick="exportSecurityAuditCsv()">Export Audit CSV</button>
+            <button type="button" id="btnExportQaCsv" class="btn-bridge-outline" style="display:none;padding:5px 11px;font-size:0.74rem" onclick="exportSecurityQaCsv()">Export Q&amp;A CSV</button>
+          </div>
         </div>
-        <div class="tbl-wrap" style="max-height:240px;overflow-y:auto">
-          <table>
-            <thead>
-              <tr>
-                <th>Timestamp</th>
-                <th>Named User</th>
-                <th>Event Type</th>
-                <th>IP &amp; Country</th>
-                <th>Details</th>
-              </tr>
-            </thead>
-            <tbody id="tbodySecurityAuditLog"></tbody>
-          </table>
+
+        <!-- TAB 1: ACTIVITY, SECURITY & "WHO VIEWED WHAT" AUDIT LOG -->
+        <div id="secBottomPanelAudit">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
+            <select id="secAuditCategoryFilter" onchange="renderSecurityAuditTable()" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.76rem">
+              <option value="">All Categories</option>
+              <option value="view_access">Who Viewed What (Pages, Tabs &amp; Patient Lookups)</option>
+              <option value="worklist_edit">Worklist Edits &amp; Reconciliations</option>
+              <option value="ai_qa">Ask Bridge AI Queries</option>
+              <option value="security_auth">Sign-Ins, MFA, Lockouts &amp; User Admin</option>
+              <option value="export">CSV &amp; Briefing Exports</option>
+            </select>
+            <select id="secAuditUserFilter" onchange="renderSecurityAuditTable()" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.76rem">
+              <option value="">All Users</option>
+            </select>
+            <input type="search" id="secAuditSearchInput" placeholder="Search user, patient ID, section, event..." oninput="renderSecurityAuditTable()" style="flex:1;min-width:200px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.76rem" />
+          </div>
+          <div class="tbl-wrap" style="max-height:260px;overflow-y:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Named User</th>
+                  <th>Event Type</th>
+                  <th>IP &amp; Country</th>
+                  <th>Activity Summary &amp; Details</th>
+                </tr>
+              </thead>
+              <tbody id="tbodySecurityAuditLog"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- TAB 2: ASK BRIDGE AI Q&A TRANSCRIPT HISTORY -->
+        <div id="secBottomPanelQa" style="display:none">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
+            <select id="secQaUserFilter" onchange="renderSecurityQaHistoryTable()" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.76rem">
+              <option value="">All Users</option>
+            </select>
+            <input type="search" id="secQaSearchInput" placeholder="Search questions or AI responses..." oninput="renderSecurityQaHistoryTable()" style="flex:1;min-width:220px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.76rem" />
+          </div>
+          <div class="tbl-wrap" style="max-height:280px;overflow-y:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Asked By</th>
+                  <th>Question &amp; AI Response Transcript</th>
+                  <th>Model &amp; Latency</th>
+                </tr>
+              </thead>
+              <tbody id="tbodySecurityQaHistory"></tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>

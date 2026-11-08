@@ -1121,6 +1121,188 @@ def run_suite():
             str(admin_audit_test),
         )
 
+        # SEC-13: "Who Viewed What" Read & Navigation Telemetry (SECTION_VIEW, WORKLIST_SUBTAB_VIEW, PATIENT_RECORD_VIEW, DEFINITIONS_VIEW)
+        who_viewed_test = page.evaluate("""async () => {
+            switchView('financials');
+            switchView('worklist');
+            switchWorklistSubtab('refill');
+            switchWorklistSubtab('todo');
+            const firstId = PORTAL_DATA?.worklists?.pharmacyTodo?.rows?.[0]?.id;
+            if (firstId) {
+                openPatientModal('todo', firstId);
+                closePatientModal();
+            }
+            openDefinitionsModal();
+            closeDefinitionsModal();
+            await new Promise(r => setTimeout(r, 250));
+            const ov = await fetch('/api/security/overview').then(r => r.json());
+            const evTypes = (ov.auditEvents || []).map(e => e.eventType);
+            const summaries = (ov.auditEvents || []).slice(0, 12).map(e => e.summary || '');
+            return {
+                hasSectionView: evTypes.includes('SECTION_VIEW'),
+                hasSubtabView: evTypes.includes('WORKLIST_SUBTAB_VIEW'),
+                hasPatientView: evTypes.includes('PATIENT_RECORD_VIEW'),
+                hasDefsView: evTypes.includes('DEFINITIONS_VIEW'),
+                sampleSummaries: summaries.slice(0, 4)
+            };
+        }""")
+        record(
+            "SEC-13",
+            "'Who Viewed What' telemetry logs SECTION_VIEW, WORKLIST_SUBTAB_VIEW, PATIENT_RECORD_VIEW & DEFINITIONS_VIEW with human-readable summaries",
+            bool(who_viewed_test["hasSectionView"])
+            and bool(who_viewed_test["hasSubtabView"])
+            and bool(who_viewed_test["hasPatientView"])
+            and bool(who_viewed_test["hasDefsView"]),
+            str(who_viewed_test),
+        )
+
+        # SEC-14: Executive Usage KPI Row & Per-User Usage Counters in Security Modal
+        usage_kpi_test = page.evaluate("""async () => {
+            await openSecurityModal();
+            const kpis = {
+                logins: Number(document.getElementById('secKpiLogins')?.innerText || 0),
+                views: Number(document.getElementById('secKpiViews')?.innerText || 0),
+                patientViews: Number(document.getElementById('secKpiPatientViews')?.innerText || 0),
+                edits: Number(document.getElementById('secKpiEdits')?.innerText || 0),
+                aiQueries: Number(document.getElementById('secKpiAiQueries')?.innerText || 0)
+            };
+            const userRowsText = document.getElementById('tbodySecurityUsers')?.innerText || '';
+            return {
+                kpis,
+                hasPerUserCounters: userRowsText.includes('logins') && userRowsText.includes('views') && userRowsText.includes('edits')
+            };
+        }""")
+        record(
+            "SEC-14",
+            "Admin Usage Dashboard renders non-zero Sign-Ins, Views, Patient Lookups, Edits & AI Question KPIs plus per-user activity counters",
+            usage_kpi_test["kpis"]["logins"] >= 1
+            and usage_kpi_test["kpis"]["views"] >= 2
+            and usage_kpi_test["kpis"]["patientViews"] >= 1
+            and usage_kpi_test["kpis"]["edits"] >= 1
+            and usage_kpi_test["kpis"]["aiQueries"] >= 1
+            and bool(usage_kpi_test["hasPerUserCounters"]),
+            str(usage_kpi_test),
+        )
+
+        # SEC-15: Ask Bridge AI Full Q&A Transcript History Tab & Expandable AI Response Viewer
+        qa_history_test = page.evaluate("""async () => {
+            await fetch('/api/ask', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ question: 'What is our September active membership and YTD net program proceeds?', mode: 'instant' })
+            });
+            await refreshSecurityModalData();
+            switchSecurityBottomTab('qa');
+            const badgeText = document.getElementById('secQaCountBadge')?.innerText || '';
+            const firstRow = document.querySelector('#tbodySecurityQaHistory tr[data-qa-id]');
+            const qaId = firstRow ? firstRow.getAttribute('data-qa-id') : '';
+            if (qaId) {
+                toggleQaTranscriptExpand(qaId);
+            }
+            const qaTableText = document.getElementById('tbodySecurityQaHistory')?.innerText || '';
+            switchSecurityBottomTab('audit');
+            return {
+                badgeText,
+                hasQaRow: Boolean(qaId),
+                hasQuestionText: qaTableText.includes('September active membership'),
+                hasExpandedBtn: qaTableText.includes('Hide Full AI Response')
+            };
+        }""")
+        record(
+            "SEC-15",
+            "Ask Bridge AI Q&A History tab records full question + full AI response and expands formatted transcript on click",
+            bool(qa_history_test["hasQaRow"])
+            and bool(qa_history_test["hasQuestionText"])
+            and bool(qa_history_test["hasExpandedBtn"]),
+            str(qa_history_test),
+        )
+
+        # SEC-16: Audit Log Category & User Filtering in UI
+        audit_filter_test = page.evaluate("""() => {
+            const catSel = document.getElementById('secAuditCategoryFilter');
+            catSel.value = 'view_access';
+            renderSecurityAuditTable();
+            const viewRows = document.querySelectorAll('#tbodySecurityAuditLog tr').length;
+            const allViewCats = Array.from(document.querySelectorAll('#tbodySecurityAuditLog tr')).every(
+                tr => tr.getAttribute('data-event-category') === 'view_access'
+            );
+            catSel.value = '';
+            renderSecurityAuditTable();
+            const totalRows = document.querySelectorAll('#tbodySecurityAuditLog tr').length;
+            return { viewRows, allViewCats, totalRows };
+        }""")
+        record(
+            "SEC-16",
+            "Security Audit Log dynamically filters by category ('Who Viewed What' view_access vs All Categories)",
+            audit_filter_test["viewRows"] >= 2
+            and bool(audit_filter_test["allViewCats"])
+            and audit_filter_test["totalRows"] > audit_filter_test["viewRows"],
+            str(audit_filter_test),
+        )
+
+        # SEC-17: Admin User Lifecycle Controls (PATCH role/email/unlock & DELETE custom user + Protected Baseline User Guard)
+        lifecycle_test = page.evaluate(f"""async () => {{
+            const tempUser = 'lifecycle.{int(time.time()) % 100000}';
+            const rCreate = await fetch('/api/security/users', {{
+                method: 'POST',
+                headers: {{'Content-Type': 'application/json'}},
+                body: JSON.stringify({{
+                    username: tempUser,
+                    displayName: 'Temp Lifecycle User',
+                    email: 'temp@damien.org',
+                    password: 'TempLifecycle2026!#',
+                    role: 'pharmacist'
+                }})
+            }});
+            const rPatch = await fetch(`/api/security/users/${{tempUser}}`, {{
+                method: 'PATCH',
+                headers: {{'Content-Type': 'application/json'}},
+                body: JSON.stringify({{ role: 'client_user', email: 'updated@damien.org', unlock: true }})
+            }});
+            const dPatch = await rPatch.json();
+            const rDelProtected = await fetch('/api/security/users/damien', {{ method: 'DELETE' }});
+            const rDelCustom = await fetch(`/api/security/users/${{tempUser}}`, {{ method: 'DELETE' }});
+            closeSecurityModal();
+            return {{
+                createStatus: rCreate.status,
+                patchOk: dPatch.ok && dPatch.user?.role === 'client_user' && dPatch.user?.email === 'updated@damien.org',
+                delProtectedStatus: rDelProtected.status,
+                delCustomStatus: rDelCustom.status
+            }};
+        }}""")
+        record(
+            "SEC-17",
+            "Admin User Lifecycle API updates user role/email/unlock (PATCH), blocks deleting protected baseline user 'damien' (400), and deletes custom user (200)",
+            lifecycle_test["createStatus"] == 200
+            and bool(lifecycle_test["patchOk"])
+            and lifecycle_test["delProtectedStatus"] == 400
+            and lifecycle_test["delCustomStatus"] == 200,
+            str(lifecycle_test),
+        )
+
+        # SEC-18: Admin CSV Export Endpoints for Audit Log & Ask Bridge AI Q&A History
+        csv_export_test = page.evaluate("""async () => {
+            const rAudit = await fetch('/api/security/export/audit-csv');
+            const auditText = await rAudit.text();
+            const rQa = await fetch('/api/security/export/qa-csv');
+            const qaText = await rQa.text();
+            return {
+                auditStatus: rAudit.status,
+                auditHasHeader: auditText.includes('Timestamp (UTC),Tenant,Username') && auditText.includes('SECTION_VIEW'),
+                qaStatus: rQa.status,
+                qaHasHeader: qaText.includes('Question Asked,AI Response') && qaText.includes('September active membership')
+            };
+        }""")
+        record(
+            "SEC-18",
+            "Bridge Super-Admin exports both Security Audit Log CSV and Ask Bridge AI Q&A Transcript CSV",
+            csv_export_test["auditStatus"] == 200
+            and bool(csv_export_test["auditHasHeader"])
+            and csv_export_test["qaStatus"] == 200
+            and bool(csv_export_test["qaHasHeader"]),
+            str(csv_export_test),
+        )
+
         # SEC-12: Strict XSS HTML Escaping in formatMarkdownText() & Session Revocation on Logout
         xss_and_logout_test = page.evaluate("""async () => {
             const rendered = formatMarkdownText('<script>window.__xss=1</script><img src=x onerror=alert(1)> **Safe Bold**');

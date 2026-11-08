@@ -431,13 +431,22 @@ function saveUsersDirectory(usersList) {
   } catch (e) {
     console.warn('Could not save users_directory.json locally:', e.message);
   }
+  if (typeof saveJsonToGcsAsync === 'function') {
+    saveJsonToGcsAsync('global/users_directory.json', usersList);
+  }
 }
 
 // Persistent Per-Tenant Audit Log (clients/<clientId>/audit_log.json + GCS)
 const clientAuditLogs = {}; // clientId -> Array of events
+// Persistent Per-Tenant Ask Bridge AI Q&A Transcript Log (clients/<clientId>/qa_history.json + GCS)
+const clientQaLogs = {}; // clientId -> Array of { id, timestamp, clientId, user, displayName, role, ip, question, answer, aiPowered, aiModel, memberLevelBlocked, latencyMs }
 
 function getClientLocalAuditPath(clientId) {
   return path.join(CLIENTS_DIR, clientId, 'audit_log.json');
+}
+
+function getClientLocalQaPath(clientId) {
+  return path.join(CLIENTS_DIR, clientId, 'qa_history.json');
 }
 
 function loadClientAuditLog(clientId) {
@@ -456,10 +465,81 @@ function loadClientAuditLog(clientId) {
   return clientAuditLogs[clientId];
 }
 
+function loadClientQaLog(clientId) {
+  if (clientQaLogs[clientId]) return clientQaLogs[clientId];
+  const p = getClientLocalQaPath(clientId);
+  if (fs.existsSync(p)) {
+    try {
+      const arr = JSON.parse(fs.readFileSync(p, 'utf8'));
+      if (Array.isArray(arr)) {
+        clientQaLogs[clientId] = arr;
+        return arr;
+      }
+    } catch (_) {}
+  }
+  clientQaLogs[clientId] = [];
+  return clientQaLogs[clientId];
+}
+
+function classifyAuditCategory(eventType) {
+  const et = String(eventType || '').toUpperCase();
+  if (et.startsWith('LOGIN') || et.startsWith('LOGOUT') || et.startsWith('MFA') || et.includes('LOCKOUT') || et.includes('GEO_BLOCK') || et.includes('PASSWORD') || et.includes('USER_') || et.includes('UNAUTHORIZED')) {
+    return 'security_auth';
+  }
+  if (et.includes('VIEW') || et.includes('SEARCH') || et === 'PORTAL_LOADED' || et.includes('BRIEFING')) {
+    return 'view_access';
+  }
+  if (et.startsWith('WORKLIST_')) {
+    return 'worklist_edit';
+  }
+  if (et === 'AI_QUERY') {
+    return 'ai_qa';
+  }
+  if (et.includes('EXPORT')) {
+    return 'export';
+  }
+  return 'other';
+}
+
+function formatAuditSummary(eventType, details = {}) {
+  const et = String(eventType || '').toUpperCase();
+  if (et === 'LOGIN_SUCCESS_MFA') return `Signed in with 2FA (${details.verifiedVia === 'totp_authenticator' ? 'Authenticator App' : 'Email Code'})`;
+  if (et === 'LOGIN_SUCCESS') return `Signed in (${details.method || 'trusted browser'})`;
+  if (et === 'LOGOUT') return 'Signed out and revoked session token';
+  if (et === 'LOGIN_FAILED') return `Failed password attempt (${details.attemptsUsed || 1}/5 used)`;
+  if (et === 'BRUTE_FORCE_LOCKOUT_TRIGGERED' || et === 'LOGIN_LOCKED_OUT') return `Account locked out for 15m (5 failed attempts)`;
+  if (et === 'MFA_CHALLENGE_ISSUED') return `2FA challenge issued (${details.email || ''})`;
+  if (et === 'MFA_VERIFICATION_FAILED') return 'Entered invalid 6-digit MFA code';
+  if (et === 'GEO_BLOCKED') return `Blocked non-US request from ${details.country || 'outside US'} (${details.path || '/'})`;
+  if (et === 'PORTAL_LOADED') return `Opened ${details.clientName || details.clientId || 'Program'} Analytics Portal`;
+  if (et === 'SECTION_VIEW') return `Viewed section: ${details.viewTitle || details.viewId || 'Dashboard'}`;
+  if (et === 'WORKLIST_SUBTAB_VIEW') return `Viewed worklist tab: ${details.subtabTitle || details.subtab || 'Worklist'}`;
+  if (et === 'PATIENT_RECORD_VIEW') return `Viewed Patient Record: ${details.patientId || details.rowId || ''} (${details.sheet || 'worklist'})`;
+  if (et === 'PATIENT_SEARCH_QUERY') return `Searched ${details.sheet || 'worklist'} for "${details.query || ''}" (${details.matchCount ?? 0} matches)`;
+  if (et === 'ENROLLMENT_FILTER_VIEW') return `Viewed Enrollment Report (${details.mode || 'cumulative'}${details.periodLabel ? ': ' + details.periodLabel : ''})`;
+  if (et === 'DEFINITIONS_VIEW') return 'Viewed Program Definitions & Data Notes';
+  if (et === 'EXECUTIVE_BRIEFING_VIEW' || et === 'EXECUTIVE_BRIEFING_PRINT') return `Executive Briefing (${details.action || 'viewed/printed'})`;
+  if (et === 'WORKLIST_ROW_EDIT') return `Updated patient ${details.patientId || details.rowId} in ${details.sheet} (${(details.updatedFields || []).join(', ')})`;
+  if (et === 'WORKLIST_APPLY_FUZZY_FIXES') return `Auto-reconciled ${details.appliedCount || 0} fuzzy ID matches (${details.todoLinkedCount || 0} linked)`;
+  if (et === 'WORKLIST_RESET') return 'Reset worklist runtime edits to baseline';
+  if (et === 'CSV_EXPORT') return `Exported CSV: ${details.filename || details.sheet || 'worklist'} (${details.rowCount || 0} rows)`;
+  if (et === 'AI_QUERY') return `Asked Bridge AI: "${String(details.question || '').slice(0, 90)}"`;
+  if (et === 'USER_CREATED') return `Created named user '${details.createdUsername}' (role: ${details.role})`;
+  if (et === 'USER_UPDATED_BY_ADMIN') return `Updated user '${details.targetUsername}' (${(details.updatedFields || []).join(', ')})`;
+  if (et === 'USER_UNLOCKED_BY_ADMIN') return `Unlocked brute-force lockout for '${details.targetUsername}'`;
+  if (et === 'USER_PASSWORD_RESET_BY_ADMIN') return `Reset password for '${details.targetUsername}'`;
+  if (et === 'USER_DELETED_BY_ADMIN') return `Removed user account '${details.deletedUsername}'`;
+  if (et === 'MFA_CONFIG_UPDATED') return `Updated MFA settings for '${details.targetUsername}' (method: ${details.mfaMethod})`;
+  if (et === 'PASSWORD_CHANGED') return 'Updated account password';
+  if (et === 'UNAUTHORIZED_ADMIN_ATTEMPT') return `Blocked unauthorized admin call to ${details.endpoint || 'admin API'}`;
+  return JSON.stringify(details || {});
+}
+
 function recordAuditEvent(req, eventType, details = {}, overrideClient = null, overrideUser = null) {
   const clientId = overrideClient || req?.clientId || 'damien';
   const username = overrideUser || req?.authenticatedUser || 'unauthenticated';
   const displayName = req?.authenticatedDisplayName || username;
+  const role = req?.authenticatedRole || 'client_user';
   const ip = req ? getClientIp(req) : '127.0.0.1';
   const country = req ? getClientCountry(req) : 'US';
   const entry = {
@@ -468,19 +548,60 @@ function recordAuditEvent(req, eventType, details = {}, overrideClient = null, o
     clientId,
     user: username,
     displayName,
+    role,
     ip,
     country,
     eventType,
+    category: classifyAuditCategory(eventType),
+    summary: formatAuditSummary(eventType, details),
     details
   };
   const logArr = loadClientAuditLog(clientId);
   logArr.unshift(entry);
-  if (logArr.length > 500) logArr.length = 500;
+  if (logArr.length > 1000) logArr.length = 1000;
   try {
     const localPath = getClientLocalAuditPath(clientId);
     fs.mkdirSync(path.dirname(localPath), { recursive: true });
     fs.writeFileSync(localPath, JSON.stringify(logArr, null, 2), 'utf8');
   } catch (_) {}
+  if (typeof saveJsonToGcsAsync === 'function') {
+    saveJsonToGcsAsync(`clients/${clientId}/audit_log.json`, logArr);
+  }
+  return entry;
+}
+
+function recordQaHistoryEntry(req, qaPayload) {
+  const clientId = qaPayload.clientId || req?.clientId || 'damien';
+  const username = req?.authenticatedUser || 'unauthenticated';
+  const displayName = req?.authenticatedDisplayName || username;
+  const role = req?.authenticatedRole || 'client_user';
+  const ip = req ? getClientIp(req) : '127.0.0.1';
+  const entry = {
+    id: crypto.randomUUID(),
+    timestamp: new Date().toISOString(),
+    clientId,
+    user: username,
+    displayName,
+    role,
+    ip,
+    question: String(qaPayload.question || ''),
+    answer: String(qaPayload.answer || ''),
+    aiPowered: Boolean(qaPayload.aiPowered),
+    aiModel: String(qaPayload.aiModel || 'unknown'),
+    memberLevelBlocked: Boolean(qaPayload.memberLevelBlocked),
+    latencyMs: Number(qaPayload.latencyMs || 0)
+  };
+  const qaArr = loadClientQaLog(clientId);
+  qaArr.unshift(entry);
+  if (qaArr.length > 500) qaArr.length = 500;
+  try {
+    const localPath = getClientLocalQaPath(clientId);
+    fs.mkdirSync(path.dirname(localPath), { recursive: true });
+    fs.writeFileSync(localPath, JSON.stringify(qaArr, null, 2), 'utf8');
+  } catch (_) {}
+  if (typeof saveJsonToGcsAsync === 'function') {
+    saveJsonToGcsAsync(`clients/${clientId}/qa_history.json`, qaArr);
+  }
   return entry;
 }
 
@@ -898,6 +1019,8 @@ app.get('/api/auth/me', (req, res) => {
 // NAMED-USER MANAGEMENT, PASSWORD COMPLEXITY CHANGE, MFA CONFIG & AUDIT API
 // STRICT ROLE-BASED ACCESS CONTROL (RBAC): ONLY bridge_admin CAN MANAGE USERS
 // ============================================================================
+const BUILTIN_PROTECTED_USERS = new Set(['damien', 'metro', 'rishi.damien', 'brady.admin', 'rishi.metro', 'pharmacist.damien']);
+
 function isCallerBridgeAdmin(req) {
   const users = loadUsersDirectory();
   const userRec = users.find(u => u.username.toLowerCase() === String(req.authenticatedUser || '').toLowerCase());
@@ -905,33 +1028,160 @@ function isCallerBridgeAdmin(req) {
   return role === 'bridge_admin';
 }
 
+function computeUserAndTenantUsage(clientId, allTenantUsers, allAuditEvents, allQaEvents) {
+  const now = Date.now();
+  const perUser = {};
+  for (const u of allTenantUsers) {
+    const key = u.username.toLowerCase();
+    const lockCheck = checkRateLimitKey(`user:${key}`);
+    perUser[key] = {
+      loginCount: 0,
+      viewCount: 0,
+      patientViewCount: 0,
+      editCount: 0,
+      aiQueryCount: 0,
+      exportCount: 0,
+      lastLoginAt: null,
+      lastActiveAt: null,
+      isOnline: false,
+      isLockedOut: Boolean(lockCheck.locked),
+      lockoutRetrySeconds: lockCheck.retryAfterSeconds || 0
+    };
+  }
+
+  let totalLogins = 0;
+  let totalPageAndPatientViews = 0;
+  let totalPatientRecordViews = 0;
+  let totalWorklistEdits = 0;
+  let totalExports = 0;
+
+  for (const ev of allAuditEvents) {
+    const uKey = String(ev.user || '').toLowerCase();
+    const uStat = perUser[uKey];
+    const et = String(ev.eventType || '').toUpperCase();
+    const cat = ev.category || classifyAuditCategory(et);
+
+    if (uStat && ev.timestamp) {
+      if (!uStat.lastActiveAt || ev.timestamp > uStat.lastActiveAt) {
+        uStat.lastActiveAt = ev.timestamp;
+      }
+      if ((now - new Date(ev.timestamp).getTime()) < IDLE_TIMEOUT_SECONDS * 1000 && et !== 'LOGOUT') {
+        uStat.isOnline = true;
+      }
+    }
+
+    if (et === 'LOGIN_SUCCESS_MFA' || et === 'LOGIN_SUCCESS') {
+      totalLogins++;
+      if (uStat) {
+        uStat.loginCount++;
+        if (!uStat.lastLoginAt || ev.timestamp > uStat.lastLoginAt) {
+          uStat.lastLoginAt = ev.timestamp;
+        }
+      }
+    } else if (cat === 'view_access') {
+      totalPageAndPatientViews++;
+      if (uStat) uStat.viewCount++;
+      if (et === 'PATIENT_RECORD_VIEW' || et === 'PATIENT_SEARCH_QUERY') {
+        totalPatientRecordViews++;
+        if (uStat) uStat.patientViewCount++;
+      }
+    } else if (cat === 'worklist_edit') {
+      totalWorklistEdits++;
+      if (uStat) uStat.editCount++;
+    } else if (cat === 'export') {
+      totalExports++;
+      if (uStat) uStat.exportCount++;
+    }
+  }
+
+  for (const qa of allQaEvents) {
+    const uKey = String(qa.user || '').toLowerCase();
+    const uStat = perUser[uKey];
+    if (uStat) {
+      uStat.aiQueryCount++;
+      if (qa.timestamp && (!uStat.lastActiveAt || qa.timestamp > uStat.lastActiveAt)) {
+        uStat.lastActiveAt = qa.timestamp;
+      }
+    }
+  }
+
+  // Also Count AI_QUERY events if qa_history didn't capture earlier ones
+  for (const ev of allAuditEvents) {
+    if (ev.eventType === 'AI_QUERY') {
+      const uKey = String(ev.user || '').toLowerCase();
+      const uStat = perUser[uKey];
+      if (uStat && uStat.aiQueryCount === 0) {
+        uStat.aiQueryCount++;
+      }
+    }
+  }
+
+  const activeUsersOnline = Object.values(perUser).filter(s => s.isOnline).length;
+  const totalAiQuestions = Math.max(
+    allQaEvents.length,
+    allAuditEvents.filter(e => e.eventType === 'AI_QUERY').length
+  );
+
+  return {
+    usageSummary: {
+      totalLogins,
+      activeUsersOnline,
+      totalNamedUsers: allTenantUsers.length,
+      totalPageAndPatientViews,
+      totalPatientRecordViews,
+      totalWorklistEdits,
+      totalAiQuestions,
+      totalExports
+    },
+    perUser
+  };
+}
+
 app.get('/api/security/overview', async (req, res) => {
   const clientId = req.clientId || 'damien';
+  await ensureSecurityLogsHydrated(clientId);
   const isAdmin = isCallerBridgeAdmin(req);
   const allTenantUsers = loadUsersDirectory().filter(u => u.clientId === clientId);
+  const allAuditEvents = loadClientAuditLog(clientId).map(ev => ({
+    ...ev,
+    category: ev.category || classifyAuditCategory(ev.eventType),
+    summary: ev.summary || formatAuditSummary(ev.eventType, ev.details)
+  }));
+  const allQaEvents = loadClientQaLog(clientId);
+
+  const { usageSummary, perUser } = computeUserAndTenantUsage(clientId, allTenantUsers, allAuditEvents, allQaEvents);
+
   const visibleUsers = await Promise.all(
     (isAdmin ? allTenantUsers : allTenantUsers.filter(u => u.username.toLowerCase() === String(req.authenticatedUser || '').toLowerCase()))
       .map(async u => {
         const canSeeSecret = isAdmin || u.username.toLowerCase() === String(req.authenticatedUser || '').toLowerCase();
         const qrUrl = canSeeSecret ? await buildTotpQrDataUrl(u.username, u.totpSecret || generateTotpSecret(u.username)) : undefined;
+        const stats = perUser[u.username.toLowerCase()] || {};
         return {
           username: u.username,
           displayName: u.displayName,
           email: u.email,
           role: u.role,
+          isBuiltIn: BUILTIN_PROTECTED_USERS.has(u.username.toLowerCase()),
           mfaEnabled: true,
           mfaMethod: u.mfaMethod || 'email',
           totpSecret: canSeeSecret ? u.totpSecret : undefined,
           totpQrDataUrl: qrUrl,
-          passwordUpdatedAt: u.passwordUpdatedAt
+          passwordUpdatedAt: u.passwordUpdatedAt,
+          usage: stats
         };
       })
   );
-  const allAuditEvents = loadClientAuditLog(clientId);
+
   const auditEvents = (isAdmin
     ? allAuditEvents
     : allAuditEvents.filter(ev => String(ev.user || '').toLowerCase() === String(req.authenticatedUser || '').toLowerCase())
-  ).slice(0, 100);
+  ).slice(0, 250);
+
+  const qaHistory = (isAdmin
+    ? allQaEvents
+    : allQaEvents.filter(qa => String(qa.user || '').toLowerCase() === String(req.authenticatedUser || '').toLowerCase())
+  ).slice(0, 150);
 
   res.json({
     ok: true,
@@ -953,8 +1203,10 @@ app.get('/api/security/overview', async (req, res) => {
       mfaSupportedMethods: ['email', 'totp'],
       rbacEnforced: true
     },
+    usageSummary,
     users: visibleUsers,
-    auditEvents
+    auditEvents,
+    qaHistory
   });
 });
 
@@ -989,7 +1241,7 @@ app.post('/api/security/users', (req, res) => {
     role: ['bridge_admin', 'client_user', 'pharmacist'].includes(role) ? role : 'pharmacist',
     mfaEnabled: true, // Mandatory MFA for every user — cannot be disabled
     mfaMethod: ['email', 'totp'].includes(mfaMethod) ? mfaMethod : 'email',
-    totpSecret: generateTotpSecret(),
+    totpSecret: generateTotpSecret(cleanUser),
     passwordUpdatedAt: new Date().toISOString(),
     passwordMaxAgeDays: 0,
     passwordHistory: []
@@ -1008,6 +1260,173 @@ app.post('/api/security/users', (req, res) => {
       mfaMethod: newUser.mfaMethod
     }
   });
+});
+
+// Admin User Lifecycle Management: Edit Email/Role/DisplayName, Reset Password, or Unlock Account (bridge_admin only)
+app.patch('/api/security/users/:username', (req, res) => {
+  if (!isCallerBridgeAdmin(req)) {
+    recordAuditEvent(req, 'UNAUTHORIZED_ADMIN_ATTEMPT', { endpoint: `/api/security/users/${req.params.username}`, method: 'PATCH' });
+    return res.status(403).json({
+      ok: false,
+      error: 'Forbidden: Only Bridge Super-Admins (bridge_admin) can modify user accounts.'
+    });
+  }
+  const targetUsername = String(req.params.username || '').trim().toLowerCase();
+  const users = loadUsersDirectory();
+  const userRec = users.find(u => u.username.toLowerCase() === targetUsername && u.clientId === req.clientId);
+  if (!userRec) {
+    return res.status(404).json({ ok: false, error: 'User not found in this tenant.' });
+  }
+
+  const { email, displayName, role, newPassword, unlock } = req.body || {};
+  const updatedFields = [];
+
+  if (unlock) {
+    loginFailuresByKey.delete(`user:${targetUsername}`);
+    updatedFields.push('unlocked_account');
+    recordAuditEvent(req, 'USER_UNLOCKED_BY_ADMIN', { targetUsername: userRec.username });
+  }
+  if (email !== undefined && String(email).includes('@')) {
+    userRec.email = String(email).trim();
+    updatedFields.push('email');
+  }
+  if (displayName !== undefined && String(displayName).trim()) {
+    userRec.displayName = String(displayName).trim();
+    updatedFields.push('displayName');
+  }
+  if (role !== undefined && ['bridge_admin', 'client_user', 'pharmacist'].includes(role)) {
+    userRec.role = role;
+    updatedFields.push('role');
+  }
+  if (newPassword !== undefined && String(newPassword).length > 0) {
+    const complexity = validatePasswordComplexity(newPassword, userRec.username);
+    if (!complexity.valid) {
+      return res.status(400).json({ ok: false, error: complexity.error });
+    }
+    userRec.passwordHistory = [userRec.passwordHash, ...(userRec.passwordHistory || [])].slice(0, 3);
+    userRec.passwordHash = hashPasswordScrypt(newPassword);
+    userRec.passwordUpdatedAt = new Date().toISOString();
+    loginFailuresByKey.delete(`user:${targetUsername}`);
+    updatedFields.push('password_reset');
+    recordAuditEvent(req, 'USER_PASSWORD_RESET_BY_ADMIN', { targetUsername: userRec.username });
+  }
+
+  userRec.mfaEnabled = true; // Always mandatory
+  saveUsersDirectory(users);
+  if (updatedFields.length > 0 && !updatedFields.includes('password_reset') && !updatedFields.includes('unlocked_account')) {
+    recordAuditEvent(req, 'USER_UPDATED_BY_ADMIN', { targetUsername: userRec.username, updatedFields, role: userRec.role, email: userRec.email });
+  }
+
+  res.json({
+    ok: true,
+    user: {
+      username: userRec.username,
+      displayName: userRec.displayName,
+      email: userRec.email,
+      role: userRec.role,
+      mfaEnabled: true,
+      mfaMethod: userRec.mfaMethod
+    },
+    updatedFields
+  });
+});
+
+// Admin User Deletion (bridge_admin only; protects core built-in baseline users)
+app.delete('/api/security/users/:username', (req, res) => {
+  if (!isCallerBridgeAdmin(req)) {
+    recordAuditEvent(req, 'UNAUTHORIZED_ADMIN_ATTEMPT', { endpoint: `/api/security/users/${req.params.username}`, method: 'DELETE' });
+    return res.status(403).json({
+      ok: false,
+      error: 'Forbidden: Only Bridge Super-Admins (bridge_admin) can remove user accounts.'
+    });
+  }
+  const targetUsername = String(req.params.username || '').trim().toLowerCase();
+  if (BUILTIN_PROTECTED_USERS.has(targetUsername)) {
+    return res.status(400).json({
+      ok: false,
+      error: `Core baseline account '${targetUsername}' is protected and cannot be deleted.`
+    });
+  }
+  const users = loadUsersDirectory();
+  const idx = users.findIndex(u => u.username.toLowerCase() === targetUsername && u.clientId === req.clientId);
+  if (idx === -1) {
+    return res.status(404).json({ ok: false, error: 'User not found in this tenant.' });
+  }
+  const [removed] = users.splice(idx, 1);
+  saveUsersDirectory(users);
+  recordAuditEvent(req, 'USER_DELETED_BY_ADMIN', { deletedUsername: removed.username, role: removed.role });
+  res.json({ ok: true, deletedUsername: removed.username });
+});
+
+// Export Security & Usage Audit Log as CSV (bridge_admin only)
+app.get('/api/security/export/audit-csv', async (req, res) => {
+  if (!isCallerBridgeAdmin(req)) {
+    return res.status(403).json({ ok: false, error: 'Forbidden: Only Bridge Super-Admins can export the full security audit log.' });
+  }
+  const clientId = req.clientId || 'damien';
+  await ensureSecurityLogsHydrated(clientId);
+  const events = loadClientAuditLog(clientId);
+  const esc = v => {
+    if (v === null || v === undefined) return '';
+    const s = String(v).replace(/"/g, '""');
+    return /[,"\n\r]/.test(s) ? `"${s}"` : s;
+  };
+  const headers = ['Timestamp (UTC)', 'Tenant', 'Username', 'Display Name', 'Role', 'Category', 'Event Type', 'Summary', 'IP Address', 'Country', 'Raw Details JSON'];
+  const lines = [headers.map(esc).join(',')];
+  for (const ev of events) {
+    lines.push([
+      ev.timestamp || '',
+      ev.clientId || clientId,
+      ev.user || '',
+      ev.displayName || '',
+      ev.role || '',
+      ev.category || classifyAuditCategory(ev.eventType),
+      ev.eventType || '',
+      ev.summary || formatAuditSummary(ev.eventType, ev.details),
+      ev.ip || '',
+      ev.country || 'US',
+      JSON.stringify(ev.details || {})
+    ].map(esc).join(','));
+  }
+  recordAuditEvent(req, 'CSV_EXPORT', { sheet: 'security_audit_log', filename: `${clientId}_security_audit_log.csv`, rowCount: events.length });
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${clientId}_security_audit_log.csv"`);
+  res.send(lines.join('\r\n'));
+});
+
+// Export Ask Bridge AI Q&A Transcript History as CSV (bridge_admin only)
+app.get('/api/security/export/qa-csv', async (req, res) => {
+  if (!isCallerBridgeAdmin(req)) {
+    return res.status(403).json({ ok: false, error: 'Forbidden: Only Bridge Super-Admins can export the tenant AI Q&A transcript history.' });
+  }
+  const clientId = req.clientId || 'damien';
+  await ensureSecurityLogsHydrated(clientId);
+  const qaList = loadClientQaLog(clientId);
+  const esc = v => {
+    if (v === null || v === undefined) return '';
+    const s = String(v).replace(/"/g, '""');
+    return /[,"\n\r]/.test(s) ? `"${s}"` : s;
+  };
+  const headers = ['Timestamp (UTC)', 'Tenant', 'Username', 'Display Name', 'Role', 'AI Model', 'Latency (ms)', 'Privacy Guardrail Triggered', 'Question Asked', 'AI Response'];
+  const lines = [headers.map(esc).join(',')];
+  for (const qa of qaList) {
+    lines.push([
+      qa.timestamp || '',
+      qa.clientId || clientId,
+      qa.user || '',
+      qa.displayName || '',
+      qa.role || '',
+      qa.aiModel || '',
+      qa.latencyMs || 0,
+      qa.memberLevelBlocked ? 'Yes' : 'No',
+      qa.question || '',
+      qa.answer || ''
+    ].map(esc).join(','));
+  }
+  recordAuditEvent(req, 'CSV_EXPORT', { sheet: 'ai_qa_history', filename: `${clientId}_ask_bridge_ai_qa_history.csv`, rowCount: qaList.length });
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${clientId}_ask_bridge_ai_qa_history.csv"`);
+  res.send(lines.join('\r\n'));
 });
 
 app.post('/api/security/change-password', (req, res) => {
@@ -1147,6 +1566,103 @@ async function getGcpAccessToken() {
   _cachedGcpToken = token;
   _cachedGcpTokenExpiry = Date.now() + 300 * 1000;
   return _cachedGcpToken;
+}
+
+const gcsJsonWriteQueues = {}; // objectName -> Promise
+const gcsSecurityHydratedTenants = new Set();
+let gcsUsersHydrated = false;
+
+async function loadJsonFromGcs(objectName) {
+  if (!GCS_STATE_BUCKET) return null;
+  try {
+    const token = await getGcpAccessToken();
+    const url = `https://storage.googleapis.com/storage/v1/b/${encodeURIComponent(GCS_STATE_BUCKET)}/o/${encodeURIComponent(objectName)}?alt=media`;
+    const resp = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (resp.status === 404) return null;
+    if (!resp.ok) throw new Error(`GCS GET HTTP ${resp.status}`);
+    return await resp.json();
+  } catch (err) {
+    console.warn(`[GCS] Could not load ${objectName} from gs://${GCS_STATE_BUCKET}:`, err.message);
+    return null;
+  }
+}
+
+function saveJsonToGcsAsync(objectName, dataPayload) {
+  if (!GCS_STATE_BUCKET) return Promise.resolve(false);
+  const snapshot = JSON.stringify(dataPayload, null, 2);
+  const prev = gcsJsonWriteQueues[objectName] || Promise.resolve();
+  const next = prev.then(async () => {
+    try {
+      const token = await getGcpAccessToken();
+      const url = `https://storage.googleapis.com/upload/storage/v1/b/${encodeURIComponent(GCS_STATE_BUCKET)}/o?uploadType=media&name=${encodeURIComponent(objectName)}`;
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: snapshot
+      });
+      return resp.ok;
+    } catch (err) {
+      console.warn(`[GCS] Could not save ${objectName} to gs://${GCS_STATE_BUCKET}:`, err.message);
+      return false;
+    }
+  });
+  gcsJsonWriteQueues[objectName] = next.catch(() => false);
+  return next;
+}
+
+async function ensureSecurityLogsHydrated(clientId) {
+  if (!GCS_STATE_BUCKET) return;
+  if (!gcsUsersHydrated) {
+    gcsUsersHydrated = true;
+    const remoteUsers = await loadJsonFromGcs('global/users_directory.json');
+    if (Array.isArray(remoteUsers) && remoteUsers.length > 0) {
+      const localUsers = loadUsersDirectory();
+      for (const ru of remoteUsers) {
+        const existing = localUsers.find(u => u.username.toLowerCase() === String(ru.username || '').toLowerCase());
+        if (!existing) {
+          ru.mfaEnabled = true;
+          localUsers.push(ru);
+        }
+      }
+      usersDirectoryCache = localUsers;
+    }
+  }
+  if (!gcsSecurityHydratedTenants.has(clientId)) {
+    gcsSecurityHydratedTenants.add(clientId);
+    const [remoteAudit, remoteQa] = await Promise.all([
+      loadJsonFromGcs(`clients/${clientId}/audit_log.json`),
+      loadJsonFromGcs(`clients/${clientId}/qa_history.json`)
+    ]);
+    if (Array.isArray(remoteAudit) && remoteAudit.length > 0) {
+      const localAudit = loadClientAuditLog(clientId);
+      const seenIds = new Set(localAudit.map(e => e.id));
+      for (const ev of remoteAudit) {
+        if (ev && ev.id && !seenIds.has(ev.id)) {
+          localAudit.push(ev);
+          seenIds.add(ev.id);
+        }
+      }
+      localAudit.sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
+      clientAuditLogs[clientId] = localAudit.slice(0, 1000);
+    }
+    if (Array.isArray(remoteQa) && remoteQa.length > 0) {
+      const localQa = loadClientQaLog(clientId);
+      const seenQaIds = new Set(localQa.map(q => q.id));
+      for (const qa of remoteQa) {
+        if (qa && qa.id && !seenQaIds.has(qa.id)) {
+          localQa.push(qa);
+          seenQaIds.add(qa.id);
+        }
+      }
+      localQa.sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
+      clientQaLogs[clientId] = localQa.slice(0, 500);
+    }
+  }
 }
 
 async function loadOverlayFromGcs(clientId) {
@@ -1367,6 +1883,13 @@ app.get('/api/portal-data', async (req, res) => {
   const clientId = req.clientId || 'damien';
   const state = await ensureClientStateLoaded(clientId);
   const summary = computeWorklistSummary(state.worklists);
+  if (req.query.silent !== '1') {
+    recordAuditEvent(req, 'PORTAL_LOADED', {
+      clientId,
+      clientName: state.meta?.client || clientId,
+      activeView: 'summary'
+    });
+  }
   res.json({
     ...state,
     worklistSummary: summary
@@ -2125,17 +2648,35 @@ RICH VISUAL FORMATTING — ALWAYS INCLUDE MARKDOWN TABLES & INTERACTIVE CHARTS:
 }
 
 app.post('/api/ask', async (req, res) => {
+  const startMs = Date.now();
   const clientId = req.clientId || 'damien';
   const state = await ensureClientStateLoaded(clientId);
   const { question, history, mode } = req.body || {};
   const q = String(question || '').trim() || 'How is the program performing through September 2026?';
   const memberBlockedFlag = isMemberLevelQuery(state, q);
-  recordAuditEvent(req, 'AI_QUERY', { question: q.slice(0, 140), memberBlocked: memberBlockedFlag });
 
   if (mode !== 'instant') {
     try {
       const geminiResult = await askGeminiWithFullData(state, q, history);
-      return res.json(geminiResult);
+      const latencyMs = Date.now() - startMs;
+      const qaEntry = recordQaHistoryEntry(req, {
+        clientId,
+        question: q,
+        answer: geminiResult.reply || geminiResult.answer || '',
+        aiPowered: true,
+        aiModel: geminiResult.aiModel || VERTEX_GEMINI_MODEL,
+        memberLevelBlocked: Boolean(geminiResult.memberLevelBlocked),
+        latencyMs
+      });
+      recordAuditEvent(req, 'AI_QUERY', {
+        qaId: qaEntry.id,
+        question: q,
+        answerPreview: String(geminiResult.reply || '').slice(0, 180),
+        aiModel: geminiResult.aiModel || VERTEX_GEMINI_MODEL,
+        latencyMs,
+        memberBlocked: memberBlockedFlag
+      });
+      return res.json({ ...geminiResult, qaId: qaEntry.id, latencyMs });
     } catch (err) {
       console.error('Gemini API error, falling back to deterministic engine:', err.message);
     }
@@ -2143,23 +2684,63 @@ app.post('/api/ask', async (req, res) => {
 
   if (memberBlockedFlag) {
     const blocked = buildMemberPrivacyGuardrailReply(state, q);
+    const latencyMs = Date.now() - startMs;
+    const qaEntry = recordQaHistoryEntry(req, {
+      clientId,
+      question: q,
+      answer: blocked.answer,
+      aiPowered: false,
+      aiModel: 'privacy-guardrail',
+      memberLevelBlocked: true,
+      latencyMs
+    });
+    recordAuditEvent(req, 'AI_QUERY', {
+      qaId: qaEntry.id,
+      question: q,
+      answerPreview: String(blocked.answer || '').slice(0, 180),
+      aiModel: 'privacy-guardrail',
+      latencyMs,
+      memberBlocked: true
+    });
     return res.json({
       question: q,
       clientId,
       aiPowered: false,
       aiModel: 'privacy-guardrail',
       memberLevelBlocked: true,
+      qaId: qaEntry.id,
+      latencyMs,
       reply: blocked.answer,
       answer: blocked.answer
     });
   }
 
   const fallback = answerQuestion(state, q);
+  const latencyMs = Date.now() - startMs;
+  const qaEntry = recordQaHistoryEntry(req, {
+    clientId,
+    question: q,
+    answer: fallback.answer,
+    aiPowered: false,
+    aiModel: 'deterministic-fallback',
+    memberLevelBlocked: false,
+    latencyMs
+  });
+  recordAuditEvent(req, 'AI_QUERY', {
+    qaId: qaEntry.id,
+    question: q,
+    answerPreview: String(fallback.answer || '').slice(0, 180),
+    aiModel: 'deterministic-fallback',
+    latencyMs,
+    memberBlocked: false
+  });
   res.json({
     question: q,
     clientId,
     aiPowered: false,
     aiModel: 'deterministic-fallback',
+    qaId: qaEntry.id,
+    latencyMs,
     reply: fallback.answer,
     answer: fallback.answer
   });
