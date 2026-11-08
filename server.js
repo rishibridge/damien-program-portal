@@ -259,7 +259,7 @@ function buildDefaultUsers() {
       passwordHash: hashPasswordScrypt(primaryPass),
       clientId: primaryClient,
       displayName: 'Damien Center Program Lead (damien)',
-      email: 'damien@bridgehealthhub.com',
+      email: 'brady@bridgehealthhub.com',
       role: 'admin',
       mfaEnabled: false,
       mfaMethod: 'email',
@@ -351,10 +351,13 @@ function loadUsersDirectory() {
     try {
       const saved = JSON.parse(fs.readFileSync(USERS_LOCAL_PATH, 'utf8'));
       if (Array.isArray(saved) && saved.length > 0) {
-        // Ensure preserved accounts (damien / metro) always exist
+        // Ensure preserved accounts (damien / metro) always exist and damien placeholder email is upgraded to brady@bridgehealthhub.com
         for (const def of defaults) {
-          if (!saved.some(u => u.username.toLowerCase() === def.username.toLowerCase())) {
+          const existing = saved.find(u => u.username.toLowerCase() === def.username.toLowerCase());
+          if (!existing) {
             saved.push(def);
+          } else if (existing.username.toLowerCase() === 'damien' && existing.email === 'damien@bridgehealthhub.com') {
+            existing.email = 'brady@bridgehealthhub.com';
           }
         }
         usersDirectoryCache = saved;
@@ -945,7 +948,7 @@ app.post('/api/security/change-password', (req, res) => {
 });
 
 app.post('/api/security/mfa-config', (req, res) => {
-  const { targetUsername, mfaEnabled, mfaMethod } = req.body || {};
+  const { targetUsername, mfaEnabled, mfaMethod, email } = req.body || {};
   const lookupUser = String(targetUsername || req.authenticatedUser || '').toLowerCase();
   const users = loadUsersDirectory();
   const userRec = users.find(u => u.username.toLowerCase() === lookupUser && u.clientId === req.clientId);
@@ -954,12 +957,14 @@ app.post('/api/security/mfa-config', (req, res) => {
   }
   if (mfaEnabled !== undefined) userRec.mfaEnabled = Boolean(mfaEnabled);
   if (mfaMethod && ['email', 'totp'].includes(mfaMethod)) userRec.mfaMethod = mfaMethod;
+  if (email && String(email).includes('@')) userRec.email = String(email).trim();
   if (!userRec.totpSecret) userRec.totpSecret = generateTotpSecret();
   saveUsersDirectory(users);
-  recordAuditEvent(req, 'MFA_CONFIG_UPDATED', { targetUsername: userRec.username, mfaEnabled: userRec.mfaEnabled, mfaMethod: userRec.mfaMethod });
+  recordAuditEvent(req, 'MFA_CONFIG_UPDATED', { targetUsername: userRec.username, email: userRec.email, mfaEnabled: userRec.mfaEnabled, mfaMethod: userRec.mfaMethod });
   res.json({
     ok: true,
     username: userRec.username,
+    email: userRec.email,
     mfaEnabled: userRec.mfaEnabled,
     mfaMethod: userRec.mfaMethod,
     totpSecret: userRec.totpSecret
@@ -1946,7 +1951,7 @@ RICH VISUAL FORMATTING — ALWAYS INCLUDE MARKDOWN TABLES & INTERACTIVE CHARTS:
     generationConfig: {
       temperature: 0.25,
       maxOutputTokens: 2048,
-      thinkingConfig: { thinkingBudget: 512 }
+      thinkingConfig: { thinkingBudget: 256 }
     }
   };
 
@@ -1957,14 +1962,22 @@ RICH VISUAL FORMATTING — ALWAYS INCLUDE MARKDOWN TABLES & INTERACTIVE CHARTS:
   try {
     const token = await getGcpAccessToken();
     const vertexUrl = `https://aiplatform.googleapis.com/v1/projects/${GCP_PROJECT_ID}/locations/global/publishers/google/models/${VERTEX_GEMINI_MODEL}:generateContent`;
-    const vertexResp = await fetch(vertexUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
+    const vertexCtrl = new AbortController();
+    const vertexTimer = setTimeout(() => vertexCtrl.abort(), 25000);
+    let vertexResp;
+    try {
+      vertexResp = await fetch(vertexUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload),
+        signal: vertexCtrl.signal
+      });
+    } finally {
+      clearTimeout(vertexTimer);
+    }
     if (!vertexResp.ok) {
       const errText = await vertexResp.text();
       throw new Error(`Vertex AI HTTP ${vertexResp.status}: ${errText.slice(0, 300)}`);

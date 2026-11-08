@@ -1039,7 +1039,7 @@
 
           <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:14px">
             <div style="font-size:0.8rem;font-weight:600;color:#1e293b;margin-bottom:8px">Two-Factor Authentication (MFA)</div>
-            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
               <label style="font-size:0.8rem;display:flex;align-items:center;gap:6px">
                 <input type="checkbox" id="secMyMfaEnabled" /> Require 2-Step Verification on Sign-In
               </label>
@@ -1047,6 +1047,9 @@
                 <option value="email">Email 6-Digit Code</option>
                 <option value="totp">Authenticator App (TOTP)</option>
               </select>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <input type="email" id="secMyMfaEmail" placeholder="MFA Email Address" style="flex:1;min-width:190px;padding:5px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.78rem" />
               <button type="button" class="btn-bridge-primary" style="padding:5px 10px;font-size:0.76rem" onclick="saveMyMfaSettings()">Save MFA</button>
             </div>
             <div id="secMyTotpSecretBox" style="margin-top:8px;font-size:0.75rem;color:#475569;display:none">
@@ -1080,7 +1083,7 @@
                 <tr>
                   <th>Username</th>
                   <th>Display Name</th>
-                  <th>Role</th>
+                  <th>MFA Email</th>
                   <th>MFA</th>
                 </tr>
               </thead>

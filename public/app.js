@@ -2470,11 +2470,13 @@ async function refreshSecurityModalData() {
 
     const mfaChk = document.getElementById('secMyMfaEnabled');
     const mfaSel = document.getElementById('secMyMfaMethod');
+    const mfaEmail = document.getElementById('secMyMfaEmail');
     const secretBox = document.getElementById('secMyTotpSecretBox');
     const secretCode = document.getElementById('secMyTotpSecretCode');
     if (meUserRec) {
       if (mfaChk) mfaChk.checked = Boolean(meUserRec.mfaEnabled);
       if (mfaSel) mfaSel.value = meUserRec.mfaMethod || 'email';
+      if (mfaEmail) mfaEmail.value = meUserRec.email || '';
       if (secretBox && secretCode && meUserRec.totpSecret) {
         secretBox.style.display = 'block';
         secretCode.textContent = meUserRec.totpSecret;
@@ -2487,7 +2489,7 @@ async function refreshSecurityModalData() {
         <tr>
           <td><strong>${escapeAttr(u.username)}</strong></td>
           <td>${escapeAttr(u.displayName)}</td>
-          <td><span class="know-badge">${escapeAttr(u.role)}</span></td>
+          <td style="font-size:0.75rem;color:#334155">${escapeAttr(u.email || '')}</td>
           <td>${u.mfaEnabled ? `<span style="color:#059669;font-weight:600">On (${escapeAttr(u.mfaMethod)})</span>` : '<span style="color:#64748b">Optional</span>'}</td>
         </tr>
       `).join('');
@@ -2521,11 +2523,12 @@ async function refreshSecurityModalData() {
 async function saveMyMfaSettings() {
   const mfaEnabled = document.getElementById('secMyMfaEnabled')?.checked;
   const mfaMethod = document.getElementById('secMyMfaMethod')?.value || 'email';
+  const email = document.getElementById('secMyMfaEmail')?.value?.trim();
   try {
     const resp = await fetch('/api/security/mfa-config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mfaEnabled, mfaMethod })
+      body: JSON.stringify({ mfaEnabled, mfaMethod, email })
     });
     if (resp.ok) {
       await refreshSecurityModalData();
