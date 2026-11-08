@@ -339,12 +339,18 @@ def run_suite():
 
         page.click("button[data-view='worklist']")
         todo_rows = page.locator("#tbodyWorklistTodo tr").count()
+        todo_headers = [h.strip().upper() for h in page.locator("#wlSubtab-todo table thead th").all_inner_texts()]
+        todo_first_row_cells = page.locator("#tbodyWorklistTodo tr").first.locator("td").count()
         prio_opts = page.locator("#todoPriorityFilter option").all_inner_texts()
         record(
             "DAMIEN-13",
-            "Worklist To-Do has 101 rows & dynamically populated priority filter options",
-            todo_rows == 101 and "All Priorities (101)" in prio_opts[0] and len(prio_opts) == 4,
-            f"rows={todo_rows}, opts={prio_opts}",
+            "Worklist To-Do has 101 rows, exact 7 columns (Priority, ID, Status, Contacted, Notes, Finding, Days), and dynamic priority filter options",
+            todo_rows == 101
+            and todo_headers == ["PRIORITY", "ID", "STATUS", "CONTACTED", "NOTES", "FINDING", "DAYS"]
+            and todo_first_row_cells == 7
+            and "All Priorities (101)" in prio_opts[0]
+            and len(prio_opts) == 4,
+            f"rows={todo_rows}, headers={todo_headers}, cells={todo_first_row_cells}, opts={prio_opts}",
         )
 
         page.select_option("#todoFuzzyFilter", "fuzzy")

@@ -1794,15 +1794,11 @@ function renderTodoTable() {
       ? `<div style="margin-top:4px"><span class="fuzzy-badge" onclick="switchWorklistSubtab('fixes')" title="Possible match in Pharmacy Data Fixes: ${r.possibleDataFixes[0].patientIdOnFile} (${r.possibleDataFixes[0].dispensedItem})">Possible Match in Fixes (${r.possibleDataFixes[0].patientIdOnFile})</span></div>`
       : '';
 
-    const payerStr = r['Payer on transaction'] ? `<div style="font-size:0.71rem;color:var(--text-secondary)">Payer: ${r['Payer on transaction']}</div>` : '';
-    const rxDateStr = r['Rx written'] ? `<div style="font-size:0.7rem;color:var(--muted)">Rx: ${String(r['Rx written']).slice(0, 10)}</div>` : '';
-
     return `
       <tr data-row-id="${r.id}">
         <td><span class="prio-badge ${pClass}">${pStr}</span></td>
         <td>
           <strong>${r['Pharmacy patient ID']}</strong>
-          <div style="font-size:0.7rem;color:var(--muted)">${r['Membership status'] || ''}</div>
           ${fuzzyHtml}
         </td>
         <td>
@@ -1818,21 +1814,8 @@ function renderTodoTable() {
         </td>
         <td>
           <strong>${r['Pharmacy finding'] || '—'}</strong>
-          ${payerStr}
-          <div style="font-size:0.72rem;color:var(--muted);max-width:230px">${r['Pharmacy note'] || ''}</div>
-        </td>
-        <td>
-          <div>${r['Rx medication'] || '—'}</div>
-          ${rxDateStr}
         </td>
         <td class="num">${r['Days in this stage'] ?? '—'}d</td>
-        <td>
-          <strong>${r['Patient source'] || '—'}</strong>
-          <div style="font-size:0.72rem;color:var(--muted)">${r['Employer group'] || ''}</div>
-        </td>
-        <td>
-          <button class="btn-bridge-outline" style="padding:4px 9px;font-size:0.73rem" onclick="openPatientModal('todo', '${r.id}')">Details</button>
-        </td>
       </tr>
     `;
   }).join('');
@@ -2088,7 +2071,8 @@ function exportCurrentWorklistCsv() {
 function openPatientModal(sheet, id) {
   const wl = PORTAL_DATA.worklists;
   const rows = sheet === 'todo' ? wl.pharmacyTodo.rows : wl.refillFollowup.rows;
-  const baseHeaders = sheet === 'todo' ? wl.pharmacyTodo.headers : wl.refillFollowup.headers;
+  const todoAllowedHeaders = ['Priority', 'Pharmacy patient ID', 'Status', 'Date contacted', 'Notes', 'Pharmacy finding', 'Days in this stage'];
+  const baseHeaders = sheet === 'todo' ? todoAllowedHeaders : wl.refillFollowup.headers;
   const row = rows.find(r => r.id === id);
   if (!row) return;
 
@@ -2102,8 +2086,8 @@ function openPatientModal(sheet, id) {
   const extraAuditHeaders = ['Updated by', 'Updated at'].filter(h => !baseHeaders.includes(h) && row[h]);
   const headers = [...baseHeaders, ...extraAuditHeaders];
 
-  document.getElementById('modalSheetEyebrow').textContent = sheet === 'todo' ? 'PHARMACY TO-DO · ALL 25 COLUMNS' : 'REFILL FOLLOW-UP · ALL 13 COLUMNS';
-  document.getElementById('modalPatientTitle').textContent = `Patient ${row['Pharmacy patient ID']} (${row['Alpha member ID']})`;
+  document.getElementById('modalSheetEyebrow').textContent = sheet === 'todo' ? 'PHARMACY TO-DO · 7 WORKLIST FIELDS' : 'REFILL FOLLOW-UP · ALL 13 COLUMNS';
+  document.getElementById('modalPatientTitle').textContent = `Patient ${row['Pharmacy patient ID']}`;
 
   const body = document.getElementById('modalPatientBody');
   body.innerHTML = headers.map(h => `

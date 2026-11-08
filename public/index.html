@@ -761,7 +761,7 @@
             </div>
 
             <div class="wl-filter-bar">
-              <input type="search" id="todoSearchInput" placeholder="Search patient ID, employer, medication..." oninput="renderTodoTable()" />
+              <input type="search" id="todoSearchInput" placeholder="Search ID, finding, notes..." oninput="renderTodoTable()" />
               <select id="todoPriorityFilter" onchange="renderTodoTable()">
                 <option value="">All Priorities</option>
               </select>
@@ -777,19 +777,16 @@
             </div>
 
             <div class="tbl-wrap">
-              <table>
+              <table id="tableWorklistTodo">
                 <thead>
                   <tr>
                     <th>Priority</th>
-                    <th>Patient ID</th>
+                    <th>ID</th>
                     <th>Status</th>
                     <th>Contacted</th>
                     <th>Notes</th>
-                    <th>Finding &amp; Payer</th>
-                    <th>Medication &amp; Rx Date</th>
+                    <th>Finding</th>
                     <th class="num">Days</th>
-                    <th>Source &amp; Group</th>
-                    <th>Record</th>
                   </tr>
                 </thead>
                 <tbody id="tbodyWorklistTodo"></tbody>

@@ -2134,8 +2134,16 @@ app.get('/api/worklist/export/:sheet', async (req, res) => {
   let filename = `${shortPrefix}_Worklist_${sheet}_${asOfSuffix}.csv`;
 
   if (sheet === 'todo') {
-    headers = wl.pharmacyTodo.headers;
-    rows = wl.pharmacyTodo.rows;
+    headers = ['Priority', 'ID', 'Status', 'Contacted', 'Notes', 'Finding', 'Days'];
+    rows = wl.pharmacyTodo.rows.map(r => ({
+      'Priority': r['Priority'] ?? '',
+      'ID': r['Pharmacy patient ID'] ?? '',
+      'Status': r['Status'] ?? '',
+      'Contacted': r['Date contacted'] ?? '',
+      'Notes': r['Notes'] ?? '',
+      'Finding': r['Pharmacy finding'] ?? '',
+      'Days': r['Days in this stage'] ?? ''
+    }));
     filename = `${shortPrefix}_Pharmacy_To_Do_${asOfSuffix}.csv`;
   } else if (sheet === 'refill') {
     headers = wl.refillFollowup.headers;
