@@ -17,18 +17,31 @@ function destroyChart(key) {
   }
 }
 
+let CURRENT_USER_PROFILE = null;
+
 async function initPortal() {
   try {
-    const resp = await fetch('/api/portal-data');
-    if (resp.status === 401) {
+    const [resp, meResp] = await Promise.all([
+      fetch('/api/portal-data'),
+      fetch('/api/auth/me')
+    ]);
+    if (resp.status === 401 || meResp.status === 401) {
       window.location.href = '/login';
       return;
     }
     PORTAL_DATA = await resp.json();
+    if (meResp.ok) {
+      CURRENT_USER_PROFILE = await meResp.json();
+      const userBadge = document.getElementById('badgeCurrentUser');
+      if (userBadge && CURRENT_USER_PROFILE) {
+        userBadge.textContent = `${CURRENT_USER_PROFILE.displayName || CURRENT_USER_PROFILE.user} (${CURRENT_USER_PROFILE.user})`;
+      }
+    }
     hydrateShellBranding();
     populateWorklistFilterDropdowns();
     renderAllViews();
     renderChatThread();
+    startIdleAutoLogoffTimer();
   } catch (err) {
     console.error('Failed to load portal data:', err);
   }
@@ -2004,9 +2017,12 @@ function exportCurrentWorklistCsv() {
 function openPatientModal(sheet, id) {
   const wl = PORTAL_DATA.worklists;
   const rows = sheet === 'todo' ? wl.pharmacyTodo.rows : wl.refillFollowup.rows;
-  const headers = sheet === 'todo' ? wl.pharmacyTodo.headers : wl.refillFollowup.headers;
+  const baseHeaders = sheet === 'todo' ? wl.pharmacyTodo.headers : wl.refillFollowup.headers;
   const row = rows.find(r => r.id === id);
   if (!row) return;
+
+  const extraAuditHeaders = ['Updated by', 'Updated at'].filter(h => !baseHeaders.includes(h) && row[h]);
+  const headers = [...baseHeaders, ...extraAuditHeaders];
 
   document.getElementById('modalSheetEyebrow').textContent = sheet === 'todo' ? 'PHARMACY TO-DO · ALL 25 COLUMNS' : 'REFILL FOLLOW-UP · ALL 13 COLUMNS';
   document.getElementById('modalPatientTitle').textContent = `Patient ${row['Pharmacy patient ID']} (${row['Alpha member ID']})`;
@@ -2014,8 +2030,8 @@ function openPatientModal(sheet, id) {
   const body = document.getElementById('modalPatientBody');
   body.innerHTML = headers.map(h => `
     <div class="detail-item">
-      <div class="detail-item-lbl">${h}</div>
-      <div class="detail-item-val">${row[h] !== null && row[h] !== undefined && row[h] !== '' ? row[h] : '—'}</div>
+      <div class="detail-item-lbl">${escapeAttr(h)}</div>
+      <div class="detail-item-val">${row[h] !== null && row[h] !== undefined && row[h] !== '' ? escapeAttr(row[h]) : '—'}</div>
     </div>
   `).join('');
 
@@ -2149,8 +2165,10 @@ function formatMarkdownText(raw, allowRich = true) {
     .replace(/<iframe[\s\S]*?<\/iframe>/gi, '');
 
   const formatInline = (str) => {
-    // Escape < and > unless they belong to safe inline/table HTML tags
-    let s = String(str || '');
+    let s = String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
     s = s
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
       .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
@@ -2405,6 +2423,185 @@ function renderChatThread(pendingUserQuestion = null) {
 
 function escapeAttr(s) {
   return String(s || '').replace(/'/g, '&#39;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   10. ENTERPRISE SECURITY, NAMED USERS, MFA & AUDIT LOG MODAL + IDLE TIMER
+   ═══════════════════════════════════════════════════════════════════════════ */
+let IDLE_TIMER_HANDLE = null;
+const IDLE_TIMEOUT_CLIENT_MS = 30 * 60 * 1000;
+
+function startIdleAutoLogoffTimer() {
+  const resetIdle = () => {
+    if (IDLE_TIMER_HANDLE) clearTimeout(IDLE_TIMER_HANDLE);
+    IDLE_TIMER_HANDLE = setTimeout(() => {
+      logoutPortal();
+    }, IDLE_TIMEOUT_CLIENT_MS);
+  };
+  ['mousemove', 'keydown', 'click', 'scroll'].forEach(evt => {
+    window.addEventListener(evt, resetIdle, { passive: true });
+  });
+  resetIdle();
+}
+
+async function openSecurityModal() {
+  const modal = document.getElementById('securityModal');
+  if (modal) modal.classList.add('open');
+  await refreshSecurityModalData();
+}
+
+function closeSecurityModal() {
+  const modal = document.getElementById('securityModal');
+  if (modal) modal.classList.remove('open');
+}
+
+async function refreshSecurityModalData() {
+  try {
+    const resp = await fetch('/api/security/overview');
+    if (!resp.ok) return;
+    const data = await resp.json();
+
+    const cur = data.currentUser || {};
+    const meUserRec = (data.users || []).find(u => u.username.toLowerCase() === String(cur.username || '').toLowerCase());
+    const lbl = document.getElementById('secCurrentUserLabel');
+    if (lbl) {
+      lbl.textContent = `Signed in as ${cur.displayName || cur.username} (${cur.username}) · Role: ${cur.role || 'admin'}`;
+    }
+
+    const mfaChk = document.getElementById('secMyMfaEnabled');
+    const mfaSel = document.getElementById('secMyMfaMethod');
+    const secretBox = document.getElementById('secMyTotpSecretBox');
+    const secretCode = document.getElementById('secMyTotpSecretCode');
+    if (meUserRec) {
+      if (mfaChk) mfaChk.checked = Boolean(meUserRec.mfaEnabled);
+      if (mfaSel) mfaSel.value = meUserRec.mfaMethod || 'email';
+      if (secretBox && secretCode && meUserRec.totpSecret) {
+        secretBox.style.display = 'block';
+        secretCode.textContent = meUserRec.totpSecret;
+      }
+    }
+
+    const tbodyUsers = document.getElementById('tbodySecurityUsers');
+    if (tbodyUsers) {
+      tbodyUsers.innerHTML = (data.users || []).map(u => `
+        <tr>
+          <td><strong>${escapeAttr(u.username)}</strong></td>
+          <td>${escapeAttr(u.displayName)}</td>
+          <td><span class="know-badge">${escapeAttr(u.role)}</span></td>
+          <td>${u.mfaEnabled ? `<span style="color:#059669;font-weight:600">On (${escapeAttr(u.mfaMethod)})</span>` : '<span style="color:#64748b">Optional</span>'}</td>
+        </tr>
+      `).join('');
+    }
+
+    const events = data.auditEvents || [];
+    const badge = document.getElementById('secAuditCountBadge');
+    if (badge) badge.textContent = `${events.length} Events`;
+
+    const tbodyAudit = document.getElementById('tbodySecurityAuditLog');
+    if (tbodyAudit) {
+      tbodyAudit.innerHTML = events.map(ev => {
+        const ts = ev.timestamp ? ev.timestamp.replace('T', ' ').slice(0, 19) + ' UTC' : '—';
+        const detailsStr = ev.details ? JSON.stringify(ev.details) : '';
+        return `
+          <tr>
+            <td style="white-space:nowrap;font-size:0.74rem;color:#475569">${escapeAttr(ts)}</td>
+            <td><strong>${escapeAttr(ev.displayName || ev.user)}</strong> <span style="color:#64748b;font-size:0.72rem">(${escapeAttr(ev.user)})</span></td>
+            <td><span class="know-badge">${escapeAttr(ev.eventType)}</span></td>
+            <td style="font-size:0.74rem">${escapeAttr(ev.ip || '')} (${escapeAttr(ev.country || 'US')})</td>
+            <td style="font-size:0.73rem;color:#334155;max-width:260px;overflow:hidden;text-overflow:ellipsis">${escapeAttr(detailsStr)}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+  } catch (err) {
+    console.error('Error loading security overview:', err);
+  }
+}
+
+async function saveMyMfaSettings() {
+  const mfaEnabled = document.getElementById('secMyMfaEnabled')?.checked;
+  const mfaMethod = document.getElementById('secMyMfaMethod')?.value || 'email';
+  try {
+    const resp = await fetch('/api/security/mfa-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mfaEnabled, mfaMethod })
+    });
+    if (resp.ok) {
+      await refreshSecurityModalData();
+    }
+  } catch (err) {
+    console.error('Error saving MFA config:', err);
+  }
+}
+
+async function handleChangePassword(e) {
+  e.preventDefault();
+  const currentPassword = document.getElementById('secCurrentPassword').value;
+  const newPassword = document.getElementById('secNewPassword').value;
+  const msgEl = document.getElementById('secPasswordMsg');
+  try {
+    const resp = await fetch('/api/security/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword, newPassword })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (resp.ok && data.ok) {
+      msgEl.style.color = '#059669';
+      msgEl.textContent = 'Password updated!';
+      document.getElementById('secCurrentPassword').value = '';
+      document.getElementById('secNewPassword').value = '';
+      await refreshSecurityModalData();
+    } else {
+      msgEl.style.color = '#b91c1c';
+      msgEl.textContent = data.error || 'Failed to update password';
+    }
+  } catch (err) {
+    msgEl.style.color = '#b91c1c';
+    msgEl.textContent = 'Error updating password';
+  }
+}
+
+async function handleCreateNamedUser(e) {
+  e.preventDefault();
+  const username = document.getElementById('newUserUsername').value.trim();
+  const displayName = document.getElementById('newUserDisplayName').value.trim();
+  const email = document.getElementById('newUserEmail').value.trim();
+  const password = document.getElementById('newUserPassword').value;
+  const mfaEnabled = document.getElementById('newUserMfaEnabled').checked;
+  const msgEl = document.getElementById('newUserMsg');
+  try {
+    const resp = await fetch('/api/security/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username,
+        displayName,
+        email,
+        password,
+        role: 'pharmacist',
+        mfaEnabled,
+        mfaMethod: 'email'
+      })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (resp.ok && data.ok) {
+      msgEl.style.color = '#059669';
+      msgEl.textContent = `Created ${data.user.username}!`;
+      document.getElementById('newUserUsername').value = '';
+      document.getElementById('newUserDisplayName').value = '';
+      document.getElementById('newUserEmail').value = '';
+      document.getElementById('newUserPassword').value = '';
+      await refreshSecurityModalData();
+    } else {
+      msgEl.style.color = '#b91c1c';
+      msgEl.textContent = data.error || 'Failed to create user';
+    }
+  } catch (err) {
+    msgEl.style.color = '#b91c1c';
+    msgEl.textContent = 'Error creating user';
+  }
 }
 
 window.addEventListener('DOMContentLoaded', initPortal);

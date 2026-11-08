@@ -5,3 +5,5 @@ __pycache__/
 test-results/
 data/runtime_state.json
 data/clients/*/worklist_edits.json
+data/clients/*/audit_log.json
+data/clients/users_directory.json

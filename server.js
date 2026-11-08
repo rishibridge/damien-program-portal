@@ -28,6 +28,7 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || VERTEX_GEMINI_MODEL;
 const GCS_STATE_BUCKET = process.env.GCS_STATE_BUCKET || '';
 
 const app = express();
+app.disable('x-powered-by');
 const PORT = process.env.PORT || 3000;
 
 const CLIENTS_DIR = path.join(__dirname, 'data', 'clients');
@@ -51,51 +52,397 @@ function safeEqual(a, b) {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
-function getAllowedUsers() {
+// ============================================================================
+// CRYPTOGRAPHIC PASSWORD HASHING (scrypt), COMPLEXITY POLICY & TOTP / EMAIL MFA
+// ============================================================================
+function hashPasswordScrypt(password, saltHex = null) {
+  const salt = saltHex ? Buffer.from(saltHex, 'hex') : crypto.randomBytes(16);
+  const derived = crypto.scryptSync(String(password || ''), salt, 64);
+  return `${salt.toString('hex')}:${derived.toString('hex')}`;
+}
+
+function verifyPasswordScrypt(password, storedHash) {
+  if (!storedHash || !storedHash.includes(':')) return false;
+  const [saltHex, keyHex] = storedHash.split(':');
+  if (!saltHex || !keyHex) return false;
+  const expected = hashPasswordScrypt(password, saltHex).split(':')[1];
+  return safeEqual(keyHex, expected);
+}
+
+function validatePasswordComplexity(newPassword, username = '') {
+  const pwd = String(newPassword || '');
+  if (pwd.length < 12) {
+    return { valid: false, error: 'Password must be at least 12 characters long.' };
+  }
+  const hasUpper = /[A-Z]/.test(pwd);
+  const hasLower = /[a-z]/.test(pwd);
+  const hasDigit = /[0-9]/.test(pwd);
+  const hasSymbol = /[^A-Za-z0-9]/.test(pwd);
+  const categories = [hasUpper, hasLower, hasDigit, hasSymbol].filter(Boolean).length;
+  if (categories < 3) {
+    return {
+      valid: false,
+      error: 'Password must include at least 3 of the following: uppercase letter, lowercase letter, number, and special character.'
+    };
+  }
+  const lower = pwd.toLowerCase();
+  if (username && lower.includes(String(username).toLowerCase())) {
+    return { valid: false, error: 'Password cannot contain your username.' };
+  }
+  if (/password|123456|qwerty|letmein/i.test(lower)) {
+    return { valid: false, error: 'Password contains a common disallowed pattern.' };
+  }
+  return { valid: true };
+}
+
+// Base32 & RFC 6238 TOTP Implementation (Zero External Dependencies)
+const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+function generateTotpSecret(byteLen = 20) {
+  const bytes = crypto.randomBytes(byteLen);
+  let bits = '';
+  for (const b of bytes) bits += b.toString(2).padStart(8, '0');
+  let out = '';
+  for (let i = 0; i + 5 <= bits.length; i += 5) {
+    out += BASE32_ALPHABET[parseInt(bits.slice(i, i + 5), 2)];
+  }
+  return out;
+}
+
+function decodeBase32(str) {
+  const clean = String(str || '').toUpperCase().replace(/[^A-Z2-7]/g, '');
+  let bits = '';
+  for (const ch of clean) {
+    const val = BASE32_ALPHABET.indexOf(ch);
+    if (val >= 0) bits += val.toString(2).padStart(5, '0');
+  }
+  const bytes = [];
+  for (let i = 0; i + 8 <= bits.length; i += 8) {
+    bytes.push(parseInt(bits.slice(i, i + 8), 2));
+  }
+  return Buffer.from(bytes);
+}
+
+function generateTotpCode(secretBase32, stepOffset = 0) {
+  const key = decodeBase32(secretBase32);
+  const counter = Math.floor(Date.now() / 1000 / 30) + stepOffset;
+  const buf = Buffer.alloc(8);
+  buf.writeBigUInt64BE(BigInt(counter), 0);
+  const hmac = crypto.createHmac('sha1', key).update(buf).digest();
+  const offset = hmac[hmac.length - 1] & 0x0f;
+  const code =
+    ((hmac[offset] & 0x7f) << 24) |
+    ((hmac[offset + 1] & 0xff) << 16) |
+    ((hmac[offset + 2] & 0xff) << 8) |
+    (hmac[offset + 3] & 0xff);
+  return String(code % 1000000).padStart(6, '0');
+}
+
+function verifyTotpCode(secretBase32, userCode) {
+  const clean = String(userCode || '').replace(/\s+/g, '');
+  if (!/^\d{6}$/.test(clean) || !secretBase32) return false;
+  for (const offset of [-1, 0, 1]) {
+    if (safeEqual(generateTotpCode(secretBase32, offset), clean)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// ============================================================================
+// NAMED-USER DIRECTORY, BRUTE-FORCE RATE LIMITER, SESSION REVOCATION & AUDIT LOG
+// ============================================================================
+const SESSION_COOKIE_NAME = 'bridge_session';
+const MFA_TRUST_COOKIE_NAME = 'bridge_mfa_trust';
+const SESSION_SECRET = process.env.SESSION_SECRET || 'bridge-multi-client-hmac-secret-2026-v2-9f8e7d6c5b4a3f2e1d0c';
+const SESSION_TTL_SECONDS = 12 * 60 * 60; // 12 hours max session TTL
+const IDLE_TIMEOUT_SECONDS = 30 * 60;     // 30 minutes HIPAA idle auto-logoff
+const MFA_TRUST_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days trusted browser cookie
+
+// Brute-Force Rate Limiting: max 5 failed attempts per 15-minute window
+const MAX_FAILED_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_WINDOW_MS = 15 * 60 * 1000;
+const loginFailuresByKey = new Map(); // key (ip or username) -> { count, firstFailAt, lockedUntil }
+const revokedSessionJtis = new Set(); // revoked session IDs on logout
+const sessionLastActivity = new Map(); // jti -> timestamp ms
+const pendingMfaChallenges = new Map(); // challengeToken -> { username, clientId, displayName, email, role, mfaMethod, emailCode, totpSecret, expiresAt }
+
+function getClientIp(req) {
+  const xff = req.headers['x-forwarded-for'];
+  if (xff) return String(xff).split(',')[0].trim();
+  return req.socket?.remoteAddress || '127.0.0.1';
+}
+
+function getClientCountry(req) {
+  const override = req.headers['x-test-country'];
+  if (override && process.env.ALLOW_TEST_COUNTRY_HEADER !== 'false') {
+    return String(override).trim().toUpperCase();
+  }
+  const gae = req.headers['x-appengine-country'];
+  if (gae && gae !== 'ZZ') return String(gae).trim().toUpperCase();
+  const cf = req.headers['cf-ipcountry'];
+  if (cf && cf !== 'XX') return String(cf).trim().toUpperCase();
+  const gcl = req.headers['x-client-geo-location'];
+  if (gcl) return String(gcl).split(',')[0].trim().toUpperCase();
+  const ip = getClientIp(req);
+  if (ip === '127.0.0.1' || ip === '::1' || ip.startsWith('::ffff:127.') || ip.startsWith('10.') || ip.startsWith('192.168.')) {
+    return 'US';
+  }
+  return 'US';
+}
+
+function checkRateLimitKey(key) {
+  const now = Date.now();
+  const rec = loginFailuresByKey.get(key);
+  if (!rec) return { locked: false, count: 0 };
+  if (rec.lockedUntil && now < rec.lockedUntil) {
+    const retrySec = Math.ceil((rec.lockedUntil - now) / 1000);
+    return { locked: true, retryAfterSeconds: retrySec, count: rec.count };
+  }
+  if (now - rec.firstFailAt > LOCKOUT_WINDOW_MS) {
+    loginFailuresByKey.delete(key);
+    return { locked: false, count: 0 };
+  }
+  return { locked: false, count: rec.count };
+}
+
+function recordLoginFailure(ip, username) {
+  const now = Date.now();
+  const userKey = `user:${String(username || 'unknown').toLowerCase()}`;
+  const ipKey = `ip:${ip}`;
+
+  let userRec = loginFailuresByKey.get(userKey);
+  if (!userRec || (now - userRec.firstFailAt > LOCKOUT_WINDOW_MS)) {
+    userRec = { count: 0, firstFailAt: now, lockedUntil: 0 };
+  }
+  userRec.count += 1;
+  if (userRec.count >= MAX_FAILED_LOGIN_ATTEMPTS) {
+    userRec.lockedUntil = now + LOCKOUT_WINDOW_MS;
+  }
+  loginFailuresByKey.set(userKey, userRec);
+
+  let ipRec = loginFailuresByKey.get(ipKey);
+  if (!ipRec || (now - ipRec.firstFailAt > LOCKOUT_WINDOW_MS)) {
+    ipRec = { count: 0, firstFailAt: now, lockedUntil: 0 };
+  }
+  ipRec.count += 1;
+  if (ipRec.count >= MAX_FAILED_LOGIN_ATTEMPTS * 5) {
+    ipRec.lockedUntil = now + LOCKOUT_WINDOW_MS;
+  }
+  loginFailuresByKey.set(ipKey, ipRec);
+
+  const maxCount = userRec.count;
+  return {
+    attemptsUsed: maxCount,
+    attemptsRemaining: Math.max(0, MAX_FAILED_LOGIN_ATTEMPTS - maxCount),
+    locked: Boolean(userRec.lockedUntil && now < userRec.lockedUntil)
+  };
+}
+
+function clearLoginFailures(ip, username) {
+  loginFailuresByKey.delete(`ip:${ip}`);
+  loginFailuresByKey.delete(`user:${String(username || '').toLowerCase()}`);
+}
+
+function buildDefaultUsers() {
   const registry = loadClientRegistry();
   const validClients = new Set(Object.keys(registry.clients || { damien: true, metro: true }));
-  const map = [];
-
   const primaryUser = process.env.PORTAL_USER || 'damien';
   const primaryPass = process.env.PORTAL_PASSWORD || 'bridge2026';
   const primaryClient = process.env.PORTAL_CLIENT_ID || (validClients.has(primaryUser) ? primaryUser : 'damien');
-  map.push({ user: primaryUser, pass: primaryPass, clientId: primaryClient });
+  const metroUser = process.env.METRO_PORTAL_USER || 'metro';
+  const metroPass = process.env.METRO_PORTAL_PASSWORD || 'metro2026';
 
-  // Built-in second tenant credential for multi-client verification unless overridden
-  map.push({
-    user: process.env.METRO_PORTAL_USER || 'metro',
-    pass: process.env.METRO_PORTAL_PASSWORD || 'metro2026',
-    clientId: 'metro'
-  });
+  const defaults = [
+    {
+      username: primaryUser,
+      passwordHash: hashPasswordScrypt(primaryPass),
+      clientId: primaryClient,
+      displayName: 'Damien Center Program Lead (damien)',
+      email: 'damien@bridgehealthhub.com',
+      role: 'admin',
+      mfaEnabled: false,
+      mfaMethod: 'email',
+      totpSecret: generateTotpSecret(),
+      passwordUpdatedAt: '2026-11-01T00:00:00.000Z',
+      passwordMaxAgeDays: 0,
+      passwordHistory: []
+    },
+    {
+      username: metroUser,
+      passwordHash: hashPasswordScrypt(metroPass),
+      clientId: 'metro',
+      displayName: 'Metro Health Program Lead (metro)',
+      email: 'metro@bridgehealthhub.com',
+      role: 'admin',
+      mfaEnabled: false,
+      mfaMethod: 'email',
+      totpSecret: generateTotpSecret(),
+      passwordUpdatedAt: '2026-11-01T00:00:00.000Z',
+      passwordMaxAgeDays: 0,
+      passwordHistory: []
+    },
+    {
+      username: 'rishi.damien',
+      passwordHash: hashPasswordScrypt('BridgeDamien2026!'),
+      clientId: 'damien',
+      displayName: 'Rishi (Bridge Health Hub)',
+      email: 'rishi@bridgehealthhub.com',
+      role: 'admin',
+      mfaEnabled: false,
+      mfaMethod: 'email',
+      totpSecret: generateTotpSecret(),
+      passwordUpdatedAt: '2026-11-01T00:00:00.000Z',
+      passwordMaxAgeDays: 0,
+      passwordHistory: []
+    },
+    {
+      username: 'pharmacist.damien',
+      passwordHash: hashPasswordScrypt('DamienPharm2026!'),
+      clientId: 'damien',
+      displayName: 'Damien Clinical Pharmacist',
+      email: 'pharmacy@damien.org',
+      role: 'pharmacist',
+      mfaEnabled: false,
+      mfaMethod: 'email',
+      totpSecret: generateTotpSecret(),
+      passwordUpdatedAt: '2026-11-01T00:00:00.000Z',
+      passwordMaxAgeDays: 0,
+      passwordHistory: []
+    }
+  ];
 
   if (process.env.PORTAL_USERS) {
-    for (const entry of process.env.PORTAL_USERS.split(',')) {
+    for (const entry of process.env.PORTAL_USERS.split(/[,;]/)) {
       const parts = entry.split(':').map(s => s.trim()).filter(Boolean);
       if (parts.length >= 2) {
         const u = parts[0];
         const p = parts[1];
         const c = parts[2] || (validClients.has(u) ? u : 'damien');
-        if (validClients.has(c)) {
-          map.push({ user: u, pass: p, clientId: c });
+        if (validClients.has(c) && !defaults.some(d => d.username.toLowerCase() === u.toLowerCase())) {
+          defaults.push({
+            username: u,
+            passwordHash: hashPasswordScrypt(p),
+            clientId: c,
+            displayName: `${u} (${c})`,
+            email: `${u}@bridgehealthhub.com`,
+            role: 'admin',
+            mfaEnabled: false,
+            mfaMethod: 'email',
+            totpSecret: generateTotpSecret(),
+            passwordUpdatedAt: '2026-11-01T00:00:00.000Z',
+            passwordMaxAgeDays: 0,
+            passwordHistory: []
+          });
         }
       }
     }
   }
-  return map;
+  return defaults;
 }
 
-const SESSION_COOKIE_NAME = 'bridge_session';
-const SESSION_SECRET = process.env.SESSION_SECRET || 'bridge-multi-client-hmac-secret-2026-v2';
-const SESSION_TTL_SECONDS = 12 * 60 * 60; // 12 hours
+const USERS_LOCAL_PATH = path.join(CLIENTS_DIR, 'users_directory.json');
+let usersDirectoryCache = null;
+
+function loadUsersDirectory() {
+  if (usersDirectoryCache) return usersDirectoryCache;
+  const defaults = buildDefaultUsers();
+  if (fs.existsSync(USERS_LOCAL_PATH)) {
+    try {
+      const saved = JSON.parse(fs.readFileSync(USERS_LOCAL_PATH, 'utf8'));
+      if (Array.isArray(saved) && saved.length > 0) {
+        // Ensure preserved accounts (damien / metro) always exist
+        for (const def of defaults) {
+          if (!saved.some(u => u.username.toLowerCase() === def.username.toLowerCase())) {
+            saved.push(def);
+          }
+        }
+        usersDirectoryCache = saved;
+        return usersDirectoryCache;
+      }
+    } catch (e) {
+      console.warn('Could not parse users_directory.json:', e.message);
+    }
+  }
+  usersDirectoryCache = defaults;
+  return usersDirectoryCache;
+}
+
+function saveUsersDirectory(usersList) {
+  usersDirectoryCache = usersList;
+  try {
+    fs.mkdirSync(path.dirname(USERS_LOCAL_PATH), { recursive: true });
+    fs.writeFileSync(USERS_LOCAL_PATH, JSON.stringify(usersList, null, 2), 'utf8');
+  } catch (e) {
+    console.warn('Could not save users_directory.json locally:', e.message);
+  }
+}
+
+// Persistent Per-Tenant Audit Log (clients/<clientId>/audit_log.json + GCS)
+const clientAuditLogs = {}; // clientId -> Array of events
+
+function getClientLocalAuditPath(clientId) {
+  return path.join(CLIENTS_DIR, clientId, 'audit_log.json');
+}
+
+function loadClientAuditLog(clientId) {
+  if (clientAuditLogs[clientId]) return clientAuditLogs[clientId];
+  const p = getClientLocalAuditPath(clientId);
+  if (fs.existsSync(p)) {
+    try {
+      const arr = JSON.parse(fs.readFileSync(p, 'utf8'));
+      if (Array.isArray(arr)) {
+        clientAuditLogs[clientId] = arr;
+        return arr;
+      }
+    } catch (_) {}
+  }
+  clientAuditLogs[clientId] = [];
+  return clientAuditLogs[clientId];
+}
+
+function recordAuditEvent(req, eventType, details = {}, overrideClient = null, overrideUser = null) {
+  const clientId = overrideClient || req?.clientId || 'damien';
+  const username = overrideUser || req?.authenticatedUser || 'unauthenticated';
+  const displayName = req?.authenticatedDisplayName || username;
+  const ip = req ? getClientIp(req) : '127.0.0.1';
+  const country = req ? getClientCountry(req) : 'US';
+  const entry = {
+    id: crypto.randomUUID(),
+    timestamp: new Date().toISOString(),
+    clientId,
+    user: username,
+    displayName,
+    ip,
+    country,
+    eventType,
+    details
+  };
+  const logArr = loadClientAuditLog(clientId);
+  logArr.unshift(entry);
+  if (logArr.length > 500) logArr.length = 500;
+  try {
+    const localPath = getClientLocalAuditPath(clientId);
+    fs.mkdirSync(path.dirname(localPath), { recursive: true });
+    fs.writeFileSync(localPath, JSON.stringify(logArr, null, 2), 'utf8');
+  } catch (_) {}
+  return entry;
+}
 
 function signSessionToken(payloadObj) {
   const nowSec = Math.floor(Date.now() / 1000);
+  const jti = payloadObj.jti || crypto.randomBytes(12).toString('hex');
   const body = {
+    jti,
     user: payloadObj.user,
+    displayName: payloadObj.displayName || payloadObj.user,
+    email: payloadObj.email || '',
+    role: payloadObj.role || 'admin',
     clientId: payloadObj.clientId,
     iat: nowSec,
     exp: nowSec + SESSION_TTL_SECONDS
   };
+  sessionLastActivity.set(jti, Date.now());
   const payloadB64 = Buffer.from(JSON.stringify(body), 'utf8').toString('base64url');
   const sigB64 = crypto.createHmac('sha256', SESSION_SECRET).update(payloadB64).digest('base64url');
   return `${payloadB64}.${sigB64}`;
@@ -111,9 +458,50 @@ function verifySessionToken(token) {
     const parsed = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
     const nowSec = Math.floor(Date.now() / 1000);
     if (!parsed || !parsed.clientId || (parsed.exp && parsed.exp < nowSec)) return null;
+    if (parsed.jti && revokedSessionJtis.has(parsed.jti)) return null;
+    if (parsed.jti) {
+      const lastAct = sessionLastActivity.get(parsed.jti);
+      if (lastAct && (Date.now() - lastAct > IDLE_TIMEOUT_SECONDS * 1000)) {
+        revokedSessionJtis.add(parsed.jti);
+        return null;
+      }
+      sessionLastActivity.set(parsed.jti, Date.now());
+    }
     return parsed;
   } catch (e) {
     return null;
+  }
+}
+
+function signMfaTrustCookie(username, clientId) {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const body = {
+    user: String(username || '').toLowerCase(),
+    clientId,
+    exp: nowSec + MFA_TRUST_TTL_SECONDS
+  };
+  const payloadB64 = Buffer.from(JSON.stringify(body), 'utf8').toString('base64url');
+  const sigB64 = crypto.createHmac('sha256', SESSION_SECRET).update(`mfatrust:${payloadB64}`).digest('base64url');
+  return `${payloadB64}.${sigB64}`;
+}
+
+function verifyMfaTrustCookie(token, username, clientId) {
+  if (!token || typeof token !== 'string' || !token.includes('.')) return false;
+  const [payloadB64, sigB64] = token.split('.');
+  if (!payloadB64 || !sigB64) return false;
+  const expectedSig = crypto.createHmac('sha256', SESSION_SECRET).update(`mfatrust:${payloadB64}`).digest('base64url');
+  if (!safeEqual(sigB64, expectedSig)) return false;
+  try {
+    const parsed = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+    const nowSec = Math.floor(Date.now() / 1000);
+    return (
+      parsed &&
+      parsed.user === String(username || '').toLowerCase() &&
+      parsed.clientId === clientId &&
+      parsed.exp > nowSec
+    );
+  } catch (_) {
+    return false;
   }
 }
 
@@ -131,15 +519,52 @@ function parseCookies(req) {
   return out;
 }
 
-// Strict anti-cache headers helper
+// Strict anti-cache & HTTP Security Headers helper
+function setSecurityAndNoCacheHeaders(res, isStaticAsset = false) {
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none';"
+  );
+  if (!isStaticAsset) {
+    res.setHeader('Cache-Control', 'private, no-store, no-cache, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Vary', 'Cookie, Authorization');
+  }
+}
+
 function setNoCacheHeaders(res) {
-  res.setHeader('Cache-Control', 'private, no-store, no-cache, must-revalidate');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
-  res.setHeader('Vary', 'Cookie, Authorization');
+  setSecurityAndNoCacheHeaders(res, false);
 }
 
 app.use(express.json({ limit: '5mb' }));
+
+// Global Security Headers + US-Only Geo-Fencing Middleware
+app.use((req, res, next) => {
+  setSecurityAndNoCacheHeaders(res, req.path.startsWith('/assets/'));
+  if (req.path === '/api/health') return next();
+
+  const country = getClientCountry(req);
+  if (country && country !== 'US' && country !== 'ZZ' && country !== 'XX') {
+    recordAuditEvent(req, 'GEO_BLOCKED', { path: req.path, country }, 'damien', 'geo-firewall');
+    if (req.path.startsWith('/api/')) {
+      return res.status(403).json({
+        ok: false,
+        error: `Access restricted to the United States (detected region: ${country}).`,
+        country
+      });
+    }
+    return res
+      .status(403)
+      .send('<!DOCTYPE html><html><head><title>Access Restricted</title></head><body style="font-family:sans-serif;padding:40px;text-align:center"><h1>403 — Access Restricted to the United States</h1><p>This Covered Entity healthcare analytics portal is only accessible from within the United States.</p></body></html>');
+  }
+  next();
+});
 
 // Public Web Login Page (/login)
 app.get(['/login', '/login.html'], (req, res) => {
@@ -147,40 +572,209 @@ app.get(['/login', '/login.html'], (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
-// Web Login API (sets HMAC-signed HttpOnly session cookie — NO Basic Auth popup)
-app.post('/api/auth/login', (req, res) => {
-  setNoCacheHeaders(res);
-  const { username, password } = req.body || {};
-  const u = String(username || '').trim();
-  const p = String(password || '');
-  const allowed = getAllowedUsers();
-  const matched = allowed.find(cred => safeEqual(u, cred.user) && safeEqual(p, cred.pass));
-  if (!matched) {
-    return res.status(401).json({ ok: false, error: 'Invalid Client ID or password.' });
-  }
-
-  const token = signSessionToken({ user: matched.user, clientId: matched.clientId });
+function issueSessionCookiesAndRespond(req, res, userRecord, trustBrowser30d = false) {
+  const token = signSessionToken({
+    user: userRecord.username,
+    displayName: userRecord.displayName || userRecord.username,
+    email: userRecord.email || '',
+    role: userRecord.role || 'admin',
+    clientId: userRecord.clientId
+  });
   const isSecure = req.secure || req.headers['x-forwarded-proto'] === 'https';
-  const cookieParts = [
+  const cookiesToSet = [];
+
+  const sessionParts = [
     `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}`,
     'Path=/',
     'HttpOnly',
     'SameSite=Lax',
     `Max-Age=${SESSION_TTL_SECONDS}`
   ];
-  if (isSecure) cookieParts.push('Secure');
+  if (isSecure) sessionParts.push('Secure');
+  cookiesToSet.push(sessionParts.join('; '));
 
-  res.setHeader('Set-Cookie', cookieParts.join('; '));
+  if (trustBrowser30d) {
+    const trustTok = signMfaTrustCookie(userRecord.username, userRecord.clientId);
+    const trustParts = [
+      `${MFA_TRUST_COOKIE_NAME}=${encodeURIComponent(trustTok)}`,
+      'Path=/',
+      'HttpOnly',
+      'SameSite=Lax',
+      `Max-Age=${MFA_TRUST_TTL_SECONDS}`
+    ];
+    if (isSecure) trustParts.push('Secure');
+    cookiesToSet.push(trustParts.join('; '));
+  }
+
+  res.setHeader('Set-Cookie', cookiesToSet);
   return res.json({
     ok: true,
-    user: matched.user,
-    clientId: matched.clientId
+    user: userRecord.username,
+    displayName: userRecord.displayName || userRecord.username,
+    email: userRecord.email || '',
+    role: userRecord.role || 'admin',
+    clientId: userRecord.clientId
+  });
+}
+
+// Web Login API (sets HMAC-signed HttpOnly session cookie — with 5-attempt Brute-Force Lockout & Optional MFA)
+app.post('/api/auth/login', (req, res) => {
+  setNoCacheHeaders(res);
+  const ip = getClientIp(req);
+  const { username, password, operatorName } = req.body || {};
+  const u = String(username || '').trim();
+  const p = String(password || '');
+
+  // Check Brute-Force Lockout before checking credentials
+  const ipLock = checkRateLimitKey(`ip:${ip}`);
+  const userLock = checkRateLimitKey(`user:${u.toLowerCase()}`);
+  if (ipLock.locked || userLock.locked) {
+    const retrySec = Math.max(ipLock.retryAfterSeconds || 0, userLock.retryAfterSeconds || 0) || 900;
+    recordAuditEvent(req, 'LOGIN_LOCKED_OUT', { username: u, retryAfterSeconds: retrySec }, 'damien', u || 'unknown');
+    return res.status(429).json({
+      ok: false,
+      locked: true,
+      retryAfterSeconds: retrySec,
+      error: `Too many failed sign-in attempts (max ${MAX_FAILED_LOGIN_ATTEMPTS}). Account is temporarily locked for ${Math.ceil(retrySec / 60)} minutes.`
+    });
+  }
+
+  const users = loadUsersDirectory();
+  const matched = users.find(
+    cred =>
+      cred.username.toLowerCase() === u.toLowerCase() &&
+      verifyPasswordScrypt(p, cred.passwordHash)
+  );
+
+  if (!matched) {
+    const failStatus = recordLoginFailure(ip, u);
+    recordAuditEvent(
+      req,
+      failStatus.locked ? 'BRUTE_FORCE_LOCKOUT_TRIGGERED' : 'LOGIN_FAILED',
+      { username: u, attemptsUsed: failStatus.attemptsUsed, attemptsRemaining: failStatus.attemptsRemaining },
+      u.toLowerCase().includes('metro') ? 'metro' : 'damien',
+      u || 'unknown'
+    );
+    if (failStatus.locked) {
+      return res.status(429).json({
+        ok: false,
+        locked: true,
+        retryAfterSeconds: 900,
+        error: `Too many failed sign-in attempts (${MAX_FAILED_LOGIN_ATTEMPTS} of ${MAX_FAILED_LOGIN_ATTEMPTS}). Account locked for 15 minutes.`
+      });
+    }
+    return res.status(401).json({
+      ok: false,
+      attemptsRemaining: failStatus.attemptsRemaining,
+      error: 'Invalid Client ID or password.'
+    });
+  }
+
+  // Successful password verification -> reset brute-force counter
+  clearLoginFailures(ip, u);
+
+  const effectiveDisplayName = operatorName
+    ? `${String(operatorName).trim()} (${matched.username})`
+    : (matched.displayName || matched.username);
+
+  // Check if MFA is enabled for this user and browser is not already trusted for 30 days
+  const cookies = parseCookies(req);
+  const isBrowserTrusted = verifyMfaTrustCookie(cookies[MFA_TRUST_COOKIE_NAME], matched.username, matched.clientId);
+
+  if (matched.mfaEnabled && !isBrowserTrusted) {
+    const challengeToken = crypto.randomBytes(24).toString('hex');
+    const emailCode = String(crypto.randomInt(100000, 999999));
+    pendingMfaChallenges.set(challengeToken, {
+      username: matched.username,
+      clientId: matched.clientId,
+      displayName: effectiveDisplayName,
+      email: matched.email || `${matched.username}@bridgehealthhub.com`,
+      role: matched.role || 'admin',
+      mfaMethod: matched.mfaMethod || 'email',
+      emailCode,
+      totpSecret: matched.totpSecret,
+      expiresAt: Date.now() + 10 * 60 * 1000
+    });
+    recordAuditEvent(req, 'MFA_CHALLENGE_ISSUED', { method: matched.mfaMethod || 'email', email: matched.email }, matched.clientId, matched.username);
+    const maskedEmail = (matched.email || `${matched.username}@bridgehealthhub.com`).replace(/^(.)(.*)(@.*)$/, (_, a, b, c) => `${a}${'*'.repeat(Math.min(b.length, 4))}${c}`);
+    return res.json({
+      ok: true,
+      mfaRequired: true,
+      challengeToken,
+      mfaMethod: matched.mfaMethod || 'email',
+      maskedEmail,
+      // Expose demo/dev email preview when no external SMTP server is configured so user/admin can test Email MFA seamlessly
+      emailCodePreview: process.env.SMTP_HOST ? undefined : emailCode
+    });
+  }
+
+  recordAuditEvent(
+    req,
+    'LOGIN_SUCCESS',
+    { method: isBrowserTrusted ? 'password+trusted_device' : 'password', role: matched.role || 'admin' },
+    matched.clientId,
+    matched.username
+  );
+
+  return issueSessionCookiesAndRespond(req, res, { ...matched, displayName: effectiveDisplayName }, false);
+});
+
+// Verify 6-Digit MFA Code (Supports BOTH Email 6-Digit Code AND Authenticator App TOTP!)
+app.post('/api/auth/verify-mfa', (req, res) => {
+  setNoCacheHeaders(res);
+  const { challengeToken, code, trustDevice } = req.body || {};
+  const ch = pendingMfaChallenges.get(String(challengeToken || ''));
+  if (!ch || Date.now() > ch.expiresAt) {
+    pendingMfaChallenges.delete(String(challengeToken || ''));
+    return res.status(401).json({ ok: false, error: 'Verification code expired. Please sign in again.' });
+  }
+  const cleanCode = String(code || '').replace(/\s+/g, '');
+  const validEmailCode = safeEqual(cleanCode, ch.emailCode);
+  const validTotpCode = verifyTotpCode(ch.totpSecret, cleanCode);
+
+  if (!validEmailCode && !validTotpCode) {
+    recordAuditEvent(req, 'MFA_VERIFICATION_FAILED', { username: ch.username }, ch.clientId, ch.username);
+    return res.status(401).json({ ok: false, error: 'Invalid 6-digit verification code.' });
+  }
+
+  pendingMfaChallenges.delete(String(challengeToken || ''));
+  recordAuditEvent(
+    req,
+    'LOGIN_SUCCESS_MFA',
+    { verifiedVia: validTotpCode ? 'totp_authenticator' : 'email_code', trustDevice: Boolean(trustDevice) },
+    ch.clientId,
+    ch.username
+  );
+  return issueSessionCookiesAndRespond(req, res, ch, Boolean(trustDevice));
+});
+
+// Resend Email MFA Code
+app.post('/api/auth/resend-mfa', (req, res) => {
+  setNoCacheHeaders(res);
+  const { challengeToken } = req.body || {};
+  const ch = pendingMfaChallenges.get(String(challengeToken || ''));
+  if (!ch || Date.now() > ch.expiresAt) {
+    return res.status(401).json({ ok: false, error: 'Session expired. Please sign in again.' });
+  }
+  ch.emailCode = String(crypto.randomInt(100000, 999999));
+  ch.expiresAt = Date.now() + 10 * 60 * 1000;
+  recordAuditEvent(req, 'MFA_EMAIL_CODE_RESENT', { email: ch.email }, ch.clientId, ch.username);
+  return res.json({
+    ok: true,
+    message: 'A new 6-digit verification code has been sent to your email.',
+    emailCodePreview: process.env.SMTP_HOST ? undefined : ch.emailCode
   });
 });
 
-// Web Logout API (clears session cookie)
+// Web Logout API (revokes session JTI server-side & clears session cookie)
 app.post('/api/auth/logout', (req, res) => {
   setNoCacheHeaders(res);
+  const cookies = parseCookies(req);
+  const session = verifySessionToken(cookies[SESSION_COOKIE_NAME]);
+  if (session) {
+    if (session.jti) revokedSessionJtis.add(session.jti);
+    recordAuditEvent(req, 'LOGOUT', {}, session.clientId, session.user);
+  }
   res.setHeader('Set-Cookie', `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
   return res.json({ ok: true });
 });
@@ -191,6 +785,8 @@ app.use((req, res, next) => {
     req.path === '/api/health' ||
     req.path === '/login' ||
     req.path === '/login.html' ||
+    req.path === '/api/auth/verify-mfa' ||
+    req.path === '/api/auth/resend-mfa' ||
     req.path === '/styles.css' ||
     req.path === '/favicon.ico' ||
     req.path.startsWith('/assets/')
@@ -200,12 +796,16 @@ app.use((req, res, next) => {
 
   setNoCacheHeaders(res);
 
-  // 1. Verify signed HttpOnly session cookie
+  // 1. Verify signed HttpOnly session cookie (with revocation & 30-min idle timeout check)
   const cookies = parseCookies(req);
   const session = verifySessionToken(cookies[SESSION_COOKIE_NAME]);
   if (session && session.clientId) {
     req.clientId = session.clientId;
     req.authenticatedUser = session.user;
+    req.authenticatedDisplayName = session.displayName || session.user;
+    req.authenticatedEmail = session.email || '';
+    req.authenticatedRole = session.role || 'admin';
+    req.sessionJti = session.jti;
     return next();
   }
 
@@ -219,11 +819,158 @@ app.use((req, res, next) => {
 });
 
 app.get('/api/auth/me', (req, res) => {
+  const users = loadUsersDirectory();
+  const userRec = users.find(u => u.username.toLowerCase() === String(req.authenticatedUser || '').toLowerCase());
   res.json({
     authenticated: true,
     user: req.authenticatedUser,
-    clientId: req.clientId
+    displayName: req.authenticatedDisplayName || req.authenticatedUser,
+    email: userRec?.email || req.authenticatedEmail || '',
+    role: userRec?.role || req.authenticatedRole || 'admin',
+    clientId: req.clientId,
+    mfaEnabled: Boolean(userRec?.mfaEnabled),
+    mfaMethod: userRec?.mfaMethod || 'email'
   });
+});
+
+// ============================================================================
+// NAMED-USER MANAGEMENT, PASSWORD COMPLEXITY CHANGE, MFA CONFIG & AUDIT API
+// ============================================================================
+app.get('/api/security/overview', (req, res) => {
+  const clientId = req.clientId || 'damien';
+  const users = loadUsersDirectory()
+    .filter(u => u.clientId === clientId)
+    .map(u => ({
+      username: u.username,
+      displayName: u.displayName,
+      email: u.email,
+      role: u.role,
+      mfaEnabled: Boolean(u.mfaEnabled),
+      mfaMethod: u.mfaMethod || 'email',
+      totpSecret: u.username.toLowerCase() === String(req.authenticatedUser || '').toLowerCase() ? u.totpSecret : undefined,
+      passwordUpdatedAt: u.passwordUpdatedAt
+    }));
+  const auditEvents = loadClientAuditLog(clientId).slice(0, 100);
+  res.json({
+    ok: true,
+    clientId,
+    currentUser: {
+      username: req.authenticatedUser,
+      displayName: req.authenticatedDisplayName,
+      role: req.authenticatedRole
+    },
+    securityPolicy: {
+      geoRestriction: 'US_ONLY',
+      maxFailedAttempts: MAX_FAILED_LOGIN_ATTEMPTS,
+      lockoutMinutes: 15,
+      idleTimeoutMinutes: 30,
+      passwordMinLength: 12,
+      passwordComplexityCategories: 3,
+      mfaSupportedMethods: ['email', 'totp']
+    },
+    users,
+    auditEvents
+  });
+});
+
+app.post('/api/security/users', (req, res) => {
+  const clientId = req.clientId || 'damien';
+  const { username, password, displayName, email, role, mfaEnabled, mfaMethod } = req.body || {};
+  const cleanUser = String(username || '').trim();
+  if (!cleanUser || cleanUser.length < 3) {
+    return res.status(400).json({ ok: false, error: 'Username must be at least 3 characters.' });
+  }
+  const complexity = validatePasswordComplexity(password, cleanUser);
+  if (!complexity.valid) {
+    return res.status(400).json({ ok: false, error: complexity.error });
+  }
+  const users = loadUsersDirectory();
+  if (users.some(u => u.username.toLowerCase() === cleanUser.toLowerCase())) {
+    return res.status(400).json({ ok: false, error: `User '${cleanUser}' already exists.` });
+  }
+  const newUser = {
+    username: cleanUser,
+    passwordHash: hashPasswordScrypt(password),
+    clientId,
+    displayName: String(displayName || cleanUser).trim(),
+    email: String(email || `${cleanUser}@bridgehealthhub.com`).trim(),
+    role: role || 'pharmacist',
+    mfaEnabled: Boolean(mfaEnabled),
+    mfaMethod: mfaMethod || 'email',
+    totpSecret: generateTotpSecret(),
+    passwordUpdatedAt: new Date().toISOString(),
+    passwordMaxAgeDays: 0,
+    passwordHistory: []
+  };
+  users.push(newUser);
+  saveUsersDirectory(users);
+  recordAuditEvent(req, 'USER_CREATED', { createdUsername: cleanUser, role: newUser.role, mfaEnabled: newUser.mfaEnabled });
+  res.json({
+    ok: true,
+    user: {
+      username: newUser.username,
+      displayName: newUser.displayName,
+      email: newUser.email,
+      role: newUser.role,
+      mfaEnabled: newUser.mfaEnabled,
+      mfaMethod: newUser.mfaMethod
+    }
+  });
+});
+
+app.post('/api/security/change-password', (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  const users = loadUsersDirectory();
+  const userRec = users.find(u => u.username.toLowerCase() === String(req.authenticatedUser || '').toLowerCase());
+  if (!userRec) {
+    return res.status(404).json({ ok: false, error: 'User not found.' });
+  }
+  if (!verifyPasswordScrypt(currentPassword, userRec.passwordHash)) {
+    recordAuditEvent(req, 'PASSWORD_CHANGE_FAILED', { reason: 'incorrect_current_password' });
+    return res.status(401).json({ ok: false, error: 'Current password is incorrect.' });
+  }
+  const complexity = validatePasswordComplexity(newPassword, userRec.username);
+  if (!complexity.valid) {
+    return res.status(400).json({ ok: false, error: complexity.error });
+  }
+  if (verifyPasswordScrypt(newPassword, userRec.passwordHash)) {
+    return res.status(400).json({ ok: false, error: 'New password cannot be the same as your current password.' });
+  }
+  userRec.passwordHistory = [userRec.passwordHash, ...(userRec.passwordHistory || [])].slice(0, 3);
+  userRec.passwordHash = hashPasswordScrypt(newPassword);
+  userRec.passwordUpdatedAt = new Date().toISOString();
+  saveUsersDirectory(users);
+  recordAuditEvent(req, 'PASSWORD_CHANGED', { username: userRec.username });
+  res.json({ ok: true, message: 'Password updated successfully.' });
+});
+
+app.post('/api/security/mfa-config', (req, res) => {
+  const { targetUsername, mfaEnabled, mfaMethod } = req.body || {};
+  const lookupUser = String(targetUsername || req.authenticatedUser || '').toLowerCase();
+  const users = loadUsersDirectory();
+  const userRec = users.find(u => u.username.toLowerCase() === lookupUser && u.clientId === req.clientId);
+  if (!userRec) {
+    return res.status(404).json({ ok: false, error: 'User not found in this tenant.' });
+  }
+  if (mfaEnabled !== undefined) userRec.mfaEnabled = Boolean(mfaEnabled);
+  if (mfaMethod && ['email', 'totp'].includes(mfaMethod)) userRec.mfaMethod = mfaMethod;
+  if (!userRec.totpSecret) userRec.totpSecret = generateTotpSecret();
+  saveUsersDirectory(users);
+  recordAuditEvent(req, 'MFA_CONFIG_UPDATED', { targetUsername: userRec.username, mfaEnabled: userRec.mfaEnabled, mfaMethod: userRec.mfaMethod });
+  res.json({
+    ok: true,
+    username: userRec.username,
+    mfaEnabled: userRec.mfaEnabled,
+    mfaMethod: userRec.mfaMethod,
+    totpSecret: userRec.totpSecret
+  });
+});
+
+app.post('/api/security/audit-event', (req, res) => {
+  const { eventType, details } = req.body || {};
+  if (!eventType) return res.status(400).json({ ok: false });
+  const entry = recordAuditEvent(req, String(eventType), details || {});
+  res.json({ ok: true, entry });
 });
 
 app.use(express.static(path.join(__dirname, 'public'), {
@@ -237,7 +984,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
 // ============================================================================
 // PER-CLIENT STATE MANAGER + DURABLE GCS OVERLAY PERSISTENCE
 // ============================================================================
-const ALLOWED_EDIT_FIELDS = ['Status', 'Date contacted', 'Notes', 'Corrected patient ID', 'Priority', 'Next action'];
+const ALLOWED_EDIT_FIELDS = ['Status', 'Date contacted', 'Notes', 'Corrected patient ID', 'Priority', 'Next action', 'Updated by', 'Updated at'];
 const clientStates = {};       // clientId -> hydrated portalData object
 const clientOverlays = {};     // clientId -> { clientId, updatedAt, edits: { [stableKey]: { ... } } }
 const clientWriteQueues = {};  // clientId -> Promise chain for sequential GCS + disk writes
@@ -549,6 +1296,8 @@ app.patch('/api/worklist/:sheet/:id', async (req, res) => {
       row[key] = updates[key];
     }
   }
+  row['Updated by'] = req.authenticatedDisplayName || req.authenticatedUser || 'User';
+  row['Updated at'] = new Date().toISOString();
   recordRowEdit(clientId, row);
 
   // If updating Corrected patient ID on fixes-unmatched or fixes-noid, check if there is a matching Pharmacy To-Do patient
@@ -563,10 +1312,19 @@ app.patch('/api/worklist/:sheet/:id', async (req, res) => {
       todoMatch['Date contacted'] = todoMatch['Date contacted'] || '2026-10-25';
       const prevNotes = todoMatch['Notes'] ? `${todoMatch['Notes']} | ` : '';
       todoMatch['Notes'] = `${prevNotes}Linked to dispensed fill (${row['Dispensed item']} on ${row['Date filled']}) via Pharmacy Data Fixes.`;
+      todoMatch['Updated by'] = req.authenticatedDisplayName || req.authenticatedUser || 'User';
+      todoMatch['Updated at'] = new Date().toISOString();
       recordRowEdit(clientId, todoMatch);
       linkedTodoUpdated = todoMatch;
     }
   }
+
+  recordAuditEvent(req, 'WORKLIST_ROW_EDIT', {
+    sheet,
+    rowId: id,
+    patientId: row['Pharmacy patient ID'] || row['Patient ID on file'] || id,
+    updatedFields: Object.keys(updates)
+  });
 
   await enqueueOverlayPersist(clientId);
   res.json({
@@ -585,11 +1343,15 @@ app.post('/api/worklist/apply-fuzzy-fixes', async (req, res) => {
   const wl = state.worklists;
   let appliedCount = 0;
   let todoLinkedCount = 0;
+  const actorName = req.authenticatedDisplayName || req.authenticatedUser || 'User';
+  const nowIso = new Date().toISOString();
 
   for (const row of wl.pharmacyDataFixes.unmatchedRows) {
     if (row.suggestedMatch && row.suggestedMatch.suggestedPatientId) {
       const targetId = row.suggestedMatch.suggestedPatientId;
       row['Corrected patient ID'] = targetId;
+      row['Updated by'] = actorName;
+      row['Updated at'] = nowIso;
       recordRowEdit(clientId, row);
       appliedCount++;
 
@@ -600,11 +1362,15 @@ app.post('/api/worklist/apply-fuzzy-fixes', async (req, res) => {
         todoMatch['Status'] = 'Filled – ID Corrected';
         todoMatch['Date contacted'] = '2026-10-25';
         todoMatch['Notes'] = `Auto-reconciled with unmatched fill (${row['Patient ID on file']} -> ${targetId}, ${row['Dispensed item']} filled ${row['Date filled']}).`;
+        todoMatch['Updated by'] = actorName;
+        todoMatch['Updated at'] = nowIso;
         recordRowEdit(clientId, todoMatch);
         todoLinkedCount++;
       }
     }
   }
+
+  recordAuditEvent(req, 'WORKLIST_APPLY_FUZZY_FIXES', { appliedCount, todoLinkedCount });
 
   await enqueueOverlayPersist(clientId);
   res.json({
@@ -628,6 +1394,7 @@ app.post('/api/worklist/reset', async (req, res) => {
     try { fs.unlinkSync(localPath); } catch (e) {}
   }
   await deleteOverlayFromGcs(clientId);
+  recordAuditEvent(req, 'WORKLIST_RESET', { clientId });
 
   res.json({
     ok: true,
@@ -686,6 +1453,8 @@ app.get('/api/worklist/export/:sheet', async (req, res) => {
   for (const r of rows) {
     csvLines.push(headers.map(h => esc(r[h])).join(','));
   }
+
+  recordAuditEvent(req, 'CSV_EXPORT', { sheet, filename, rowCount: rows.length });
 
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -1247,6 +2016,7 @@ app.post('/api/ask', async (req, res) => {
   const { question, history, mode } = req.body || {};
   const q = String(question || '').trim() || 'How is the program performing through September 2026?';
   const memberBlockedFlag = isMemberLevelQuery(state, q);
+  recordAuditEvent(req, 'AI_QUERY', { question: q.slice(0, 140), memberBlocked: memberBlockedFlag });
 
   if (mode !== 'instant') {
     try {

@@ -118,6 +118,8 @@
         <span class="badge" id="badgeClientName">Client</span>
         <span class="badge" id="badgeTelehealthName">Hello Alpha</span>
         <span class="badge" id="badgePharmacyName">Pharmacy</span>
+        <span class="badge" id="badgeCurrentUser" style="background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe;font-weight:600" title="Signed-in Named User">User</span>
+        <button type="button" class="btn-bridge-outline" id="btnOpenSecurityModal" style="padding:4px 10px;font-size:0.74rem" onclick="openSecurityModal()">Security &amp; Audit</button>
         <button type="button" class="btn-bridge-outline" id="btnOpenDefinitions" style="padding:4px 10px;font-size:0.74rem" onclick="openDefinitionsModal()">Definitions</button>
         <button type="button" class="btn-bridge-outline" id="btnLogout" style="padding:4px 10px;font-size:0.74rem;color:#b91c1c;border-color:#fecaca" onclick="logoutPortal()">Sign Out</button>
       </div>
@@ -1002,6 +1004,131 @@
         <button class="btn-bridge-outline" onclick="closePatientModal()">Close</button>
       </div>
       <div id="modalPatientBody" class="detail-grid"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════ ENTERPRISE SECURITY, NAMED USERS & AUDIT LOG MODAL ═══════════ -->
+  <div class="modal-backdrop" id="securityModal" onclick="if(event.target===this)closeSecurityModal()">
+    <div class="modal-card" style="max-width:980px;max-height:90vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding-bottom:14px;margin-bottom:16px">
+        <div>
+          <span class="slide-eyebrow">Enterprise Access Control &amp; Compliance</span>
+          <h3 style="color:var(--text);font-size:1.15rem;font-weight:700">Named-User Tracking, MFA &amp; Security Audit Log</h3>
+        </div>
+        <button class="btn-bridge-outline" id="btnCloseSecurityModal" onclick="closeSecurityModal()">Close</button>
+      </div>
+
+      <!-- Active Security Controls Banner -->
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px">
+        <span class="badge" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0">US-Only Geo-Fence Active</span>
+        <span class="badge" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0">5-Attempt Lockout (15m)</span>
+        <span class="badge" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0">Scrypt Hashing + 12-Char Policy</span>
+        <span class="badge" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0">Dual-Mode MFA (Email + Authenticator)</span>
+        <span class="badge" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0">30-Min Idle Auto-Logoff</span>
+      </div>
+
+      <div class="g2" style="margin-bottom:18px">
+        <!-- Left Card: My Account MFA & Password Change -->
+        <div class="card" style="padding:16px">
+          <div class="card-hd" style="margin-bottom:10px">
+            <div>
+              My Security &amp; MFA Settings
+              <br /><small id="secCurrentUserLabel">Signed in user</small>
+            </div>
+          </div>
+
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:14px">
+            <div style="font-size:0.8rem;font-weight:600;color:#1e293b;margin-bottom:8px">Two-Factor Authentication (MFA)</div>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <label style="font-size:0.8rem;display:flex;align-items:center;gap:6px">
+                <input type="checkbox" id="secMyMfaEnabled" /> Require 2-Step Verification on Sign-In
+              </label>
+              <select id="secMyMfaMethod" style="padding:5px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.78rem">
+                <option value="email">Email 6-Digit Code</option>
+                <option value="totp">Authenticator App (TOTP)</option>
+              </select>
+              <button type="button" class="btn-bridge-primary" style="padding:5px 10px;font-size:0.76rem" onclick="saveMyMfaSettings()">Save MFA</button>
+            </div>
+            <div id="secMyTotpSecretBox" style="margin-top:8px;font-size:0.75rem;color:#475569;display:none">
+              Authenticator Setup Key (Base32): <code id="secMyTotpSecretCode" style="background:#e2e8f0;padding:2px 6px;border-radius:4px;font-weight:700"></code>
+            </div>
+          </div>
+
+          <form onsubmit="handleChangePassword(event)" style="display:flex;flex-direction:column;gap:8px">
+            <div style="font-size:0.8rem;font-weight:600;color:#1e293b">Change Password (12+ chars, 3 of 4 character types)</div>
+            <input type="password" id="secCurrentPassword" placeholder="Current password" required style="padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.8rem" />
+            <input type="password" id="secNewPassword" placeholder="New password (min 12 chars)" required style="padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.8rem" />
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span id="secPasswordMsg" style="font-size:0.75rem;color:#64748b"></span>
+              <button type="submit" class="btn-bridge-outline" style="padding:5px 12px;font-size:0.76rem">Update Password</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Right Card: Named Users Directory & Add Named User -->
+        <div class="card" style="padding:16px">
+          <div class="card-hd" style="margin-bottom:10px">
+            <div>
+              Named Users Directory
+              <br /><small>Individual accounts for named-user audit attribution</small>
+            </div>
+          </div>
+
+          <div class="tbl-wrap" style="max-height:145px;overflow-y:auto;margin-bottom:12px">
+            <table>
+              <thead>
+                <tr>
+                  <th>Username</th>
+                  <th>Display Name</th>
+                  <th>Role</th>
+                  <th>MFA</th>
+                </tr>
+              </thead>
+              <tbody id="tbodySecurityUsers"></tbody>
+            </table>
+          </div>
+
+          <form onsubmit="handleCreateNamedUser(event)" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div style="grid-column:1/-1;font-size:0.78rem;font-weight:600;color:#1e293b">Add Named User Account</div>
+            <input type="text" id="newUserUsername" placeholder="Username (e.g. jsmith.pharm)" required style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.78rem" />
+            <input type="text" id="newUserDisplayName" placeholder="Full Name &amp; Title" required style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.78rem" />
+            <input type="email" id="newUserEmail" placeholder="Email for MFA code" required style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.78rem" />
+            <input type="password" id="newUserPassword" placeholder="Password (12+ chars)" required style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.78rem" />
+            <div style="grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;gap:8px">
+              <label style="font-size:0.76rem;display:flex;align-items:center;gap:5px">
+                <input type="checkbox" id="newUserMfaEnabled" /> Enable Email/App MFA
+              </label>
+              <span id="newUserMsg" style="font-size:0.74rem;color:#64748b"></span>
+              <button type="submit" class="btn-bridge-primary" style="padding:5px 12px;font-size:0.76rem">Create User</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Bottom Card: Named-User Audit Log -->
+      <div class="card" style="padding:16px">
+        <div class="card-hd" style="margin-bottom:10px">
+          <div>
+            Named-User Activity &amp; Security Audit Trail
+            <br /><small>Tracks every sign-in, failed attempt, lockout, geo-block, worklist edit, CSV export, and AI query by named user</small>
+          </div>
+          <span class="know-badge" id="secAuditCountBadge">0 Events</span>
+        </div>
+        <div class="tbl-wrap" style="max-height:240px;overflow-y:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Named User</th>
+                <th>Event Type</th>
+                <th>IP &amp; Country</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody id="tbodySecurityAuditLog"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 
