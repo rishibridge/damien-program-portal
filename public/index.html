@@ -42,13 +42,6 @@
         </span>
       </button>
 
-      <button class="nav-btn" data-view="enrollment" onclick="switchView('enrollment')">
-        <span class="nav-btn-left">
-          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-          Enrollment Reporting
-        </span>
-      </button>
-
       <button class="nav-btn" data-view="paidmedia" onclick="switchView('paidmedia')">
         <span class="nav-btn-left">
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
@@ -77,15 +70,7 @@
         </span>
       </button>
 
-      <div class="nav-section-label" style="padding-left:10px;margin-top:8px">Operations</div>
-
-      <button class="nav-btn" data-view="worklist" onclick="switchView('worklist')">
-        <span class="nav-btn-left">
-          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
-          Worklist
-        </span>
-        <span class="nav-pill urgent" id="navTodoUrgentPill">101</span>
-      </button>
+      <div class="nav-section-label" style="padding-left:10px;margin-top:8px">Assistant</div>
 
       <button class="nav-btn" data-view="ask" onclick="switchView('ask')">
         <span class="nav-btn-left">
@@ -138,8 +123,7 @@
             <p id="heroSubtext"></p>
           </div>
           <div class="bridge-hero-actions">
-            <button class="btn-bridge-primary" id="heroWorklistBtn" onclick="switchView('worklist')">First-Fill Worklist</button>
-            <button class="btn-bridge-outline" onclick="switchView('ask')">Ask Bridge AI</button>
+            <button class="btn-bridge-primary" onclick="switchView('ask')">Ask Bridge AI</button>
           </div>
         </div>
 
@@ -170,22 +154,10 @@
             <div class="know-list" id="whatYouNeedToKnowList"></div>
           </div>
         </div>
-
-        <!-- Operational Worklist Action Pulse -->
-        <div class="card">
-          <div class="card-hd">
-            <div>
-              First-Fill Worklist Queues
-              <br /><small id="worklistPulseSub">Operational queues from the First-Fill Worklist</small>
-            </div>
-            <button class="btn-bridge-outline" onclick="switchView('worklist')">Open Worklist</button>
-          </div>
-          <div class="kpi-row-4" id="summaryWorklistPulse"></div>
-        </div>
       </section>
 
       <!-- ═══════════════════════════════════════════════════════════════════
-           VIEW 2: PROGRAM FINANCIALS & P&L SIMULATOR
+           VIEW 2: PROGRAM FINANCIALS & P&L
            ═══════════════════════════════════════════════════════════════════ -->
       <section id="view-financials" class="view">
         <div class="slide-header">
@@ -223,47 +195,6 @@
               </table>
             </div>
             <div class="footnote-box" id="financialsFootnote"></div>
-          </div>
-        </div>
-
-        <!-- Interactive First-Fill Opportunity Simulator -->
-        <div class="card">
-          <div class="card-hd">
-            <div>
-              First-Fill Net Proceeds Simulator
-              <br /><small id="simSubtitle">Interactive what-if model for converting open prescriptions</small>
-            </div>
-            <button class="btn-bridge-outline" onclick="resetFinancialSimulator()">Reset</button>
-          </div>
-          <div class="grid-2" style="margin-bottom:0">
-            <div>
-              <div class="sim-control">
-                <label>
-                  <span id="simTodoLabel">Pharmacy To-Do Prescriptions Converted (of 101)</span>
-                  <span id="simTodoVal">50 patients</span>
-                </label>
-                <input type="range" id="simTodoSlider" min="0" max="101" value="50" oninput="updateFinancialSimulator()" />
-              </div>
-              <div class="sim-control">
-                <label>
-                  <span id="simRefillLabel">Overdue Refills Retained (of 37)</span>
-                  <span id="simRefillVal">25 patients</span>
-                </label>
-                <input type="range" id="simRefillSlider" min="0" max="37" value="25" oninput="updateFinancialSimulator()" />
-              </div>
-              <div class="sim-control">
-                <label>
-                  <span id="simMarginLabel">Margin per Fill Assumption (Sep actual: $911)</span>
-                  <span id="simMarginVal">$911 / fill</span>
-                </label>
-                <input type="range" id="simMarginSlider" min="700" max="1100" step="1" value="911" oninput="updateFinancialSimulator()" />
-              </div>
-            </div>
-            <div class="kpi-row" style="margin-bottom:0">
-              <div class="kpi"><div class="kpi-label">Incremental Fills</div><div class="kpi-val" id="simOutFills">+75</div><div class="kpi-sub">First fills + refills</div></div>
-              <div class="kpi"><div class="kpi-label">Incremental Net Proceeds</div><div class="kpi-val" id="simOutMargin">+$65,325</div><div class="kpi-sub" id="simOutMarginSub">After $40 per fill cost</div></div>
-              <div class="kpi"><div class="kpi-label">Projected YTD Proceeds</div><div class="kpi-val" id="simOutProceeds">$1,027,016</div><div class="kpi-sub" id="simOutDelta">+$65,325 net proceeds lift</div></div>
-            </div>
           </div>
         </div>
       </section>
@@ -310,222 +241,12 @@
                   <th class="num">Refilled 1st → 2nd</th>
                   <th class="num">GLP-1 fills</th>
                   <th class="num">Gross margin</th>
-                  <th>Worklist</th>
                 </tr>
               </thead>
               <tbody id="tbodySources"></tbody>
             </table>
           </div>
           <div class="footnote-box" id="sourcesFootnote"></div>
-        </div>
-      </section>
-
-      <!-- ═══════════════════════════════════════════════════════════════════
-           VIEW 3B: ENROLLMENT REPORTING — UTILIZATION (ALLKIN SCREENSHOT STYLE)
-           ═══════════════════════════════════════════════════════════════════ -->
-      <section id="view-enrollment" class="view">
-        <!-- Utilization Header Row -->
-        <div class="util-header-bar">
-          <div>
-            <h1 class="util-page-title" id="enrollmentHeadline">Damien Center — Utilization</h1>
-            <div class="util-page-sub" id="enrollmentSubhead">Jan 2026 – Sep 2026 · Updated Sep 30, 2026</div>
-          </div>
-          <button type="button" class="btn-export-csv" onclick="exportEnrollmentCsv('employers')">
-            <span>↓ Export CSV</span>
-          </button>
-        </div>
-
-        <!-- Filter & Timeframe Bar -->
-        <div class="util-filter-card">
-          <div class="util-filter-left">
-            <select id="enrollChannelFilter" class="util-select" onchange="renderEnrollmentReportingView()">
-              <option value="ALL">All Channels (6)</option>
-              <option value="BROKERS_ONLY">All Broker Partners Combined</option>
-            </select>
-
-            <select id="enrollEmployerFilter" class="util-select" onchange="renderEnrollmentReportingView()">
-              <option value="ALL">All Employers (39)</option>
-            </select>
-
-            <!-- Timeframe dropdown kept synchronized with quick pills -->
-            <select id="enrollTimeframeFilter" class="util-select" style="min-width:170px" onchange="syncTimeframePillsFromSelect(); renderEnrollmentReportingView()">
-              <option value="YTD">All (Jan – Sep 2026)</option>
-              <option value="6M">6M (Apr – Sep 2026)</option>
-              <option value="Q3">3M / Q3 (Jul – Sep)</option>
-              <option value="Q2">Q2 2026 (Apr – Jun)</option>
-              <option value="Q1">Q1 2026 (Jan – Mar)</option>
-              <option value="Sep">September 2026</option>
-              <option value="Aug">August 2026</option>
-              <option value="Jul">July 2026</option>
-              <option value="Jun">June 2026</option>
-              <option value="May">May 2026</option>
-              <option value="Apr">April 2026</option>
-              <option value="Mar">March 2026</option>
-              <option value="Feb">February 2026</option>
-              <option value="Jan">January 2026</option>
-            </select>
-          </div>
-
-          <div style="display:flex;align-items:center;gap:10px">
-            <div class="util-tf-pills" id="enrollTimeframePills">
-              <button type="button" class="util-tf-pill" data-tf="Sep" onclick="setEnrollmentTimeframePill('Sep')">1M</button>
-              <button type="button" class="util-tf-pill" data-tf="Q3" onclick="setEnrollmentTimeframePill('Q3')">3M</button>
-              <button type="button" class="util-tf-pill" data-tf="6M" onclick="setEnrollmentTimeframePill('6M')">6M</button>
-              <button type="button" class="util-tf-pill active" data-tf="YTD" onclick="setEnrollmentTimeframePill('YTD')">All</button>
-            </div>
-            <button type="button" id="btnResetEnrollmentFilters" class="btn-export-csv" onclick="resetEnrollmentFilters()">Reset Filters</button>
-          </div>
-        </div>
-
-        <!-- 4 Utilization KPI Cards (Total Enrolled, Active Members, Disenrolled, Retention Rate) -->
-        <div class="util-kpi-grid" id="enrollmentKpiRow"></div>
-
-        <!-- Card 1: Monthly Enrollment & Active Trend -->
-        <div class="util-card">
-          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-            <div>
-              <div class="util-card-title" id="enrollTrendChartTitle">Monthly Enrollment &amp; Active Trend</div>
-              <div class="util-card-sub" id="enrollTrendInspectedSub" style="display:none;color:#2563eb;font-weight:600"></div>
-            </div>
-            <span class="know-badge" id="enrollTrendBadge" style="display:none">Jan – Sep</span>
-          </div>
-
-          <div class="util-toolbar-row">
-            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-              <div class="util-tf-pills" id="enrollChartModePills">
-                <button type="button" class="util-tf-pill active" data-mode="trend" onclick="setEnrollmentChartMode('trend')">Trend</button>
-                <button type="button" class="util-tf-pill" data-mode="top_employers" onclick="setEnrollmentChartMode('top_employers')">Top Employers</button>
-              </div>
-              <div class="util-tf-pills" id="enrollGranularityPills">
-                <button type="button" class="util-tf-pill active" data-gran="monthly" onclick="setEnrollmentGranularity('monthly')">Monthly</button>
-                <button type="button" class="util-tf-pill" data-gran="quarterly" onclick="setEnrollmentGranularity('quarterly')">Quarterly</button>
-                <button type="button" class="util-tf-pill" data-gran="yearly" onclick="setEnrollmentGranularity('yearly')">Yearly</button>
-              </div>
-            </div>
-            <button type="button" class="btn-export-csv" onclick="exportEnrollmentCsv('trend')">
-              <span>↓ Export Chart CSV</span>
-            </button>
-          </div>
-
-          <div class="util-legend-row">
-            <div class="util-legend-items">
-              <span class="util-legend-item"><span class="util-dot-sq" style="background:#16a34a"></span> New Enrolled</span>
-              <span class="util-legend-item"><span class="util-dot-sq" style="background:#d97706"></span> Disenrolled</span>
-              <span class="util-legend-item"><span class="util-line-ind"></span> Active Members</span>
-            </div>
-            <div id="enrollTrajectorySummary" style="font-weight:600;color:#0f172a">
-              Jan 2026: <strong>25</strong> → Sep 2026: <strong style="color:#2563eb">862</strong> <span style="color:#059669">(+837)</span>
-            </div>
-          </div>
-
-          <div class="chart-box" style="height:290px;position:relative">
-            <canvas id="chartEnrollmentTrend"></canvas>
-          </div>
-
-          <!-- Collapsible View Period Table -->
-          <div class="util-period-toggle">
-            <button type="button" class="util-period-btn" id="btnTogglePeriodTable" onclick="toggleEnrollmentPeriodTable()">
-              <span id="periodTableChevron">⌄</span> <span id="periodTableBtnLabel">View period table (9)</span>
-            </button>
-            <div id="enrollPeriodTableWrap" style="display:none;margin-top:12px" class="tbl-wrap">
-              <table id="tableEnrollmentPeriods">
-                <thead>
-                  <tr>
-                    <th>Period</th>
-                    <th class="num">New Enrolled</th>
-                    <th class="num">Disenrolled</th>
-                    <th class="num">Active Members</th>
-                    <th class="num">Net Change</th>
-                  </tr>
-                </thead>
-                <tbody id="tbodyEnrollmentPeriods"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <!-- Card 2: By Channel & Broker (Horizontal Progress Bars + Expandable Detail Table) -->
-        <div class="util-card">
-          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-            <div class="util-card-title">By Channel &amp; Broker</div>
-            <button type="button" class="btn-export-csv" onclick="exportEnrollmentCsv('channels')">
-              <span>↓ Export CSV</span>
-            </button>
-          </div>
-
-          <!-- AllKin-style horizontal progress bar list -->
-          <div id="enrollmentChannelProgressList" class="channel-progress-list"></div>
-
-          <!-- Full Channel Summary Table (retained for analytical & E2E inspection) -->
-          <div class="util-period-toggle" style="margin-top:16px">
-            <button type="button" class="util-period-btn" onclick="toggleChannelDetailTable()">
-              <span>⌄</span> <span>View channel detail table</span>
-            </button>
-            <div id="enrollChannelTableWrap" style="display:none;margin-top:10px" class="tbl-wrap">
-              <table id="tableEnrollmentChannels">
-                <thead>
-                  <tr>
-                    <th>Channel / Broker</th>
-                    <th>Category</th>
-                    <th class="num">Enrolled</th>
-                    <th class="num">Disenrolled</th>
-                    <th class="num">Disenrollment Rate</th>
-                    <th class="num">Currently Active</th>
-                    <th class="num">Retention Rate</th>
-                    <th class="num">Saw Provider</th>
-                    <th class="num">Prescribed GLP-1</th>
-                    <th class="num">Jun</th>
-                    <th class="num">Jul</th>
-                    <th class="num">Aug</th>
-                    <th class="num">Sep</th>
-                  </tr>
-                </thead>
-                <tbody id="tbodyEnrollmentChannels"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <!-- Card 3: Employer & Channel Breakdown (AllKin Screenshot Style with Sparklines & Copy Links) -->
-        <div class="util-card">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
-            <div>
-              <div class="util-card-title" id="enrollEmployerCountBadge">Employer &amp; Channel Breakdown (39)</div>
-              <div class="util-card-sub">Click any employer row to inspect its monthly trend above, or share a dedicated HR report link.</div>
-            </div>
-            <button type="button" class="btn-export-csv" onclick="exportEnrollmentCsv('employers')">
-              <span>↓ Export CSV</span>
-            </button>
-          </div>
-
-          <div class="emp-search-row">
-            <div class="emp-search-input-wrap">
-              <span class="emp-search-icon">🔍</span>
-              <input type="text" id="enrollEmployerSearch" class="emp-search-input" placeholder="Search employers..." oninput="renderEnrollmentReportingView()" />
-            </div>
-            <select id="enrollRecordTypeFilter" class="util-select" style="min-width:190px" onchange="renderEnrollmentReportingView()">
-              <option value="ALL" id="enrollRecordTypeAllOpt">All Records (39)</option>
-              <option value="NAMED_ONLY">Named Employers Only (38)</option>
-              <option value="DIRECT_ONLY">Direct / No Enrollment Code (1)</option>
-            </select>
-          </div>
-
-          <div class="tbl-wrap" style="border:none">
-            <table id="tableEnrollmentEmployers" class="util-emp-table">
-              <thead>
-                <tr>
-                  <th>EMPLOYER</th>
-                  <th>CHANNEL</th>
-                  <th>MONTHLY TREND</th>
-                  <th class="num">ENROLLED</th>
-                  <th class="num">DISENROLLED</th>
-                  <th class="num">ACTIVE</th>
-                  <th style="text-align:right">ACTIONS</th>
-                </tr>
-              </thead>
-              <tbody id="tbodyEnrollmentEmployers"></tbody>
-            </table>
-          </div>
         </div>
       </section>
 
@@ -604,7 +325,6 @@
           <div class="timing-panel">
             <h3 style="font-size:0.96rem;font-weight:600;color:var(--text)">Median time between steps</h3>
             <div id="funnelTimingList" style="display:flex;flex-direction:column;gap:10px"></div>
-            <div class="footnote-box" style="margin-top:auto" id="funnelWorklistNoteBox"></div>
           </div>
         </div>
       </section>
@@ -646,11 +366,6 @@
                 </thead>
                 <tbody id="tbodyRefillSteps"></tbody>
               </table>
-            </div>
-            <div style="margin-top:16px">
-              <button class="btn-bridge-outline" id="btnRefillQueueLink" style="width:100%" onclick="openWorklistWithFilter('refill')">
-                View Refill Follow-Up Queue (37)
-              </button>
             </div>
           </div>
         </div>
@@ -716,238 +431,7 @@
       </section>
 
       <!-- ═══════════════════════════════════════════════════════════════════
-           VIEW 8: PHARMACY OPERATIONS WORKLIST
-           ═══════════════════════════════════════════════════════════════════ -->
-      <section id="view-worklist" class="view">
-        <div class="slide-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px">
-          <div>
-            <div class="slide-eyebrow">Operations</div>
-            <h1 class="slide-headline">First-Fill &amp; Reconciliation Worklist</h1>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn-bridge-outline" onclick="exportCurrentWorklistCsv()">Export CSV</button>
-            <button class="btn-bridge-outline" id="btnResetWorklistEdits" onclick="resetAllWorklistEdits()">Reset</button>
-          </div>
-        </div>
-
-        <!-- Executive & CFO Value-at-Stake Strip -->
-        <div class="kpi-row-4" id="worklistValueKpiRow" style="margin-bottom:16px"></div>
-
-        <!-- 4 Segmented Control Tabs -->
-        <div class="worklist-subtabs">
-          <button class="wl-tab-btn active" id="wlTabBtn-todo" onclick="switchWorklistSubtab('todo')">
-            Pharmacy To-Do <span class="nav-pill" id="badgeCountTodo">101</span>
-          </button>
-          <button class="wl-tab-btn" id="wlTabBtn-refill" onclick="switchWorklistSubtab('refill')">
-            Refill Follow-Up <span class="nav-pill" id="badgeCountRefill">37</span>
-          </button>
-          <button class="wl-tab-btn" id="wlTabBtn-fixes" onclick="switchWorklistSubtab('fixes')">
-            Data Fixes <span class="nav-pill" id="badgeCountFixes">86</span>
-          </button>
-          <button class="wl-tab-btn" id="wlTabBtn-ended" onclick="switchWorklistSubtab('ended')">
-            Ended – Never Filled <span class="nav-pill" id="badgeCountEnded">186</span>
-          </button>
-        </div>
-
-        <!-- SUBTAB 1: PHARMACY TO-DO -->
-        <div id="wlSubtab-todo" class="wl-subtab">
-          <div class="card">
-            <div class="card-hd">
-              <div>
-                Pharmacy To-Do
-                <br /><small id="descPharmacyTodo"></small>
-              </div>
-              <span class="know-badge" id="todoFilteredCountBadge">Showing 101 of 101</span>
-            </div>
-
-            <div class="wl-filter-bar">
-              <input type="search" id="todoSearchInput" placeholder="Search ID, finding, notes..." oninput="renderTodoTable()" />
-              <select id="todoPriorityFilter" onchange="renderTodoTable()">
-                <option value="">All Priorities</option>
-              </select>
-              <select id="todoFindingFilter" onchange="renderTodoTable()">
-                <option value="">All Findings</option>
-              </select>
-              <select id="todoSourceFilter" onchange="renderTodoTable()">
-                <option value="">All Sources</option>
-              </select>
-              <select id="todoFuzzyFilter" onchange="renderTodoTable()">
-                <option value="">All ID States</option>
-              </select>
-            </div>
-
-            <div class="tbl-wrap">
-              <table id="tableWorklistTodo">
-                <thead>
-                  <tr>
-                    <th>Priority</th>
-                    <th>ID</th>
-                    <th>Status</th>
-                    <th>Contacted</th>
-                    <th>Notes</th>
-                    <th>Finding</th>
-                    <th class="num">Days</th>
-                  </tr>
-                </thead>
-                <tbody id="tbodyWorklistTodo"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <!-- SUBTAB 2: REFILL FOLLOW-UP -->
-        <div id="wlSubtab-refill" class="wl-subtab" style="display:none">
-          <div class="card">
-            <div class="card-hd">
-              <div>
-                Refill Follow-Up (35+ Days Since Last Fill)
-                <br /><small id="descRefillFollowup"></small>
-              </div>
-              <span class="know-badge" id="refillFilteredCountBadge">Showing 37 of 37</span>
-            </div>
-
-            <div class="wl-filter-bar">
-              <input type="search" id="refillSearchInput" placeholder="Search patient ID, medication, source..." oninput="renderRefillTable()" />
-              <select id="refillStatusFilter" onchange="renderRefillTable()">
-                <option value="">All Statuses</option>
-              </select>
-              <select id="refillSourceFilter" onchange="renderRefillTable()">
-                <option value="">All Sources</option>
-              </select>
-            </div>
-
-            <div class="tbl-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Patient ID</th>
-                    <th>Membership</th>
-                    <th>Status</th>
-                    <th>Contacted</th>
-                    <th>Notes</th>
-                    <th class="num">Fills</th>
-                    <th>Last Fill</th>
-                    <th class="num">Elapsed</th>
-                    <th>Last Item Filled</th>
-                    <th>Source</th>
-                    <th>Record</th>
-                  </tr>
-                </thead>
-                <tbody id="tbodyWorklistRefill"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <!-- SUBTAB 3: PHARMACY DATA FIXES -->
-        <div id="wlSubtab-fixes" class="wl-subtab" style="display:none">
-          <div class="card">
-            <div class="card-hd">
-              <div>
-                <span id="fixesUnmatchedTitle">Patient IDs that don't match any program member (21 IDs, 31 fills)</span>
-                <br /><small id="fixesUnmatchedSub">20 unique IDs on file (Data Note 2) · 21 fills have a possible 1–2 character typo match in Pharmacy To-Do to verify</small>
-              </div>
-              <button class="btn-bridge-primary" id="btnApplyAllFuzzy" onclick="applyAllFuzzyFixes()">
-                Auto-Reconcile 21 Matches
-              </button>
-            </div>
-            <div class="tbl-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>ID on File</th>
-                    <th>Suggested To-Do Match</th>
-                    <th>Date Filled</th>
-                    <th>Medication</th>
-                    <th>Prescriber</th>
-                    <th>Status</th>
-                    <th>Corrected ID</th>
-                  </tr>
-                </thead>
-                <tbody id="tbodyFixesUnmatched"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-hd">
-              <div>
-                <span id="fixesNoIdTitle">Fills with no Patient Alternate ID (55)</span>
-                <br /><small id="fixesNoIdSub">51 completed GLP-1 fills through Sep 30 (Data Note 2) + 2 waiting for pickup + 1 Oct 5 fill + 1 non-GLP-1 (Sertraline)</small>
-              </div>
-              <div>
-                <input type="search" id="fixesNoIdSearch" placeholder="Filter prescriber, payer..." oninput="renderFixesTables()" style="padding:7px 12px;border:1px solid var(--border-strong);border-radius:8px;font-size:0.8rem" />
-              </div>
-            </div>
-            <div class="tbl-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Date Filled</th>
-                    <th>Medication</th>
-                    <th>Category</th>
-                    <th>Prescriber</th>
-                    <th>Payer</th>
-                    <th>Status</th>
-                    <th>Corrected ID</th>
-                  </tr>
-                </thead>
-                <tbody id="tbodyFixesNoId"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <!-- SUBTAB 4: ENDED – NEVER FILLED -->
-        <div id="wlSubtab-ended" class="wl-subtab" style="display:none">
-          <div class="kpi-row-4" id="endedStageKpiRow"></div>
-
-          <div class="card">
-            <div class="card-hd">
-              <div>
-                <span id="endedCardTitle">Ended – Never Filled (186 Members)</span>
-                <br /><small id="descEndedNeverFilled"></small>
-              </div>
-              <span class="know-badge" id="endedFilteredCountBadge">Showing 186 of 186</span>
-            </div>
-
-            <div class="wl-filter-bar">
-              <input type="search" id="endedSearchInput" placeholder="Search patient ID, employer, note..." oninput="renderEndedTable()" />
-              <select id="endedStageFilter" onchange="renderEndedTable()">
-                <option value="">All Stages</option>
-              </select>
-              <select id="endedFindingFilter" onchange="renderEndedTable()">
-                <option value="">All Findings</option>
-              </select>
-              <select id="endedSourceFilter" onchange="renderEndedTable()">
-                <option value="">All Sources</option>
-              </select>
-            </div>
-
-            <div class="tbl-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Patient ID</th>
-                    <th>Stage</th>
-                    <th>Finding</th>
-                    <th>Signed Up</th>
-                    <th>Cancel Requested</th>
-                    <th>Ended</th>
-                    <th>Source</th>
-                    <th>Employer Group</th>
-                    <th>Note</th>
-                  </tr>
-                </thead>
-                <tbody id="tbodyWorklistEnded"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- ═══════════════════════════════════════════════════════════════════
-           VIEW 9: ASK BRIDGE AI (PURE CONVERSATION)
+           VIEW 8: ASK BRIDGE AI (PURE CONVERSATION)
            ═══════════════════════════════════════════════════════════════════ -->
       <section id="view-ask" class="view">
         <div class="slide-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px">
@@ -990,20 +474,6 @@
     </div>
   </div>
 
-  <!-- ═══════════ PATIENT DETAIL MODAL ═══════════ -->
-  <div class="modal-backdrop" id="patientDetailModal" onclick="if(event.target===this)closePatientModal()">
-    <div class="modal-card">
-      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding-bottom:14px">
-        <div>
-          <span class="slide-eyebrow" id="modalSheetEyebrow">Patient Record</span>
-          <h3 id="modalPatientTitle" style="color:var(--text);font-size:1.1rem;font-weight:600">Patient Detail</h3>
-        </div>
-        <button class="btn-bridge-outline" onclick="closePatientModal()">Close</button>
-      </div>
-      <div id="modalPatientBody" class="detail-grid"></div>
-    </div>
-  </div>
-
   <!-- ═══════════ ENTERPRISE SECURITY, NAMED USERS, USAGE & AUDIT LOG MODAL ═══════════ -->
   <div class="modal-backdrop" id="securityModal" onclick="if(event.target===this)closeSecurityModal()">
     <div class="modal-card" style="max-width:1120px;max-height:92vh;overflow-y:auto">
@@ -1026,36 +496,21 @@
       </div>
 
       <!-- Executive Usage & Activity KPI Summary Row -->
-      <div id="secUsageKpiRow" style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:16px">
+      <div id="secUsageKpiRow" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
         <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px">
           <div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;color:#64748b">Sign-Ins</div>
           <div id="secKpiLogins" style="font-size:1.25rem;font-weight:800;color:#0f172a">0</div>
           <div id="secKpiOnlineSub" style="font-size:0.7rem;color:#059669;font-weight:600">1 active now</div>
         </div>
         <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px">
-          <div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;color:#64748b">Section &amp; Tab Views</div>
+          <div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;color:#64748b">Section Views</div>
           <div id="secKpiViews" style="font-size:1.25rem;font-weight:800;color:#0f172a">0</div>
           <div style="font-size:0.7rem;color:#64748b">Who viewed what</div>
-        </div>
-        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px">
-          <div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;color:#64748b">Patient Lookups</div>
-          <div id="secKpiPatientViews" style="font-size:1.25rem;font-weight:800;color:#0f172a">0</div>
-          <div style="font-size:0.7rem;color:#64748b">Details &amp; searches</div>
-        </div>
-        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px">
-          <div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;color:#64748b">Worklist Edits</div>
-          <div id="secKpiEdits" style="font-size:1.25rem;font-weight:800;color:#0f172a">0</div>
-          <div style="font-size:0.7rem;color:#64748b">Named-user stamped</div>
         </div>
         <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px">
           <div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;color:#64748b">AI Questions</div>
           <div id="secKpiAiQueries" style="font-size:1.25rem;font-weight:800;color:#2563eb">0</div>
           <div style="font-size:0.7rem;color:#64748b">Full Q&amp;A logged</div>
-        </div>
-        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px">
-          <div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;color:#64748b">CSV &amp; Prints</div>
-          <div id="secKpiExports" style="font-size:1.25rem;font-weight:800;color:#0f172a">0</div>
-          <div style="font-size:0.7rem;color:#64748b">Exports tracked</div>
         </div>
       </div>
 
@@ -1172,10 +627,6 @@
               Ask Bridge AI Q&amp;A History (<span id="secQaCountBadge">0 Questions</span>)
             </button>
           </div>
-          <div style="display:flex;gap:8px;align-items:center">
-            <button type="button" id="btnExportAuditCsv" class="btn-bridge-outline" style="display:none;padding:5px 11px;font-size:0.74rem" onclick="exportSecurityAuditCsv()">Export Audit CSV</button>
-            <button type="button" id="btnExportQaCsv" class="btn-bridge-outline" style="display:none;padding:5px 11px;font-size:0.74rem" onclick="exportSecurityQaCsv()">Export Q&amp;A CSV</button>
-          </div>
         </div>
 
         <!-- TAB 1: ACTIVITY, SECURITY & "WHO VIEWED WHAT" AUDIT LOG -->
@@ -1183,16 +634,14 @@
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
             <select id="secAuditCategoryFilter" onchange="renderSecurityAuditTable()" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.76rem">
               <option value="">All Categories</option>
-              <option value="view_access">Who Viewed What (Pages, Tabs &amp; Patient Lookups)</option>
-              <option value="worklist_edit">Worklist Edits &amp; Reconciliations</option>
+              <option value="view_access">Who Viewed What (Pages &amp; Definitions)</option>
               <option value="ai_qa">Ask Bridge AI Queries</option>
               <option value="security_auth">Sign-Ins, MFA, Lockouts &amp; User Admin</option>
-              <option value="export">CSV &amp; Briefing Exports</option>
             </select>
             <select id="secAuditUserFilter" onchange="renderSecurityAuditTable()" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.76rem">
               <option value="">All Users</option>
             </select>
-            <input type="search" id="secAuditSearchInput" placeholder="Search user, patient ID, section, event..." oninput="renderSecurityAuditTable()" style="flex:1;min-width:200px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.76rem" />
+            <input type="search" id="secAuditSearchInput" placeholder="Search user, section, event..." oninput="renderSecurityAuditTable()" style="flex:1;min-width:200px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.76rem" />
           </div>
           <div class="tbl-wrap" style="max-height:260px;overflow-y:auto">
             <table>

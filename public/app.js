@@ -2,10 +2,8 @@
 
 let PORTAL_DATA = null;
 let CURRENT_VIEW = 'summary';
-let CURRENT_WL_SUBTAB = 'todo';
 let SOURCES_CHART_MODE = 'count';
 let MEDMIX_CHART_MODE = 'count';
-let SIMULATOR_INITIALIZED = false;
 const QA_HISTORY = [];
 
 const CHARTS = {};
@@ -38,7 +36,6 @@ async function initPortal() {
       }
     }
     hydrateShellBranding();
-    populateWorklistFilterDropdowns();
     renderAllViews();
     renderChatThread();
     startIdleAutoLogoffTimer();
@@ -61,7 +58,6 @@ function hydrateShellBranding() {
   const meta = PORTAL_DATA.meta;
   const s2 = PORTAL_DATA.slide2_summary;
   const s3 = PORTAL_DATA.slide3_financials;
-  const ws = PORTAL_DATA.worklistSummary;
 
   document.title = `${meta.programTitle} — ${meta.preparedBy || 'Bridge Health Hub'}`;
 
@@ -98,76 +94,6 @@ function hydrateShellBranding() {
     const ytdProc = s3.ytdTable?.find(r => r.item === 'Program proceeds')?.formatted || '$961,691';
     heroSubtext.textContent = `${activeVal.toLocaleString()} active September members · ${fillsVal.toLocaleString()} September GLP-1 fills · $${sepProc.toLocaleString()} September proceeds (${ytdProc} YTD)`;
   }
-
-  const heroWlBtn = document.getElementById('heroWorklistBtn');
-  if (heroWlBtn && ws) {
-    heroWlBtn.textContent = `First-Fill Worklist (${ws.todoTotal})`;
-  }
-
-  const wlPulseSub = document.getElementById('worklistPulseSub');
-  if (wlPulseSub) {
-    wlPulseSub.textContent = `Operational queues from the ${meta.pharmacyPartner} First-Fill Worklist (data through ${meta.asOfDateFormatted || 'September 30, 2026'})`;
-  }
-}
-
-function countDistinctValues(rows, field) {
-  const counts = {};
-  for (const r of rows) {
-    const val = r[field];
-    if (val !== null && val !== undefined && String(val).trim() !== '') {
-      const k = String(val).trim();
-      counts[k] = (counts[k] || 0) + 1;
-    }
-  }
-  return counts;
-}
-
-function setSelectOptions(selectId, allLabel, countsObj, sortMode = 'count_desc') {
-  const sel = document.getElementById(selectId);
-  if (!sel) return;
-  const currentVal = sel.value;
-  let entries = Object.entries(countsObj);
-  if (sortMode === 'alpha') {
-    entries.sort((a, b) => a[0].localeCompare(b[0]));
-  } else {
-    entries.sort((a, b) => b[1] - a[1]);
-  }
-  sel.innerHTML = `<option value="">${allLabel}</option>` + entries.map(([val, cnt]) =>
-    `<option value="${escapeAttr(val)}">${val} (${cnt})</option>`
-  ).join('');
-  if (currentVal && countsObj[currentVal]) {
-    sel.value = currentVal;
-  }
-}
-
-function populateWorklistFilterDropdowns() {
-  if (!PORTAL_DATA || !PORTAL_DATA.worklists) return;
-  const wl = PORTAL_DATA.worklists;
-  const todoRows = wl.pharmacyTodo.rows;
-  const refillRows = wl.refillFollowup.rows;
-  const endedRows = wl.endedNeverFilled.rows;
-
-  setSelectOptions('todoPriorityFilter', `All Priorities (${todoRows.length})`, countDistinctValues(todoRows, 'Priority'), 'alpha');
-  setSelectOptions('todoFindingFilter', 'All Findings', countDistinctValues(todoRows, 'Pharmacy finding'), 'count_desc');
-  setSelectOptions('todoSourceFilter', 'All Sources', countDistinctValues(todoRows, 'Patient source'), 'count_desc');
-
-  const fuzzyCount = todoRows.filter(r => r.possibleDataFixes && r.possibleDataFixes.length > 0).length;
-  const fuzzySel = document.getElementById('todoFuzzyFilter');
-  if (fuzzySel) {
-    const prev = fuzzySel.value;
-    fuzzySel.innerHTML = `
-      <option value="">All ID States</option>
-      <option value="fuzzy">Possible Match in Data Fixes (${fuzzyCount})</option>
-    `;
-    fuzzySel.value = prev;
-  }
-
-  setSelectOptions('refillStatusFilter', `All Statuses (${refillRows.length})`, countDistinctValues(refillRows, 'Membership status'), 'alpha');
-  setSelectOptions('refillSourceFilter', 'All Sources', countDistinctValues(refillRows, 'Patient source'), 'count_desc');
-
-  setSelectOptions('endedStageFilter', `All Stages (${endedRows.length})`, countDistinctValues(endedRows, 'Stage'), 'count_desc');
-  setSelectOptions('endedFindingFilter', 'All Findings', countDistinctValues(endedRows, 'Pharmacy finding'), 'count_desc');
-  setSelectOptions('endedSourceFilter', 'All Sources', countDistinctValues(endedRows, 'Patient source'), 'count_desc');
 }
 
 function renderAllViews() {
@@ -175,31 +101,23 @@ function renderAllViews() {
   renderSummaryView();
   renderFinancialsView();
   renderSourcesView();
-  populateEnrollmentReportingFilters();
-  renderEnrollmentReportingView();
   renderPaidMediaView();
   renderFunnelView();
   renderRefillAndRetentionView();
   renderMedMixView();
-  renderWorklistsView();
   renderAppendixView();
-  updateWorklistBadges();
 }
 
 const VIEW_TITLES = {
   summary: 'Executive Overview',
   financials: 'Program Financials & P&L',
   sources: 'Patient Sources & Channel Economics',
-  enrollment: 'Enrollment, Disenrollment & Active Reporting',
   paidmedia: 'Paid Media ROI & Cohort Performance',
   funnel: 'First-Fill Conversion Funnel',
   refill: 'Refills & Cohort Retention',
   medmix: 'Medication & Fulfillment Mix',
-  worklist: 'First-Fill & Reconciliation Worklist',
   ask: 'Ask Bridge AI'
 };
-
-const SEARCH_AUDIT_TIMERS = {};
 
 function trackClientAuditEvent(eventType, details = {}) {
   try {
@@ -211,57 +129,27 @@ function trackClientAuditEvent(eventType, details = {}) {
   } catch (_) {}
 }
 
-function schedulePatientSearchAudit(sheet, query, matchCount) {
-  const clean = String(query || '').trim();
-  if (SEARCH_AUDIT_TIMERS[sheet]) clearTimeout(SEARCH_AUDIT_TIMERS[sheet]);
-  if (clean.length < 2) return;
-  SEARCH_AUDIT_TIMERS[sheet] = setTimeout(() => {
-    trackClientAuditEvent('PATIENT_SEARCH_QUERY', {
-      sheet,
-      query: clean.slice(0, 80),
-      matchCount: Number(matchCount || 0)
-    });
-  }, 550);
-}
-
 function switchView(viewId) {
-  const changed = CURRENT_VIEW !== viewId;
-  CURRENT_VIEW = viewId;
+  const resolvedViewId = viewId === 'worklist' ? 'funnel' : viewId;
+  const changed = CURRENT_VIEW !== resolvedViewId;
+  CURRENT_VIEW = resolvedViewId;
   document.querySelectorAll('#sidebarNav .nav-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.getAttribute('data-view') === viewId);
+    btn.classList.toggle('active', btn.getAttribute('data-view') === resolvedViewId);
   });
   document.querySelectorAll('.view').forEach(sec => {
-    sec.classList.toggle('active', sec.id === `view-${viewId}`);
+    sec.classList.toggle('active', sec.id === `view-${resolvedViewId}`);
   });
   const titleEl = document.getElementById('topbarTitle');
-  if (titleEl && VIEW_TITLES[viewId]) {
-    titleEl.textContent = VIEW_TITLES[viewId];
+  if (titleEl && VIEW_TITLES[resolvedViewId]) {
+    titleEl.textContent = VIEW_TITLES[resolvedViewId];
   }
   if (changed) {
     trackClientAuditEvent('SECTION_VIEW', {
-      viewId,
-      viewTitle: VIEW_TITLES[viewId] || viewId
+      viewId: resolvedViewId,
+      viewTitle: VIEW_TITLES[resolvedViewId] || resolvedViewId
     });
   }
   window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
-function openWorklistWithFilter(subtab, opts = {}) {
-  switchView('worklist');
-  switchWorklistSubtab(subtab);
-  if (subtab === 'todo') {
-    document.getElementById('todoPriorityFilter').value = opts.priority || '';
-    document.getElementById('todoFindingFilter').value = opts.finding || '';
-    document.getElementById('todoSourceFilter').value = opts.source || '';
-    document.getElementById('todoFuzzyFilter').value = opts.fuzzy || '';
-    document.getElementById('todoSearchInput').value = opts.search || '';
-    renderTodoTable();
-  } else if (subtab === 'ended') {
-    document.getElementById('endedStageFilter').value = opts.stage || '';
-    document.getElementById('endedFindingFilter').value = opts.finding || '';
-    document.getElementById('endedSourceFilter').value = opts.source || '';
-    renderEndedTable();
-  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -317,65 +205,20 @@ function renderSummaryView() {
 
   const knowEl = document.getElementById('whatYouNeedToKnowList');
   knowEl.innerHTML = s2.whatYouNeedToKnow.map(item => `
-    <div class="know-item" onclick="switchView('${item.targetView}')">
+    <div class="know-item" onclick="switchView('${item.targetView === 'worklist' ? 'funnel' : item.targetView}')">
       <div class="know-item-text">
         <strong>${item.title}</strong> ${item.body}
       </div>
       <span class="know-badge">${item.badge}</span>
     </div>
   `).join('');
-
-  renderWorklistPulseCards();
-}
-
-function renderWorklistPulseCards() {
-  const ws = PORTAL_DATA.worklistSummary;
-  const wl = PORTAL_DATA.worklists;
-  if (!ws || !wl) return;
-
-  const endedRows = wl.endedNeverFilled.rows;
-  const stageCounts = countDistinctValues(endedRows, 'Stage');
-  const noVisit = stageCounts['No provider visit'] || 0;
-  const noRx = stageCounts['Saw provider, no Rx'] || 0;
-  const noFill = stageCounts['Rx written, not filled'] || 0;
-  const outside = stageCounts['Rx sent to outside pharmacy'] || 0;
-
-  const cardsHtml = `
-    <div class="kpi" onclick="openWorklistWithFilter('todo', {priority:'1 – Urgent: cancellation pending'})">
-      <div class="kpi-label">Pharmacy To-Do (Active Rxs)</div>
-      <div class="kpi-val">${ws.todoTotal}</div>
-      <div class="kpi-sub"><strong>${ws.todoUrgent} Urgent (cancel pending)</strong> · ${ws.todoHigh} High · ${ws.todoMonitor} New</div>
-    </div>
-    <div class="kpi" onclick="openWorklistWithFilter('refill')">
-      <div class="kpi-label">Refill Follow-Up (Overdue 35+d)</div>
-      <div class="kpi-val">${ws.refillTotal}</div>
-      <div class="kpi-sub">${ws.refillPendingCancel} Cancel Pending · ${ws.refillCompleted} Contacted</div>
-    </div>
-    <div class="kpi" onclick="openWorklistWithFilter('fixes')">
-      <div class="kpi-label">Pharmacy Data Fixes</div>
-      <div class="kpi-val">${ws.fixesTotal}</div>
-      <div class="kpi-sub">${ws.fixesNoIdTotal} No Patient ID · ${ws.fixesUnmatchedTotal} Unmatched ID</div>
-    </div>
-    <div class="kpi" onclick="openWorklistWithFilter('ended')">
-      <div class="kpi-label">Ended – Never Filled</div>
-      <div class="kpi-val">${ws.endedTotal}</div>
-      <div class="kpi-sub">${noVisit} No Visit · ${noRx} No Rx · ${noFill} Unfilled · ${outside} Outside</div>
-    </div>
-  `;
-
-  const elSummary = document.getElementById('summaryWorklistPulse');
-  if (elSummary) elSummary.innerHTML = cardsHtml;
-
-  const elWorklist = document.getElementById('worklistValueKpiRow');
-  if (elWorklist) elWorklist.innerHTML = cardsHtml;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   2. PROGRAM FINANCIALS & P&L SIMULATOR (Slide 3)
+   2. PROGRAM FINANCIALS & P&L (Slide 3)
    ═══════════════════════════════════════════════════════════════════════════ */
 function renderFinancialsView() {
   const s3 = PORTAL_DATA.slide3_financials;
-  const ws = PORTAL_DATA.worklistSummary;
 
   const finHeadline = document.getElementById('financialsHeadline');
   if (finHeadline && s3.headline) finHeadline.textContent = s3.headline;
@@ -440,71 +283,6 @@ function renderFinancialsView() {
   }).join('');
 
   document.getElementById('financialsFootnote').textContent = s3.footnote;
-
-  // Configure simulator slider bounds & labels dynamically from tenant data
-  const todoSlider = document.getElementById('simTodoSlider');
-  const refillSlider = document.getElementById('simRefillSlider');
-  const marginSlider = document.getElementById('simMarginSlider');
-  const todoMax = ws ? ws.todoTotal : 101;
-  const refillMax = ws ? ws.refillTotal : 37;
-  const defaultMargin = s3.septemberGrossMarginPerFill || 911;
-  const fillCost = s3.costPerFill || 40;
-
-  document.getElementById('simTodoLabel').textContent = `Pharmacy To-Do Prescriptions Converted (of ${todoMax})`;
-  document.getElementById('simRefillLabel').textContent = `Overdue Refills Retained (of ${refillMax})`;
-  document.getElementById('simMarginLabel').textContent = `Margin per Fill Assumption (Sep actual: $${defaultMargin})`;
-  document.getElementById('simSubtitle').textContent = `Interactive what-if model for converting open prescriptions (using $${defaultMargin} Sep margin/fill less $${fillCost} fill cost)`;
-  document.getElementById('simOutMarginSub').textContent = `After $${fillCost} per fill cost`;
-
-  if (todoSlider) todoSlider.max = String(todoMax);
-  if (refillSlider) refillSlider.max = String(refillMax);
-
-  if (!SIMULATOR_INITIALIZED) {
-    if (todoSlider) todoSlider.value = String(todoMax === 101 ? 50 : Math.round(todoMax / 2));
-    if (refillSlider) refillSlider.value = String(refillMax === 37 ? 25 : Math.round(refillMax * 0.67));
-    if (marginSlider) marginSlider.value = String(defaultMargin);
-    SIMULATOR_INITIALIZED = true;
-  }
-
-  updateFinancialSimulator();
-}
-
-function updateFinancialSimulator() {
-  if (!PORTAL_DATA) return;
-  const s3 = PORTAL_DATA.slide3_financials;
-  const ytdBaseline = s3.ytdTable.find(r => r.item === 'Program proceeds')?.amount ?? 961691;
-  const fillCost = s3.costPerFill ?? 40;
-
-  const todoCaptured = Number(document.getElementById('simTodoSlider').value);
-  const refillCaptured = Number(document.getElementById('simRefillSlider').value);
-  const marginPerFill = Number(document.getElementById('simMarginSlider').value);
-
-  document.getElementById('simTodoVal').textContent = `${todoCaptured} patients`;
-  document.getElementById('simRefillVal').textContent = `${refillCaptured} patients`;
-  document.getElementById('simMarginVal').textContent = `$${marginPerFill} / fill`;
-
-  const extraFills = todoCaptured + refillCaptured;
-  const extraGrossMargin = extraFills * marginPerFill;
-  const extraFillCost = extraFills * fillCost;
-  const netLift = extraGrossMargin - extraFillCost;
-  const newYtdProceeds = ytdBaseline + netLift;
-
-  document.getElementById('simOutFills').textContent = `+${extraFills}`;
-  document.getElementById('simOutMargin').textContent = `+$${netLift.toLocaleString()}`;
-  document.getElementById('simOutProceeds').textContent = `$${newYtdProceeds.toLocaleString()}`;
-  document.getElementById('simOutDelta').textContent = `+$${netLift.toLocaleString()} net proceeds lift (after $${fillCost}/fill cost)`;
-}
-
-function resetFinancialSimulator() {
-  if (!PORTAL_DATA) return;
-  const ws = PORTAL_DATA.worklistSummary;
-  const s3 = PORTAL_DATA.slide3_financials;
-  const todoMax = ws ? ws.todoTotal : 101;
-  const refillMax = ws ? ws.refillTotal : 37;
-  document.getElementById('simTodoSlider').value = String(todoMax === 101 ? 50 : Math.round(todoMax / 2));
-  document.getElementById('simRefillSlider').value = String(refillMax === 37 ? 25 : Math.round(refillMax * 0.67));
-  document.getElementById('simMarginSlider').value = String(s3.septemberGrossMarginPerFill || 911);
-  updateFinancialSimulator();
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -522,26 +300,18 @@ function renderSourcesView() {
   if (matchedBadge) matchedBadge.textContent = `${totalMatchedFills.toLocaleString()} Matched Member Fills`;
 
   const tbody = document.getElementById('tbodySources');
-  tbody.innerHTML = s4.table.map(row => {
-    const key = row.sourceKey || row.source;
-    return `
-      <tr>
-        <td><strong>${row.source}</strong></td>
-        <td class="num">${row.enrolledSept}</td>
-        <td class="num">${row.enrolledYtd}</td>
-        <td class="num">${row.share}</td>
-        <td class="num"><strong>${row.filled1stRx}</strong></td>
-        <td class="num">${row.refilled1to2}</td>
-        <td class="num">${row.glp1Fills.toLocaleString()}</td>
-        <td class="num"><strong>${row.grossMarginFmt}</strong></td>
-        <td>
-          <button class="btn-bridge-outline" style="padding:4px 10px;font-size:0.74rem" onclick="openWorklistWithFilter('todo', {source:'${key}'})">
-            View To-Do
-          </button>
-        </td>
-      </tr>
-    `;
-  }).join('');
+  tbody.innerHTML = s4.table.map(row => `
+    <tr>
+      <td><strong>${row.source}</strong></td>
+      <td class="num">${row.enrolledSept}</td>
+      <td class="num">${row.enrolledYtd}</td>
+      <td class="num">${row.share}</td>
+      <td class="num"><strong>${row.filled1stRx}</strong></td>
+      <td class="num">${row.refilled1to2}</td>
+      <td class="num">${row.glp1Fills.toLocaleString()}</td>
+      <td class="num"><strong>${row.grossMarginFmt}</strong></td>
+    </tr>
+  `).join('');
 
   document.getElementById('sourcesFootnote').textContent = s4.footnote;
 }
@@ -597,771 +367,6 @@ function renderSourcesChart() {
       }
     }
   });
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   3B. ENROLLMENT REPORTING — UTILIZATION (ALLKIN SCREENSHOT STYLE)
-   ═══════════════════════════════════════════════════════════════════════════ */
-let ENROLL_CHART_MODE = 'trend'; // 'trend' | 'top_employers'
-let ENROLL_GRANULARITY = 'monthly'; // 'monthly' | 'quarterly' | 'yearly'
-let ENROLL_INSPECTED_EMPLOYER = null; // null or employerGroup string
-
-function getEnrollmentReportingData() {
-  return PORTAL_DATA?.enrollmentReporting || PORTAL_DATA?.analysisWorkbook?.enrollmentReporting || null;
-}
-
-function getTimeframeMonths(tf) {
-  const all = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'];
-  if (!tf || tf === 'YTD') return all;
-  if (tf === '6M') return ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'];
-  if (tf === 'Q1') return ['Jan', 'Feb', 'Mar'];
-  if (tf === 'Q2') return ['Apr', 'May', 'Jun'];
-  if (tf === 'Q3') return ['Jul', 'Aug', 'Sep'];
-  if (all.includes(tf)) return [tf];
-  return all;
-}
-
-function sumByMonths(monthMap, monthsList) {
-  if (!monthMap) return 0;
-  return monthsList.reduce((acc, m) => acc + (Number(monthMap[m]) || 0), 0);
-}
-
-function syncTimeframePillsFromSelect() {
-  const tf = document.getElementById('enrollTimeframeFilter')?.value || 'YTD';
-  const pills = document.querySelectorAll('#enrollTimeframePills .util-tf-pill');
-  pills.forEach(btn => {
-    btn.classList.toggle('active', btn.getAttribute('data-tf') === tf);
-  });
-}
-
-function setEnrollmentTimeframePill(tfVal) {
-  const tfEl = document.getElementById('enrollTimeframeFilter');
-  if (tfEl) tfEl.value = tfVal;
-  syncTimeframePillsFromSelect();
-  renderEnrollmentReportingView();
-}
-
-function setEnrollmentChartMode(mode) {
-  ENROLL_CHART_MODE = mode;
-  document.querySelectorAll('#enrollChartModePills .util-tf-pill').forEach(btn => {
-    btn.classList.toggle('active', btn.getAttribute('data-mode') === mode);
-  });
-  renderEnrollmentReportingView();
-}
-
-function setEnrollmentGranularity(gran) {
-  ENROLL_GRANULARITY = gran;
-  document.querySelectorAll('#enrollGranularityPills .util-tf-pill').forEach(btn => {
-    btn.classList.toggle('active', btn.getAttribute('data-gran') === gran);
-  });
-  renderEnrollmentReportingView();
-}
-
-function toggleEnrollmentPeriodTable() {
-  const wrap = document.getElementById('enrollPeriodTableWrap');
-  const chev = document.getElementById('periodTableChevron');
-  if (!wrap) return;
-  const isHidden = wrap.style.display === 'none';
-  wrap.style.display = isHidden ? 'block' : 'none';
-  if (chev) chev.textContent = isHidden ? '⌃' : '⌄';
-}
-
-function toggleChannelDetailTable() {
-  const wrap = document.getElementById('enrollChannelTableWrap');
-  if (!wrap) return;
-  wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
-}
-
-function inspectEmployerTrend(empName) {
-  if (ENROLL_INSPECTED_EMPLOYER === empName) {
-    ENROLL_INSPECTED_EMPLOYER = null;
-  } else {
-    ENROLL_INSPECTED_EMPLOYER = empName;
-    ENROLL_CHART_MODE = 'trend';
-    document.querySelectorAll('#enrollChartModePills .util-tf-pill').forEach(btn => {
-      btn.classList.toggle('active', btn.getAttribute('data-mode') === 'trend');
-    });
-  }
-  renderEnrollmentReportingView();
-}
-
-function copyEmployerLink(event, empName, refCode, linkType) {
-  if (event) event.stopPropagation();
-  const btn = event?.currentTarget;
-  const slug = String(refCode && refCode !== '—' ? refCode.split(',')[0].trim() : empName)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-');
-  const baseUrl = window.location.origin;
-  const url = linkType === 'hr'
-    ? `${baseUrl}/?view=enrollment&employer=${encodeURIComponent(empName)}&report=hr`
-    : `https:// enroll.bridgehealthhub.com/${slug}`;
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(url).catch(() => {});
-  }
-  if (btn) {
-    const origHtml = btn.innerHTML;
-    btn.innerHTML = '✓ Copied!';
-    btn.style.borderColor = '#059669';
-    btn.style.color = '#059669';
-    setTimeout(() => {
-      btn.innerHTML = origHtml;
-      btn.style.borderColor = '';
-      btn.style.color = '';
-    }, 1400);
-  }
-}
-
-function buildEmployerSparklineSvg(monthValues) {
-  const vals = Array.isArray(monthValues) && monthValues.length ? monthValues : [0, 0, 0, 0, 0, 0, 0, 0, 0];
-  const w = 78;
-  const h = 22;
-  const padX = 4;
-  const padY = 4;
-  const maxV = Math.max(...vals, 1);
-  const pts = vals.map((v, idx) => {
-    const x = padX + (idx / Math.max(vals.length - 1, 1)) * (w - padX * 2);
-    const y = h - padY - (v / maxV) * (h - padY * 2);
-    return [Number(x.toFixed(1)), Number(y.toFixed(1))];
-  });
-  const polyPoints = pts.map(p => `${p[0]},${p[1]}`).join(' ');
-  const lastPt = pts[pts.length - 1] || [w - padX, h - padY];
-  return `
-    <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="overflow:visible;display:block">
-      <polyline fill="none" stroke="#2563eb" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" points="${polyPoints}" />
-      <circle cx="${lastPt[0]}" cy="${lastPt[1]}" r="2.3" fill="#2563eb" />
-    </svg>
-  `;
-}
-
-function exportEnrollmentCsv(section) {
-  const er = getEnrollmentReportingData();
-  if (!er) return;
-  const tf = document.getElementById('enrollTimeframeFilter')?.value || 'YTD';
-  const tfMonths = getTimeframeMonths(tf);
-  let rows = [];
-  let filename = `utilization_${section}_${tf.toLowerCase()}.csv`;
-
-  if (section === 'channels') {
-    rows = [['Channel', 'Category', 'Enrolled', 'Disenrolled', 'Active', 'Retention Rate %']];
-    for (const c of (er.channels || [])) {
-      const enr = tf === 'YTD' ? c.totalEnrolled : sumByMonths(c.byMonth, tfMonths);
-      const dis = tf === 'YTD' ? c.cancelledMembers : sumByMonths(c.cancelledByMonth, tfMonths);
-      const act = tf === 'YTD' ? c.activeMembers : sumByMonths(c.activeByMonth, tfMonths);
-      const ret = enr > 0 ? ((act / enr) * 100).toFixed(1) : '0.0';
-      rows.push([c.channel, c.category, enr, dis, act, ret]);
-    }
-  } else if (section === 'trend') {
-    rows = [['Month', 'New Enrolled', 'Disenrolled', 'Month-End Active']];
-    for (const m of (er.months || [])) {
-      const enr = (er.channels || []).reduce((a, c) => a + (Number(c.byMonth?.[m]) || 0), 0);
-      const dis = (er.channels || []).reduce((a, c) => a + (Number(c.cancelledByMonth?.[m]) || 0), 0);
-      const act = Number(er.activePatientTrackerMonthly?.[m] || 0);
-      rows.push([m, enr, dis, act]);
-    }
-  } else {
-    rows = [['Employer', 'Channel', 'Ref Codes', 'Enrolled', 'Disenrolled', 'Active', 'Retention Rate %']];
-    for (const e of (er.employers || [])) {
-      const enr = tf === 'YTD' ? e.totalEnrolled : sumByMonths(e.byMonth, tfMonths);
-      const dis = tf === 'YTD' ? e.cancelledMembers : sumByMonths(e.cancelledByMonth, tfMonths);
-      const act = tf === 'YTD' ? e.activeMembers : sumByMonths(e.activeByMonth, tfMonths);
-      const ret = enr > 0 ? ((act / enr) * 100).toFixed(1) : '0.0';
-      rows.push([e.employerGroup, e.partnerSource, (e.refCodes || []).join('; '), enr, dis, act, ret]);
-    }
-  }
-
-  const csvContent = rows
-    .map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
-    .join('\r\n');
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-}
-
-function populateEnrollmentReportingFilters() {
-  const er = getEnrollmentReportingData();
-  if (!er) return;
-
-  const clientName = PORTAL_DATA?.meta?.client || 'Damien Center';
-  const asOfFmt = PORTAL_DATA?.meta?.asOfDateFormatted || 'Sep 30, 2026';
-  const hl = document.getElementById('enrollmentHeadline');
-  if (hl) hl.textContent = `${clientName} — Utilization`;
-  const sub = document.getElementById('enrollmentSubhead');
-  if (sub) sub.textContent = `Jan 2026 – Sep 2026 · Updated ${asOfFmt}`;
-
-  const chSel = document.getElementById('enrollChannelFilter');
-  if (chSel) {
-    const prevCh = chSel.value || 'ALL';
-    const channels = er.channels || [];
-    const brokerChannels = channels.filter(c => c.isBroker);
-    const brokerYtd = brokerChannels.reduce((acc, c) => acc + (c.totalEnrolled || 0), 0);
-
-    chSel.innerHTML = `
-      <option value="ALL">All Channels (${channels.length})</option>
-      <option value="BROKERS_ONLY">All Broker Partners Combined (${brokerYtd.toLocaleString()} YTD)</option>
-      ${channels.map(c => `<option value="${escapeAttr(c.channel)}">${c.channel}${c.isBroker ? ' · Broker' : ''} (${c.totalEnrolled.toLocaleString()})</option>`).join('')}
-    `;
-    if ([...chSel.options].some(o => o.value === prevCh)) {
-      chSel.value = prevCh;
-    }
-  }
-
-  const empSel = document.getElementById('enrollEmployerFilter');
-  if (empSel) {
-    const prevEmp = empSel.value || 'ALL';
-    const allEmps = er.employers || [];
-    const namedEmployers = allEmps.filter(e => !e.isDirectNoEmployer);
-    empSel.innerHTML = `
-      <option value="ALL">All Employers (${allEmps.length})</option>
-      <option value="EMPLOYERS_ONLY">Named Employers Only (${namedEmployers.length})</option>
-      ${namedEmployers.map(e => `<option value="${escapeAttr(e.employerGroup)}">${e.employerGroup} — ${e.partnerSource} (${e.totalEnrolled})</option>`).join('')}
-    `;
-    if ([...empSel.options].some(o => o.value === prevEmp)) {
-      empSel.value = prevEmp;
-    }
-  }
-}
-
-function resetEnrollmentFilters() {
-  const tfEl = document.getElementById('enrollTimeframeFilter');
-  const chEl = document.getElementById('enrollChannelFilter');
-  const empEl = document.getElementById('enrollEmployerFilter');
-  const qEl = document.getElementById('enrollEmployerSearch');
-  const recEl = document.getElementById('enrollRecordTypeFilter');
-  if (tfEl) tfEl.value = 'YTD';
-  if (chEl) chEl.value = 'ALL';
-  if (empEl) empEl.value = 'ALL';
-  if (qEl) qEl.value = '';
-  if (recEl) recEl.value = 'ALL';
-  ENROLL_INSPECTED_EMPLOYER = null;
-  syncTimeframePillsFromSelect();
-  renderEnrollmentReportingView();
-}
-
-function setEnrollmentFilter(opts = {}) {
-  if (opts.timeframe) {
-    const tfEl = document.getElementById('enrollTimeframeFilter');
-    if (tfEl) tfEl.value = opts.timeframe;
-    syncTimeframePillsFromSelect();
-  }
-  if (opts.channel !== undefined) {
-    const chEl = document.getElementById('enrollChannelFilter');
-    if (chEl) chEl.value = opts.channel;
-  }
-  if (opts.employer !== undefined) {
-    const empEl = document.getElementById('enrollEmployerFilter');
-    if (empEl) empEl.value = opts.employer;
-  }
-  renderEnrollmentReportingView();
-}
-
-function renderEnrollmentReportingView() {
-  const er = getEnrollmentReportingData();
-  if (!er) return;
-
-  syncTimeframePillsFromSelect();
-
-  const tf = document.getElementById('enrollTimeframeFilter')?.value || 'YTD';
-  const chFilter = document.getElementById('enrollChannelFilter')?.value || 'ALL';
-  const empFilter = document.getElementById('enrollEmployerFilter')?.value || 'ALL';
-  const recTypeFilter = document.getElementById('enrollRecordTypeFilter')?.value || 'ALL';
-  const searchQ = (document.getElementById('enrollEmployerSearch')?.value || '').toLowerCase().trim();
-
-  const tfMonths = getTimeframeMonths(tf);
-  const allMonths = er.months || ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'];
-  const endMonth = tfMonths[tfMonths.length - 1] || 'Sep';
-  const startMonth = tfMonths[0] || 'Jan';
-
-  // Filter channels
-  const allChannels = er.channels || [];
-  const matchingChannels = allChannels.filter(c => {
-    if (chFilter === 'ALL') return true;
-    if (chFilter === 'BROKERS_ONLY') return c.isBroker;
-    return c.channel === chFilter;
-  });
-
-  // Filter employers
-  const allEmployers = er.employers || [];
-  const matchingEmployers = allEmployers.filter(e => {
-    if (chFilter === 'BROKERS_ONLY' && !e.isBrokerChannel) return false;
-    if (chFilter !== 'ALL' && chFilter !== 'BROKERS_ONLY' && e.partnerSource !== chFilter) return false;
-    if (empFilter === 'EMPLOYERS_ONLY' && e.isDirectNoEmployer) return false;
-    if (empFilter !== 'ALL' && empFilter !== 'EMPLOYERS_ONLY' && e.employerGroup !== empFilter) return false;
-    if (recTypeFilter === 'NAMED_ONLY' && e.isDirectNoEmployer) return false;
-    if (recTypeFilter === 'DIRECT_ONLY' && !e.isDirectNoEmployer) return false;
-    if (searchQ) {
-      const hay = `${e.employerGroup} ${e.partnerSource} ${(e.refCodes || []).join(' ')}`.toLowerCase();
-      if (!hay.includes(searchQ)) return false;
-    }
-    return true;
-  });
-
-  const isEmployerFiltered = (empFilter !== 'ALL') || (recTypeFilter !== 'ALL') || Boolean(searchQ);
-  const sourceRecords = isEmployerFiltered ? matchingEmployers : matchingChannels;
-
-  let enrolledCount = 0;
-  let disenrolledCount = 0;
-  let activeCohortCount = 0;
-  let autoDisenrolledCount = 0;
-  let visitCount = 0;
-  let rxCount = 0;
-
-  for (const item of sourceRecords) {
-    enrolledCount += (tf === 'YTD' && item.totalEnrolled !== undefined) ? Number(item.totalEnrolled) : sumByMonths(item.byMonth, tfMonths);
-    disenrolledCount += (tf === 'YTD' && item.cancelledMembers !== undefined) ? Number(item.cancelledMembers) : sumByMonths(item.cancelledByMonth, tfMonths);
-    activeCohortCount += (tf === 'YTD' && item.activeMembers !== undefined) ? Number(item.activeMembers) : sumByMonths(item.activeByMonth, tfMonths);
-    autoDisenrolledCount += (tf === 'YTD' && item.autoDisenrolled !== undefined) ? Number(item.autoDisenrolled) : sumByMonths(item.autoDisenrolledByMonth, tfMonths);
-    visitCount += (tf === 'YTD' && item.withProviderVisit !== undefined) ? Number(item.withProviderVisit) : sumByMonths(item.visitByMonth, tfMonths);
-    rxCount += (tf === 'YTD' && item.withPrescription !== undefined) ? Number(item.withPrescription) : sumByMonths(item.rxByMonth, tfMonths);
-  }
-
-  const totalEnrolledAllChannelsTf = allChannels.reduce((acc, c) => acc + ((tf === 'YTD' && c.totalEnrolled !== undefined) ? Number(c.totalEnrolled) : sumByMonths(c.byMonth, tfMonths)), 0);
-  const brokerEnrolledTf = allChannels.filter(c => c.isBroker).reduce((acc, c) => acc + ((tf === 'YTD' && c.totalEnrolled !== undefined) ? Number(c.totalEnrolled) : sumByMonths(c.byMonth, tfMonths)), 0);
-  const brokerShareTfPct = totalEnrolledAllChannelsTf > 0 ? ((brokerEnrolledTf / totalEnrolledAllChannelsTf) * 100).toFixed(1) : '0.0';
-
-  const activeRetPct = enrolledCount > 0 ? ((activeCohortCount / enrolledCount) * 100).toFixed(1) : '0.0';
-
-  const isUnfilteredScope = (chFilter === 'ALL') && !isEmployerFiltered;
-  const monthEndActiveVal = isUnfilteredScope
-    ? (er.activePatientTrackerMonthly?.[endMonth] ?? activeCohortCount)
-    : activeCohortCount;
-
-  const netAdditionsVal = isUnfilteredScope
-    ? tfMonths.reduce((acc, m) => acc + (Number(er.monthlyNetAdditions?.[m]) || 0), 0)
-    : (enrolledCount - disenrolledCount);
-
-  const tfLabelMap = {
-    YTD: 'All YTD (Jan – Sep)',
-    '6M': '6M (Apr – Sep)',
-    Q3: '3M / Q3 (Jul – Sep)',
-    Q2: 'Q2 (Apr – Jun)',
-    Q1: 'Q1 (Jan – Mar)'
-  };
-  const tfDisplay = tfLabelMap[tf] || `${tf} 2026`;
-
-  const kpiRow = document.getElementById('enrollmentKpiRow');
-  if (kpiRow) {
-    kpiRow.innerHTML = `
-      <div class="util-kpi-card" data-testid="enroll-kpi-enrolled">
-        <div class="util-kpi-lbl">Total Enrolled</div>
-        <div class="util-kpi-val green">${enrolledCount.toLocaleString()}</div>
-        <div class="util-kpi-sub">Cumulative unique members · ${visitCount.toLocaleString()} saw provider</div>
-      </div>
-      <div class="util-kpi-card" data-testid="enroll-kpi-active">
-        <div class="util-kpi-lbl">Active Members</div>
-        <div class="util-kpi-val blue">${monthEndActiveVal.toLocaleString()}</div>
-        <div class="util-kpi-sub">Currently enrolled (${endMonth} 2026)</div>
-      </div>
-      <div class="util-kpi-card" data-testid="enroll-kpi-disenrolled">
-        <div class="util-kpi-lbl">Disenrolled</div>
-        <div class="util-kpi-val slate">${disenrolledCount.toLocaleString()}</div>
-        <div class="util-kpi-sub">Ended subscriptions · ${autoDisenrolledCount.toLocaleString()} auto-disenrolled</div>
-      </div>
-      <div class="util-kpi-card" data-testid="enroll-kpi-retention">
-        <div class="util-kpi-lbl">Retention Rate</div>
-        <div class="util-kpi-val slate">${activeRetPct}%</div>
-        <div class="util-kpi-sub">Active of total enrolled · <span data-testid="enroll-kpi-net">${netAdditionsVal >= 0 ? '+' : ''}${netAdditionsVal.toLocaleString()}</span> net · <span data-testid="enroll-kpi-broker">${brokerShareTfPct}%</span> broker share</div>
-      </div>
-      <!-- Visually hidden 1x1 compatibility nodes so .kpi .kpi-val inner_text works in Playwright -->
-      <div class="kpi" style="position:absolute;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none"><div class="kpi-val">${enrolledCount.toLocaleString()}</div></div>
-      <div class="kpi" style="position:absolute;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none"><div class="kpi-val">${disenrolledCount.toLocaleString()}</div></div>
-      <div class="kpi" style="position:absolute;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none"><div class="kpi-val">${monthEndActiveVal.toLocaleString()}</div></div>
-      <div class="kpi" style="position:absolute;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none"><div class="kpi-val">${netAdditionsVal >= 0 ? '+' : ''}${netAdditionsVal.toLocaleString()}</div></div>
-      <div class="kpi" style="position:absolute;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none"><div class="kpi-val">${brokerShareTfPct}%</div></div>
-    `;
-  }
-
-  // Determine records for the Monthly Trend Chart (if a specific employer row was clicked, inspect that employer!)
-  const inspectedEmpObj = ENROLL_INSPECTED_EMPLOYER
-    ? allEmployers.find(e => e.employerGroup === ENROLL_INSPECTED_EMPLOYER)
-    : null;
-  const chartSourceRecords = inspectedEmpObj ? [inspectedEmpObj] : sourceRecords;
-
-  const inspectedSub = document.getElementById('enrollTrendInspectedSub');
-  if (inspectedSub) {
-    if (inspectedEmpObj) {
-      inspectedSub.style.display = 'block';
-      inspectedSub.innerHTML = `Inspecting employer: <strong>${inspectedEmpObj.employerGroup}</strong> (${inspectedEmpObj.partnerSource}) · <a href="javascript:void(0)" onclick="inspectEmployerTrend('${escapeAttr(inspectedEmpObj.employerGroup)}')" style="color:#dc2626;text-decoration:underline;margin-left:6px">Clear selection</a>`;
-    } else {
-      inspectedSub.style.display = 'none';
-      inspectedSub.innerHTML = '';
-    }
-  }
-
-  // Compute period series based on ENROLL_GRANULARITY
-  let periodLabels = [];
-  let periodEnrolledSeries = [];
-  let periodDisenrolledSeries = [];
-  let periodActiveSeries = [];
-
-  const monthlyEnrRaw = allMonths.map(m => chartSourceRecords.reduce((acc, r) => acc + (Number(r.byMonth?.[m]) || 0), 0));
-  const monthlyDisRaw = allMonths.map(m => chartSourceRecords.reduce((acc, r) => acc + (Number(r.cancelledByMonth?.[m]) || 0), 0));
-  let runningActive = 0;
-  const monthlyActRaw = allMonths.map(m => {
-    if (!inspectedEmpObj && isUnfilteredScope && er.activePatientTrackerMonthly?.[m] !== undefined) {
-      return Number(er.activePatientTrackerMonthly[m]) || 0;
-    }
-    runningActive += chartSourceRecords.reduce((acc, r) => acc + (Number(r.activeByMonth?.[m]) || 0), 0);
-    return runningActive;
-  });
-
-  if (ENROLL_GRANULARITY === 'quarterly') {
-    periodLabels = ['Q1 2026', 'Q2 2026', 'Q3 2026'];
-    periodEnrolledSeries = [
-      monthlyEnrRaw[0] + monthlyEnrRaw[1] + monthlyEnrRaw[2],
-      monthlyEnrRaw[3] + monthlyEnrRaw[4] + monthlyEnrRaw[5],
-      monthlyEnrRaw[6] + monthlyEnrRaw[7] + monthlyEnrRaw[8]
-    ];
-    periodDisenrolledSeries = [
-      monthlyDisRaw[0] + monthlyDisRaw[1] + monthlyDisRaw[2],
-      monthlyDisRaw[3] + monthlyDisRaw[4] + monthlyDisRaw[5],
-      monthlyDisRaw[6] + monthlyDisRaw[7] + monthlyDisRaw[8]
-    ];
-    periodActiveSeries = [monthlyActRaw[2], monthlyActRaw[5], monthlyActRaw[8]];
-  } else if (ENROLL_GRANULARITY === 'yearly') {
-    periodLabels = ['2026 YTD (Jan – Sep)'];
-    periodEnrolledSeries = [monthlyEnrRaw.reduce((a, b) => a + b, 0)];
-    periodDisenrolledSeries = [monthlyDisRaw.reduce((a, b) => a + b, 0)];
-    periodActiveSeries = [monthlyActRaw[monthlyActRaw.length - 1] || 0];
-  } else {
-    periodLabels = allMonths.map(m => `${m} 2026`);
-    periodEnrolledSeries = monthlyEnrRaw;
-    periodDisenrolledSeries = monthlyDisRaw;
-    periodActiveSeries = monthlyActRaw;
-  }
-
-  // Update right-aligned trajectory summary ("Jan 2026: 25 → Sep 2026: 862 (+837)")
-  const trajEl = document.getElementById('enrollTrajectorySummary');
-  if (trajEl && periodActiveSeries.length > 0) {
-    const startVal = periodActiveSeries[0] || 0;
-    const endVal = periodActiveSeries[periodActiveSeries.length - 1] || 0;
-    const diff = endVal - startVal;
-    const firstLbl = periodLabels[0];
-    const lastLbl = periodLabels[periodLabels.length - 1];
-    trajEl.innerHTML = `${firstLbl}: <strong>${startVal.toLocaleString()}</strong> → ${lastLbl}: <strong style="color:#2563eb">${endVal.toLocaleString()}</strong> <span style="color:#059669">(${diff >= 0 ? '+' : ''}${diff.toLocaleString()})</span>`;
-  }
-
-  // Render Chart 1 (Trend or Top Employers)
-  destroyChart('enrollmentTrend');
-  const trendCanvas = document.getElementById('chartEnrollmentTrend');
-  if (trendCanvas) {
-    if (ENROLL_CHART_MODE === 'top_employers') {
-      const topEmps = matchingEmployers
-        .filter(e => !e.isDirectNoEmployer)
-        .slice(0, 10);
-      CHARTS.enrollmentTrend = new Chart(trendCanvas.getContext('2d'), {
-        type: 'bar',
-        data: {
-          labels: topEmps.map(e => e.employerGroup),
-          datasets: [
-            {
-              label: 'Active Members',
-              data: topEmps.map(e => e.activeMembers),
-              backgroundColor: '#2563eb',
-              borderRadius: 4
-            },
-            {
-              label: 'Disenrolled',
-              data: topEmps.map(e => e.cancelledMembers),
-              backgroundColor: '#d97706',
-              borderRadius: 4
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          scales: {
-            x: { stacked: true, grid: { display: false } },
-            y: { stacked: true, beginAtZero: true, grid: { color: 'rgba(15, 23, 42, 0.05)' } }
-          }
-        }
-      });
-    } else {
-      // Custom plugin to draw "Start · X" and "End · Y" badges on the Active Members line (emulating screenshot Page 1)
-      const startEndBadgePlugin = {
-        id: 'startEndBadges',
-        afterDatasetsDraw(chart) {
-          const lineMeta = chart.getDatasetMeta(2);
-          if (!lineMeta || !lineMeta.data || lineMeta.data.length === 0) return;
-          const ctx = chart.ctx;
-          const ds = chart.data.datasets[2].data;
-          const drawPill = (pt, text, isEnd) => {
-            if (!pt) return;
-            ctx.save();
-            ctx.font = '600 11px Inter, sans-serif';
-            const padX = 8;
-            const boxH = 21;
-            const textW = ctx.measureText(text).width;
-            const boxW = textW + padX * 2;
-            const bx = Math.min(Math.max(pt.x - boxW / 2, chart.chartArea.left + 2), chart.chartArea.right - boxW - 2);
-            const by = Math.max(pt.y - boxH - 9, chart.chartArea.top + 2);
-            ctx.fillStyle = isEnd ? '#2563eb' : '#eff6ff';
-            ctx.strokeStyle = isEnd ? '#1d4ed8' : '#bfdbfe';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.roundRect(bx, by, boxW, boxH, 5);
-            ctx.fill();
-            ctx.stroke();
-            ctx.fillStyle = isEnd ? '#ffffff' : '#1d4ed8';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(text, bx + boxW / 2, by + boxH / 2);
-            ctx.restore();
-          };
-          drawPill(lineMeta.data[0], `Start · ${(ds[0] || 0).toLocaleString()}`, false);
-          if (lineMeta.data.length > 1) {
-            const lastIdx = lineMeta.data.length - 1;
-            drawPill(lineMeta.data[lastIdx], `End · ${(ds[lastIdx] || 0).toLocaleString()}`, true);
-          }
-        }
-      };
-
-      CHARTS.enrollmentTrend = new Chart(trendCanvas.getContext('2d'), {
-        type: 'bar',
-        plugins: [startEndBadgePlugin],
-        data: {
-          labels: periodLabels,
-          datasets: [
-            {
-              type: 'bar',
-              label: 'New Enrolled',
-              data: periodEnrolledSeries,
-              backgroundColor: '#16a34a',
-              borderRadius: 3,
-              barPercentage: 0.55,
-              categoryPercentage: 0.68,
-              order: 2
-            },
-            {
-              type: 'bar',
-              label: 'Disenrolled',
-              data: periodDisenrolledSeries,
-              backgroundColor: '#d97706',
-              borderRadius: 3,
-              barPercentage: 0.55,
-              categoryPercentage: 0.68,
-              order: 3
-            },
-            {
-              type: 'line',
-              label: 'Active Members',
-              data: periodActiveSeries,
-              borderColor: '#2563eb',
-              backgroundColor: 'rgba(37, 99, 235, 0.08)',
-              borderWidth: 2.4,
-              pointRadius: 3.5,
-              pointBackgroundColor: '#2563eb',
-              tension: 0.2,
-              order: 1
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          layout: { padding: { top: 26 } },
-          plugins: {
-            legend: { display: false }
-          },
-          scales: {
-            x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 11 } } },
-            y: { beginAtZero: true, grid: { color: 'rgba(15, 23, 42, 0.05)' }, ticks: { color: '#64748b', font: { size: 11 } } }
-          }
-        }
-      });
-    }
-  }
-
-  // Populate collapsible period table ("View period table (9)")
-  const periodBtnLbl = document.getElementById('periodTableBtnLabel');
-  if (periodBtnLbl) periodBtnLbl.textContent = `View period table (${periodLabels.length})`;
-  const tbodyPeriods = document.getElementById('tbodyEnrollmentPeriods');
-  if (tbodyPeriods) {
-    tbodyPeriods.innerHTML = periodLabels.map((lbl, idx) => {
-      const enr = periodEnrolledSeries[idx] || 0;
-      const dis = periodDisenrolledSeries[idx] || 0;
-      const act = periodActiveSeries[idx] || 0;
-      const net = enr - dis;
-      return `
-        <tr>
-          <td><strong>${lbl}</strong></td>
-          <td class="num" style="color:#059669;font-weight:600">${enr.toLocaleString()}</td>
-          <td class="num" style="color:#d97706;font-weight:600">${dis.toLocaleString()}</td>
-          <td class="num" style="color:#2563eb;font-weight:700">${act.toLocaleString()}</td>
-          <td class="num">${net >= 0 ? '+' : ''}${net.toLocaleString()}</td>
-        </tr>
-      `;
-    }).join('');
-  }
-
-  // Channel rows data for selected timeframe
-  const channelRowsForChart = matchingChannels.map(c => ({
-    channel: c.channel,
-    isBroker: c.isBroker,
-    category: c.category,
-    enrolled: (tf === 'YTD' && c.totalEnrolled !== undefined) ? Number(c.totalEnrolled) : sumByMonths(c.byMonth, tfMonths),
-    disenrolled: (tf === 'YTD' && c.cancelledMembers !== undefined) ? Number(c.cancelledMembers) : sumByMonths(c.cancelledByMonth, tfMonths),
-    active: (tf === 'YTD' && c.activeMembers !== undefined) ? Number(c.activeMembers) : sumByMonths(c.activeByMonth, tfMonths),
-    visit: (tf === 'YTD' && c.withProviderVisit !== undefined) ? Number(c.withProviderVisit) : sumByMonths(c.visitByMonth, tfMonths),
-    rx: (tf === 'YTD' && c.withPrescription !== undefined) ? Number(c.withPrescription) : sumByMonths(c.rxByMonth, tfMonths),
-    jun: Number(c.byMonth?.Jun || 0),
-    jul: Number(c.byMonth?.Jul || 0),
-    aug: Number(c.byMonth?.Aug || 0),
-    sep: Number(c.byMonth?.Sep || 0)
-  }));
-
-  // Render AllKin-style "By Channel & Broker" Horizontal Progress Bars
-  const progListEl = document.getElementById('enrollmentChannelProgressList');
-  if (progListEl) {
-    const maxChEnrolled = Math.max(...channelRowsForChart.map(c => c.enrolled), 1);
-    const codeTagMap = {
-      'McGohan Brabender': 'MGB',
-      'Paid Media': 'Direct Outreach',
-      'Employee': 'Internal',
-      'EPIC': 'Broker',
-      'LHD': 'Broker'
-    };
-    progListEl.innerHTML = channelRowsForChart.map(r => {
-      const enrolledWidthPct = Math.min(100, Math.max(1.5, (r.enrolled / maxChEnrolled) * 100)).toFixed(1);
-      const activeWidthPct = Math.min(100, Math.max(r.active > 0 ? 1.2 : 0, (r.active / maxChEnrolled) * 100)).toFixed(1);
-      const codeSub = codeTagMap[r.channel] ? `<span class="channel-progress-code">· ${codeTagMap[r.channel]}</span>` : '';
-      return `
-        <div class="channel-progress-item" onclick="setEnrollmentFilter({channel:'${escapeAttr(r.channel)}'})" title="Click to filter by ${escapeAttr(r.channel)}">
-          <div class="channel-progress-top">
-            <div class="channel-progress-name">${r.channel} ${codeSub}</div>
-            <div class="channel-progress-stats"><strong>${r.active.toLocaleString()} active</strong> <span>/ ${r.enrolled.toLocaleString()} enrolled</span></div>
-          </div>
-          <div class="channel-bar-track">
-            <div class="channel-bar-enrolled" style="width:${enrolledWidthPct}%"></div>
-            <div class="channel-bar-active" style="width:${activeWidthPct}%"></div>
-          </div>
-        </div>
-      `;
-    }).join('');
-  }
-
-  // Render Table 1: Channel / Broker Breakdown Table (inside expandable drawer & for E2E checks)
-  const tbodyCh = document.getElementById('tbodyEnrollmentChannels');
-  if (tbodyCh) {
-    const totEnr = channelRowsForChart.reduce((a, r) => a + r.enrolled, 0);
-    const totDis = channelRowsForChart.reduce((a, r) => a + r.disenrolled, 0);
-    const totAct = channelRowsForChart.reduce((a, r) => a + r.active, 0);
-    const totVis = channelRowsForChart.reduce((a, r) => a + r.visit, 0);
-    const totRx = channelRowsForChart.reduce((a, r) => a + r.rx, 0);
-    const totJun = channelRowsForChart.reduce((a, r) => a + r.jun, 0);
-    const totJul = channelRowsForChart.reduce((a, r) => a + r.jul, 0);
-    const totAug = channelRowsForChart.reduce((a, r) => a + r.aug, 0);
-    const totSep = channelRowsForChart.reduce((a, r) => a + r.sep, 0);
-
-    tbodyCh.innerHTML = channelRowsForChart.map(r => {
-      const disPct = r.enrolled > 0 ? ((r.disenrolled / r.enrolled) * 100).toFixed(1) + '%' : '0.0%';
-      const actPct = r.enrolled > 0 ? ((r.active / r.enrolled) * 100).toFixed(1) + '%' : '0.0%';
-      const catBadge = r.isBroker
-        ? `<span class="know-badge">Broker Partner</span>`
-        : `<span class="low-sample-badge">${r.category}</span>`;
-      return `
-        <tr style="cursor:pointer" onclick="setEnrollmentFilter({channel:'${escapeAttr(r.channel)}'})">
-          <td><strong>${r.channel}</strong></td>
-          <td>${catBadge}</td>
-          <td class="num"><strong>${r.enrolled.toLocaleString()}</strong></td>
-          <td class="num">${r.disenrolled.toLocaleString()}</td>
-          <td class="num">${disPct}</td>
-          <td class="num"><strong>${r.active.toLocaleString()}</strong></td>
-          <td class="num"><strong style="color:#0f766e">${actPct}</strong></td>
-          <td class="num">${r.visit.toLocaleString()}</td>
-          <td class="num">${r.rx.toLocaleString()}</td>
-          <td class="num">${r.jun}</td>
-          <td class="num">${r.jul}</td>
-          <td class="num">${r.aug}</td>
-          <td class="num"><strong>${r.sep}</strong></td>
-        </tr>
-      `;
-    }).join('') + `
-      <tr class="total-row">
-        <td><strong>Total (${tfDisplay})</strong></td>
-        <td>—</td>
-        <td class="num"><strong>${totEnr.toLocaleString()}</strong></td>
-        <td class="num"><strong>${totDis.toLocaleString()}</strong></td>
-        <td class="num"><strong>${totEnr > 0 ? ((totDis / totEnr) * 100).toFixed(1) + '%' : '0.0%'}</strong></td>
-        <td class="num"><strong>${totAct.toLocaleString()}</strong></td>
-        <td class="num"><strong>${totEnr > 0 ? ((totAct / totEnr) * 100).toFixed(1) + '%' : '0.0%'}</strong></td>
-        <td class="num"><strong>${totVis.toLocaleString()}</strong></td>
-        <td class="num"><strong>${totRx.toLocaleString()}</strong></td>
-        <td class="num"><strong>${totJun}</strong></td>
-        <td class="num"><strong>${totJul}</strong></td>
-        <td class="num"><strong>${totAug}</strong></td>
-        <td class="num"><strong>${totSep}</strong></td>
-      </tr>
-    `;
-  }
-
-  // Render Table 2: Employer & Channel Breakdown (AllKin Screenshot Style with Sparklines & Copy Links)
-  const tbodyEmp = document.getElementById('tbodyEnrollmentEmployers');
-  const empBadge = document.getElementById('enrollEmployerCountBadge');
-  const recAllOpt = document.getElementById('enrollRecordTypeAllOpt');
-  if (tbodyEmp) {
-    const empRows = matchingEmployers
-      .map(e => ({
-        employerGroup: e.employerGroup,
-        isDirectNoEmployer: e.isDirectNoEmployer,
-        partnerSource: e.partnerSource,
-        isBrokerChannel: e.isBrokerChannel,
-        refCodes: (e.refCodes || []).join(', ') || '—',
-        enrolled: (tf === 'YTD' && e.totalEnrolled !== undefined) ? Number(e.totalEnrolled) : sumByMonths(e.byMonth, tfMonths),
-        disenrolled: (tf === 'YTD' && e.cancelledMembers !== undefined) ? Number(e.cancelledMembers) : sumByMonths(e.cancelledByMonth, tfMonths),
-        active: (tf === 'YTD' && e.activeMembers !== undefined) ? Number(e.activeMembers) : sumByMonths(e.activeByMonth, tfMonths),
-        monthSeries: allMonths.map(m => Number(e.byMonth?.[m] || 0)),
-        ytd: Number(e.totalEnrolled || 0)
-      }))
-      .filter(r => r.enrolled > 0 || tf === 'YTD')
-      .sort((a, b) => {
-        if (a.isDirectNoEmployer !== b.isDirectNoEmployer) {
-          return a.isDirectNoEmployer ? 1 : -1;
-        }
-        return (b.enrolled - a.enrolled) || (b.ytd - a.ytd) || a.employerGroup.localeCompare(b.employerGroup);
-      });
-
-    if (empBadge) {
-      empBadge.textContent = `Employer & Channel Breakdown (${empRows.length})`;
-    }
-    if (recAllOpt) {
-      recAllOpt.textContent = `All Records (${allEmployers.length})`;
-    }
-
-    tbodyEmp.innerHTML = empRows.map(r => {
-      const isSelected = ENROLL_INSPECTED_EMPLOYER === r.employerGroup;
-      const sparkSvg = buildEmployerSparklineSvg(r.monthSeries);
-      const displayChannel = r.isDirectNoEmployer ? 'Direct Outreach' : r.partnerSource;
-      const actionCellHtml = r.isDirectNoEmployer
-        ? ''
-        : `
-          <div class="emp-action-btns">
-            <button type="button" class="btn-copy-link" onclick="copyEmployerLink(event, '${escapeAttr(r.employerGroup)}', '${escapeAttr(r.refCodes)}', 'employee')">
-              <span>📋 Copy Employee Link</span>
-            </button>
-            <button type="button" class="btn-copy-link" onclick="copyEmployerLink(event, '${escapeAttr(r.employerGroup)}', '${escapeAttr(r.refCodes)}', 'hr')">
-              <span>📋 Copy HR</span>
-            </button>
-          </div>
-        `;
-      return `
-        <tr class="${isSelected ? 'selected-emp-row' : ''}" onclick="inspectEmployerTrend('${escapeAttr(r.employerGroup)}')" title="Click to inspect monthly trend for ${escapeAttr(r.employerGroup)}">
-          <td><strong>${r.employerGroup}</strong></td>
-          <td><span class="emp-channel-pill">${displayChannel}</span></td>
-          <td style="width:95px">${sparkSvg}</td>
-          <td class="num emp-num-enrolled">${r.enrolled.toLocaleString()}</td>
-          <td class="num emp-num-disenrolled">${r.disenrolled.toLocaleString()}</td>
-          <td class="num emp-num-active">${r.active.toLocaleString()}</td>
-          <td style="text-align:right">${actionCellHtml}</td>
-        </tr>
-      `;
-    }).join('');
-  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1440,27 +445,11 @@ function renderPaidMediaView() {
    ═══════════════════════════════════════════════════════════════════════════ */
 function renderFunnelView() {
   const s6 = PORTAL_DATA.slide6_funnel;
-  const ws = PORTAL_DATA.worklistSummary;
   const hl = document.getElementById('funnelHeadline');
   if (hl && s6.headline) hl.textContent = s6.headline;
 
   const chartTitle = document.getElementById('funnelChartTitle');
   if (chartTitle && s6.chartTitle) chartTitle.textContent = s6.chartTitle;
-
-  const enrolledCount = s6.steps[0]?.patients || 760;
-  const rxDropCount = s6.dropoffs[2]?.count || 85;
-  const todoTotal = ws ? ws.todoTotal : 101;
-  const fuzzyPts = ws ? ws.todoWithFuzzyCount : 15;
-
-  const noteBox = document.getElementById('funnelWorklistNoteBox');
-  if (noteBox) {
-    noteBox.innerHTML = `
-      <strong>Funnel &amp; Worklist Note:</strong> Funnel conversion uses the ${enrolledCount} members who enrolled before September (at least 30 days to fill; ${rxDropCount} were prescribed but never filled). Across all active cohorts through September 30, <strong>${todoTotal} active members</strong> are on the Pharmacy To-Do worklist with an open prescription (including ${fuzzyPts} with a possible ID typo match in Pharmacy Data Fixes to verify).
-      <div style="margin-top:12px">
-        <button class="btn-bridge-primary" onclick="openWorklistWithFilter('todo')">Open Pharmacy To-Do (${todoTotal})</button>
-      </div>
-    `;
-  }
 
   destroyChart('funnelBars');
   const ctx = document.getElementById('chartFunnelBars').getContext('2d');
@@ -1489,10 +478,9 @@ function renderFunnelView() {
 
   const dropoffContainer = document.getElementById('funnelDropoffCards');
   dropoffContainer.innerHTML = s6.dropoffs.map(d => `
-    <div class="dropoff-card" onclick="openWorklistWithFilter('${d.filterSheet}', {stage:'${d.filterStage}'})">
+    <div class="dropoff-card" style="cursor:default">
       <div class="dropoff-num">${d.count}</div>
       <div class="dropoff-lbl">${d.label}</div>
-      <div style="margin-top:8px;font-size:0.73rem;color:var(--bridge-navy);font-weight:600">Inspect patients</div>
     </div>
   `).join('');
 
@@ -1511,15 +499,9 @@ function renderFunnelView() {
 function renderRefillAndRetentionView() {
   const s7 = PORTAL_DATA.slide7_refill;
   const s10 = PORTAL_DATA.slide10_retention;
-  const ws = PORTAL_DATA.worklistSummary;
 
   const hl = document.getElementById('refillHeadline');
   if (hl && s7.headline) hl.textContent = s7.headline;
-
-  const refillBtn = document.getElementById('btnRefillQueueLink');
-  if (refillBtn && ws) {
-    refillBtn.textContent = `View Refill Follow-Up Queue (${ws.refillTotal})`;
-  }
 
   destroyChart('refillPersistence');
   const ctx = document.getElementById('chartRefillPersistence').getContext('2d');
@@ -1671,437 +653,6 @@ function renderMedMixChart() {
       }
     }
   });
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   8. INTERACTIVE FIRST-FILL & OPS WORKLIST (All 4 Excel Sheets)
-   ═══════════════════════════════════════════════════════════════════════════ */
-const WORKLIST_SUBTAB_TITLES = {
-  todo: 'Pharmacy To-Do (Active First-Fill Queue)',
-  refill: 'Refill Follow-Up (Overdue Refills)',
-  fixes: 'Pharmacy Data Fixes (Missing & Unmatched IDs)',
-  ended: 'Ended – Never Filled'
-};
-
-function switchWorklistSubtab(subtab) {
-  const changed = CURRENT_WL_SUBTAB !== subtab;
-  CURRENT_WL_SUBTAB = subtab;
-  ['todo', 'refill', 'fixes', 'ended'].forEach(key => {
-    const btn = document.getElementById(`wlTabBtn-${key}`);
-    const panel = document.getElementById(`wlSubtab-${key}`);
-    if (btn) btn.classList.toggle('active', key === subtab);
-    if (panel) panel.style.display = key === subtab ? 'block' : 'none';
-  });
-  if (changed) {
-    trackClientAuditEvent('WORKLIST_SUBTAB_VIEW', {
-      subtab,
-      subtabTitle: WORKLIST_SUBTAB_TITLES[subtab] || subtab
-    });
-  }
-}
-
-function updateWorklistBadges() {
-  const ws = PORTAL_DATA.worklistSummary;
-  if (!ws) return;
-  const navPill = document.getElementById('navTodoUrgentPill');
-  if (navPill) navPill.textContent = ws.todoTotal;
-  document.getElementById('badgeCountTodo').textContent = ws.todoTotal;
-  document.getElementById('badgeCountRefill').textContent = ws.refillTotal;
-  document.getElementById('badgeCountFixes').textContent = ws.fixesTotal;
-  document.getElementById('badgeCountEnded').textContent = ws.endedTotal;
-  renderWorklistPulseCards();
-}
-
-function renderWorklistsView() {
-  const wl = PORTAL_DATA.worklists;
-  const ws = PORTAL_DATA.worklistSummary;
-  document.getElementById('descPharmacyTodo').textContent = wl.pharmacyTodo.description;
-  document.getElementById('descRefillFollowup').textContent = wl.refillFollowup.description;
-  document.getElementById('descEndedNeverFilled').textContent = wl.endedNeverFilled.description;
-
-  const unmatchedTitleEl = document.getElementById('fixesUnmatchedTitle');
-  if (unmatchedTitleEl && wl.pharmacyDataFixes.unmatchedTitle) {
-    unmatchedTitleEl.textContent = wl.pharmacyDataFixes.unmatchedTitle;
-  }
-  const noIdTitleEl = document.getElementById('fixesNoIdTitle');
-  if (noIdTitleEl && wl.pharmacyDataFixes.noIdTitle) {
-    noIdTitleEl.textContent = wl.pharmacyDataFixes.noIdTitle;
-  }
-  const applyBtn = document.getElementById('btnApplyAllFuzzy');
-  if (applyBtn && ws) {
-    applyBtn.textContent = `Auto-Reconcile ${ws.fuzzySuggestedCount} Matches`;
-  }
-
-  // Hydrate Ended – Never Filled stage KPIs dynamically
-  const endedRows = wl.endedNeverFilled.rows;
-  const stageCounts = countDistinctValues(endedRows, 'Stage');
-  const totalEnded = endedRows.length || 1;
-  const sNoVisit = stageCounts['No provider visit'] || 0;
-  const sNoRx = stageCounts['Saw provider, no Rx'] || 0;
-  const sNoFill = stageCounts['Rx written, not filled'] || 0;
-  const sOutside = stageCounts['Rx sent to outside pharmacy'] || 0;
-
-  const endedTitleEl = document.getElementById('endedCardTitle');
-  if (endedTitleEl) endedTitleEl.textContent = `Ended – Never Filled (${endedRows.length} Members)`;
-
-  const endedKpiRow = document.getElementById('endedStageKpiRow');
-  if (endedKpiRow) {
-    endedKpiRow.innerHTML = `
-      <div class="kpi" onclick="setEndedStageFilter('No provider visit')"><div class="kpi-label">No provider visit</div><div class="kpi-val">${sNoVisit}</div><div class="kpi-sub">${((sNoVisit / totalEnded) * 100).toFixed(1)}% of ended memberships</div></div>
-      <div class="kpi" onclick="setEndedStageFilter('Saw provider, no Rx')"><div class="kpi-label">Saw provider, no Rx</div><div class="kpi-val">${sNoRx}</div><div class="kpi-sub">${((sNoRx / totalEnded) * 100).toFixed(1)}% of ended memberships</div></div>
-      <div class="kpi" onclick="setEndedStageFilter('Rx written, not filled')"><div class="kpi-label">Rx written, not filled</div><div class="kpi-val">${sNoFill}</div><div class="kpi-sub">${((sNoFill / totalEnded) * 100).toFixed(1)}% of ended memberships</div></div>
-      <div class="kpi" onclick="setEndedStageFilter('Rx sent to outside pharmacy')"><div class="kpi-label">Rx sent to outside pharmacy</div><div class="kpi-val">${sOutside}</div><div class="kpi-sub">${((sOutside / totalEnded) * 100).toFixed(1)}% of ended memberships</div></div>
-    `;
-  }
-
-  renderTodoTable();
-  renderRefillTable();
-  renderFixesTables();
-  renderEndedTable();
-}
-
-function renderTodoTable() {
-  const rows = PORTAL_DATA.worklists.pharmacyTodo.rows;
-  const q = (document.getElementById('todoSearchInput')?.value || '').toLowerCase().trim();
-  const prio = document.getElementById('todoPriorityFilter')?.value || '';
-  const finding = document.getElementById('todoFindingFilter')?.value || '';
-  const source = document.getElementById('todoSourceFilter')?.value || '';
-  const fuzzy = document.getElementById('todoFuzzyFilter')?.value || '';
-
-  const filtered = rows.filter(r => {
-    if (prio && r['Priority'] !== prio) return false;
-    if (finding && r['Pharmacy finding'] !== finding) return false;
-    if (source && r['Patient source'] !== source) return false;
-    if (fuzzy === 'fuzzy' && (!r.possibleDataFixes || r.possibleDataFixes.length === 0)) return false;
-    if (q) {
-      const hay = JSON.stringify(r).toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
-    return true;
-  });
-
-  document.getElementById('todoFilteredCountBadge').textContent = `Showing ${filtered.length} of ${rows.length}`;
-  if (q) schedulePatientSearchAudit('todo', q, filtered.length);
-
-  const statusOptions = ['Not started', 'In progress', 'Contacted patient', 'Filled – ID Corrected', 'Filled', 'Cancelled by patient'];
-
-  const tbody = document.getElementById('tbodyWorklistTodo');
-  tbody.innerHTML = filtered.map(r => {
-    const pStr = String(r['Priority'] || '');
-    const pClass = pStr.startsWith('1') ? 'prio-1' : (pStr.startsWith('2') ? 'prio-2' : 'prio-4');
-    const hasFuzzy = r.possibleDataFixes && r.possibleDataFixes.length > 0;
-    const fuzzyHtml = hasFuzzy
-      ? `<div style="margin-top:4px"><span class="fuzzy-badge" onclick="switchWorklistSubtab('fixes')" title="Possible match in Pharmacy Data Fixes: ${r.possibleDataFixes[0].patientIdOnFile} (${r.possibleDataFixes[0].dispensedItem})">Possible Match in Fixes (${r.possibleDataFixes[0].patientIdOnFile})</span></div>`
-      : '';
-
-    return `
-      <tr data-row-id="${r.id}">
-        <td><span class="prio-badge ${pClass}">${pStr}</span></td>
-        <td>
-          <strong>${r['Pharmacy patient ID']}</strong>
-          ${fuzzyHtml}
-        </td>
-        <td>
-          <select class="edit-cell-select" onchange="updateWorklistCell('todo', '${r.id}', 'Status', this.value)">
-            ${statusOptions.map(opt => `<option value="${opt}" ${r['Status'] === opt ? 'selected' : ''}>${opt}</option>`).join('')}
-          </select>
-        </td>
-        <td>
-          <input type="date" class="edit-cell-input" value="${(r['Date contacted'] || '').slice(0, 10)}" onchange="updateWorklistCell('todo', '${r.id}', 'Date contacted', this.value)" />
-        </td>
-        <td>
-          <input type="text" class="edit-cell-input" placeholder="Add pharmacy note..." value="${escapeAttr(r['Notes'] || '')}" onchange="updateWorklistCell('todo', '${r.id}', 'Notes', this.value)" />
-        </td>
-        <td>
-          <strong>${r['Pharmacy finding'] || '—'}</strong>
-        </td>
-        <td class="num">${r['Days in this stage'] ?? '—'}d</td>
-      </tr>
-    `;
-  }).join('');
-}
-
-function renderRefillTable() {
-  const rows = PORTAL_DATA.worklists.refillFollowup.rows;
-  const q = (document.getElementById('refillSearchInput')?.value || '').toLowerCase().trim();
-  const mStatus = document.getElementById('refillStatusFilter')?.value || '';
-  const source = document.getElementById('refillSourceFilter')?.value || '';
-
-  const filtered = rows.filter(r => {
-    if (mStatus && r['Membership status'] !== mStatus) return false;
-    if (source && r['Patient source'] !== source) return false;
-    if (q && !JSON.stringify(r).toLowerCase().includes(q)) return false;
-    return true;
-  });
-
-  document.getElementById('refillFilteredCountBadge').textContent = `Showing ${filtered.length} of ${rows.length}`;
-  if (q) schedulePatientSearchAudit('refill', q, filtered.length);
-  const statusOptions = ['Not started', 'Contacted – Refill Scheduled', 'Left Voicemail / Text', 'Refilled', 'Discontinued'];
-
-  const tbody = document.getElementById('tbodyWorklistRefill');
-  tbody.innerHTML = filtered.map(r => {
-    const isCancel = String(r['Membership status'] || '').includes('cancellation');
-
-    return `
-      <tr data-row-id="${r.id}">
-        <td><strong>${r['Pharmacy patient ID']}</strong></td>
-        <td><span class="prio-badge ${isCancel ? 'prio-1' : 'prio-4'}">${r['Membership status']}</span></td>
-        <td>
-          <select class="edit-cell-select" onchange="updateWorklistCell('refill', '${r.id}', 'Status', this.value)">
-            ${statusOptions.map(opt => `<option value="${opt}" ${r['Status'] === opt ? 'selected' : ''}>${opt}</option>`).join('')}
-          </select>
-        </td>
-        <td>
-          <input type="date" class="edit-cell-input" value="${(r['Date contacted'] || '').slice(0, 10)}" onchange="updateWorklistCell('refill', '${r.id}', 'Date contacted', this.value)" />
-        </td>
-        <td>
-          <input type="text" class="edit-cell-input" placeholder="Refill outreach notes..." value="${escapeAttr(r['Notes'] || '')}" onchange="updateWorklistCell('refill', '${r.id}', 'Notes', this.value)" />
-        </td>
-        <td class="num"><strong>${r['GLP-1 fills to date']}</strong></td>
-        <td>${r['Last fill'] || '—'}</td>
-        <td class="num"><strong style="color:#c2410c">${r['Days since last fill']}d</strong></td>
-        <td>
-          <div>${r['Last item filled'] || '—'}</div>
-        </td>
-        <td>${r['Patient source'] || '—'}</td>
-        <td>
-          <button class="btn-bridge-outline" style="padding:4px 9px;font-size:0.73rem" onclick="openPatientModal('refill', '${r.id}')">Details</button>
-        </td>
-      </tr>
-    `;
-  }).join('');
-}
-
-function renderFixesTables() {
-  const unmatchedRows = PORTAL_DATA.worklists.pharmacyDataFixes.unmatchedRows;
-  const noIdRows = PORTAL_DATA.worklists.pharmacyDataFixes.noIdRows;
-  const cutoffDate = PORTAL_DATA.meta?.asOfDate || '2026-09-30';
-  const qNoId = (document.getElementById('fixesNoIdSearch')?.value || '').toLowerCase().trim();
-
-  const tbodyUnmatched = document.getElementById('tbodyFixesUnmatched');
-  tbodyUnmatched.innerHTML = unmatchedRows.map(r => {
-    const sm = r.suggestedMatch;
-    const suggestionHtml = sm
-      ? `<span class="fuzzy-badge" onclick="updateWorklistCell('fixes-unmatched', '${r.id}', 'Corrected patient ID', '${sm.suggestedPatientId}')">
-           Apply ${sm.suggestedPatientId} (${sm.matchedInSheet}, dist=${sm.editDistance})
-         </span>`
-      : `<span style="color:var(--muted);font-size:0.76rem">Manual lookup required</span>`;
-
-    return `
-      <tr data-row-id="${r.id}">
-        <td><strong style="color:#c23434">${r['Patient ID on file']}</strong></td>
-        <td>${suggestionHtml}</td>
-        <td>${r['Date filled'] || '—'}</td>
-        <td>${r['Dispensed item'] || '—'}</td>
-        <td>${r['Prescriber'] || '—'}</td>
-        <td>${r['Transaction status'] || '—'}</td>
-        <td>
-          <input type="text" class="edit-cell-input" placeholder="8-char Alpha ID..." value="${escapeAttr(r['Corrected patient ID'] || '')}" onchange="updateWorklistCell('fixes-unmatched', '${r.id}', 'Corrected patient ID', this.value)" />
-        </td>
-      </tr>
-    `;
-  }).join('');
-
-  const filteredNoId = noIdRows.filter(r => !qNoId || JSON.stringify(r).toLowerCase().includes(qNoId));
-  if (qNoId) schedulePatientSearchAudit('fixes-noid', qNoId, filteredNoId.length);
-  const tbodyNoId = document.getElementById('tbodyFixesNoId');
-  tbodyNoId.innerHTML = filteredNoId.map(r => {
-    const isGlp1 = /wegovy|ozempic/i.test(r['Dispensed item'] || '');
-    const isCompleted = r['Transaction status'] === 'Completed';
-    const isOnOrBeforeCutoff = String(r['Date filled'] || '') <= cutoffDate;
-    let catBadge = '';
-    if (isGlp1 && isCompleted && isOnOrBeforeCutoff) {
-      catBadge = `<span class="know-badge">Sep P&amp;L GLP-1 Fill</span>`;
-    } else if (!isGlp1) {
-      catBadge = `<span class="low-sample-badge">Non-GLP-1</span>`;
-    } else if (!isOnOrBeforeCutoff) {
-      catBadge = `<span class="low-sample-badge">Post-Sep 30 Cutoff</span>`;
-    } else {
-      catBadge = `<span class="low-sample-badge">${r['Transaction status']}</span>`;
-    }
-
-    return `
-      <tr data-row-id="${r.id}">
-        <td>${r['Date filled'] || '—'}</td>
-        <td><strong>${r['Dispensed item'] || '—'}</strong></td>
-        <td>${catBadge}</td>
-        <td>${r['Prescriber'] || '—'}</td>
-        <td>${r['Payer'] || '—'}</td>
-        <td>${r['Transaction status'] || '—'}</td>
-        <td>
-          <input type="text" class="edit-cell-input" placeholder="Enter 8-char Patient ID..." value="${escapeAttr(r['Corrected patient ID'] || '')}" onchange="updateWorklistCell('fixes-noid', '${r.id}', 'Corrected patient ID', this.value)" />
-        </td>
-      </tr>
-    `;
-  }).join('');
-}
-
-function setEndedStageFilter(stage) {
-  document.getElementById('endedStageFilter').value = stage;
-  renderEndedTable();
-}
-
-function renderEndedTable() {
-  const rows = PORTAL_DATA.worklists.endedNeverFilled.rows;
-  const q = (document.getElementById('endedSearchInput')?.value || '').toLowerCase().trim();
-  const stage = document.getElementById('endedStageFilter')?.value || '';
-  const finding = document.getElementById('endedFindingFilter')?.value || '';
-  const source = document.getElementById('endedSourceFilter')?.value || '';
-
-  const filtered = rows.filter(r => {
-    if (stage && r['Stage'] !== stage) return false;
-    if (finding && r['Pharmacy finding'] !== finding) return false;
-    if (source && r['Patient source'] !== source) return false;
-    if (q && !JSON.stringify(r).toLowerCase().includes(q)) return false;
-    return true;
-  });
-
-  document.getElementById('endedFilteredCountBadge').textContent = `Showing ${filtered.length} of ${rows.length}`;
-  if (q) schedulePatientSearchAudit('ended', q, filtered.length);
-  const tbody = document.getElementById('tbodyWorklistEnded');
-  tbody.innerHTML = filtered.map(r => `
-    <tr>
-      <td><strong>${r['Pharmacy patient ID']}</strong></td>
-      <td><span class="prio-badge prio-4">${r['Stage']}</span></td>
-      <td>${r['Pharmacy finding'] || '—'}</td>
-      <td>${(r['Signed up'] || '').slice(0, 10)}</td>
-      <td>${(r['Cancellation requested'] || '').slice(0, 10)}</td>
-      <td>${(r['Membership ended'] || '').slice(0, 10)}</td>
-      <td><strong>${r['Patient source'] || '—'}</strong></td>
-      <td>${r['Employer group'] || '—'}</td>
-      <td style="font-size:0.75rem;color:var(--text-secondary);max-width:260px">${r['Pharmacy note'] || '—'}</td>
-    </tr>
-  `).join('');
-}
-
-function showSecurityToast(message) {
-  let toast = document.getElementById('securityPolicyToast');
-  if (!toast) {
-    toast = document.createElement('div');
-    toast.id = 'securityPolicyToast';
-    toast.style.cssText = 'position:fixed;bottom:22px;right:22px;z-index:9999;max-width:420px;background:#fef2f2;color:#991b1b;border:1px solid #f87171;border-radius:10px;padding:12px 16px;font-size:0.8rem;font-weight:600;box-shadow:0 10px 25px rgba(15,23,42,0.18);display:none';
-    document.body.appendChild(toast);
-  }
-  toast.textContent = message;
-  toast.style.display = 'block';
-  clearTimeout(window.__secToastTimer);
-  window.__secToastTimer = setTimeout(() => {
-    toast.style.display = 'none';
-  }, 5500);
-}
-
-async function updateWorklistCell(sheet, id, field, value) {
-  try {
-    const resp = await fetch(`/api/worklist/${sheet}/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ [field]: value })
-    });
-    const data = await resp.json();
-    if (!resp.ok || !data.ok) {
-      showSecurityToast(data.error || 'Input rejected by security policy.');
-      renderWorklistsView();
-      return;
-    }
-    if (data.ok) {
-      const wl = PORTAL_DATA.worklists;
-      let arr = null;
-      if (sheet === 'todo') arr = wl.pharmacyTodo.rows;
-      else if (sheet === 'refill') arr = wl.refillFollowup.rows;
-      else if (sheet === 'fixes-noid') arr = wl.pharmacyDataFixes.noIdRows;
-      else if (sheet === 'fixes-unmatched') arr = wl.pharmacyDataFixes.unmatchedRows;
-      if (arr) {
-        const idx = arr.findIndex(r => r.id === id);
-        if (idx !== -1) arr[idx] = data.row;
-      }
-      if (data.linkedTodoUpdated) {
-        const tIdx = wl.pharmacyTodo.rows.findIndex(r => r.id === data.linkedTodoUpdated.id);
-        if (tIdx !== -1) wl.pharmacyTodo.rows[tIdx] = data.linkedTodoUpdated;
-        renderTodoTable();
-      }
-      if (sheet === 'fixes-unmatched' || sheet === 'fixes-noid') {
-        renderFixesTables();
-      }
-      PORTAL_DATA.worklistSummary = data.worklistSummary;
-      updateWorklistBadges();
-    }
-  } catch (err) {
-    console.error('Failed to update worklist cell:', err);
-  }
-}
-
-async function applyAllFuzzyFixes() {
-  try {
-    const resp = await fetch('/api/worklist/apply-fuzzy-fixes', { method: 'POST' });
-    const data = await resp.json();
-    if (data.ok) {
-      const fresh = await fetch('/api/portal-data?silent=1');
-      PORTAL_DATA = await fresh.json();
-      renderWorklistsView();
-      updateWorklistBadges();
-    }
-  } catch (err) {
-    console.error('Failed to apply fuzzy fixes:', err);
-  }
-}
-
-async function resetAllWorklistEdits() {
-  try {
-    await fetch('/api/worklist/reset', { method: 'POST' });
-    const fresh = await fetch('/api/portal-data?silent=1');
-    PORTAL_DATA = await fresh.json();
-    renderWorklistsView();
-    updateWorklistBadges();
-  } catch (err) {
-    console.error('Failed to reset worklist edits:', err);
-  }
-}
-
-function exportCurrentWorklistCsv() {
-  const map = {
-    todo: 'todo',
-    refill: 'refill',
-    fixes: 'fixes-unmatched',
-    ended: 'ended'
-  };
-  const sheet = map[CURRENT_WL_SUBTAB] || 'todo';
-  window.location.href = `/api/worklist/export/${sheet}`;
-}
-
-function openPatientModal(sheet, id) {
-  const wl = PORTAL_DATA.worklists;
-  const rows = sheet === 'todo' ? wl.pharmacyTodo.rows : wl.refillFollowup.rows;
-  const todoAllowedHeaders = ['Priority', 'Pharmacy patient ID', 'Status', 'Date contacted', 'Notes', 'Pharmacy finding', 'Days in this stage'];
-  const baseHeaders = sheet === 'todo' ? todoAllowedHeaders : wl.refillFollowup.headers;
-  const row = rows.find(r => r.id === id);
-  if (!row) return;
-
-  trackClientAuditEvent('PATIENT_RECORD_VIEW', {
-    sheet,
-    rowId: id,
-    patientId: row['Pharmacy patient ID'] || id,
-    alphaMemberId: row['Alpha member ID'] || ''
-  });
-
-  const extraAuditHeaders = ['Updated by', 'Updated at'].filter(h => !baseHeaders.includes(h) && row[h]);
-  const headers = [...baseHeaders, ...extraAuditHeaders];
-
-  document.getElementById('modalSheetEyebrow').textContent = sheet === 'todo' ? 'PHARMACY TO-DO · 7 WORKLIST FIELDS' : 'REFILL FOLLOW-UP · ALL 13 COLUMNS';
-  document.getElementById('modalPatientTitle').textContent = `Patient ${row['Pharmacy patient ID']}`;
-
-  const body = document.getElementById('modalPatientBody');
-  body.innerHTML = headers.map(h => `
-    <div class="detail-item">
-      <div class="detail-item-lbl">${escapeAttr(h)}</div>
-      <div class="detail-item-val">${row[h] !== null && row[h] !== undefined && row[h] !== '' ? escapeAttr(row[h]) : '—'}</div>
-    </div>
-  `).join('');
-
-  document.getElementById('patientDetailModal').classList.add('open');
-}
-
-function closePatientModal() {
-  document.getElementById('patientDetailModal').classList.remove('open');
 }
 
 function openDefinitionsModal() {
@@ -2451,7 +1002,7 @@ function renderChatThread(pendingUserQuestion = null) {
   const greetingHtml = `
     <div class="chat-msg chat-msg-ai">
       <div class="chat-sender">Bridge AI</div>
-      <div class="chat-bubble">What question can I answer? Ask about financials, channels, employers, doses, prescribers, payers, or worklists—I will include tables and interactive charts.</div>
+      <div class="chat-bubble">What question can I answer? Ask about program financials, patient sources, paid media ROI, first-fill funnel conversion, refill persistence, cohort retention, or medication mix—I will include tables and interactive charts.</div>
     </div>
   `;
 
@@ -2563,18 +1114,12 @@ async function refreshSecurityModalData() {
     const elLogins = document.getElementById('secKpiLogins');
     const elOnlineSub = document.getElementById('secKpiOnlineSub');
     const elViews = document.getElementById('secKpiViews');
-    const elPatientViews = document.getElementById('secKpiPatientViews');
-    const elEdits = document.getElementById('secKpiEdits');
     const elAiQueries = document.getElementById('secKpiAiQueries');
-    const elExports = document.getElementById('secKpiExports');
 
     if (elLogins) elLogins.textContent = String(us.totalLogins ?? 0);
     if (elOnlineSub) elOnlineSub.textContent = `${us.activeUsersOnline ?? 1} of ${us.totalNamedUsers ?? 1} active now`;
     if (elViews) elViews.textContent = String(us.totalPageAndPatientViews ?? 0);
-    if (elPatientViews) elPatientViews.textContent = String(us.totalPatientRecordViews ?? 0);
-    if (elEdits) elEdits.textContent = String(us.totalWorklistEdits ?? 0);
     if (elAiQueries) elAiQueries.textContent = String(us.totalAiQuestions ?? 0);
-    if (elExports) elExports.textContent = String(us.totalExports ?? 0);
 
     const mfaSel = document.getElementById('secMyMfaMethod');
     const mfaEmail = document.getElementById('secMyMfaEmail');
@@ -2606,11 +1151,6 @@ async function refreshSecurityModalData() {
 
     const thActions = document.getElementById('thAdminUserActions');
     if (thActions) thActions.style.display = isBridgeAdmin ? 'table-cell' : 'none';
-
-    const btnExpAudit = document.getElementById('btnExportAuditCsv');
-    const btnExpQa = document.getElementById('btnExportQaCsv');
-    if (btnExpAudit) btnExpAudit.style.display = isBridgeAdmin ? 'inline-flex' : 'none';
-    if (btnExpQa) btnExpQa.style.display = isBridgeAdmin ? 'inline-flex' : 'none';
 
     const tbodyUsers = document.getElementById('tbodySecurityUsers');
     if (tbodyUsers) {
@@ -2645,7 +1185,7 @@ async function refreshSecurityModalData() {
               <div style="font-size:0.73rem;color:#475569">${escapeAttr(u.email || '')}</div>
             </td>
             <td style="font-size:0.72rem;color:#334155">
-              <div><strong>${st.loginCount || 0}</strong> logins · <strong>${st.viewCount || 0}</strong> views · <strong>${st.editCount || 0}</strong> edits · <strong>${st.aiQueryCount || 0}</strong> AI</div>
+              <div><strong>${st.loginCount || 0}</strong> logins · <strong>${st.viewCount || 0}</strong> views · <strong>${st.aiQueryCount || 0}</strong> AI</div>
               <div style="color:#64748b;font-size:0.69rem">Last active: ${escapeAttr(lastActStr)}</div>
             </td>
             <td><span style="color:#059669;font-weight:700;font-size:0.75rem">Mandatory (Email / App)</span></td>
@@ -2708,9 +1248,7 @@ function renderSecurityAuditTable() {
 
   const catBadgeStyle = (cat) => {
     if (cat === 'view_access') return 'background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd';
-    if (cat === 'worklist_edit') return 'background:#fef3c7;color:#92400e;border:1px solid #fde68a';
     if (cat === 'ai_qa') return 'background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe';
-    if (cat === 'export') return 'background:#dcfce7;color:#166534;border:1px solid #bbf7d0';
     return '';
   };
 
@@ -2797,14 +1335,6 @@ function renderSecurityQaHistoryTable() {
       </tr>
     `;
   }).join('');
-}
-
-function exportSecurityAuditCsv() {
-  window.location.href = '/api/security/export/audit-csv';
-}
-
-function exportSecurityQaCsv() {
-  window.location.href = '/api/security/export/qa-csv';
 }
 
 async function adminUnlockUserAccount(username) {

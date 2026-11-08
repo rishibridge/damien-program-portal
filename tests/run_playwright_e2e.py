@@ -9,7 +9,10 @@ import urllib.request
 import urllib.error
 from playwright.sync_api import sync_playwright
 
-BASE_URL = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:3100"
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+BASE_URL = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:3000"
 DAMIEN_USER = "damien"
 DAMIEN_PASS = "bridge2026"
 METRO_USER = "metro"
@@ -45,7 +48,7 @@ def run_suite():
     print(f"\n=== Running Web-Login & Multi-Client E2E Suite against {BASE_URL} ===\n")
 
     # -------------------------------------------------------------------------
-    # SECTION 1: NO BASIC AUTH POPUP & WEB LOGIN SECURITY (4 checks)
+    # SECTION 1: NO BASIC AUTH POPUP & WEB LOGIN SECURITY
     # -------------------------------------------------------------------------
     code_root, hdrs_root, _ = http_get_raw("/")
     www_auth_root = hdrs_root.get("WWW-Authenticate") or hdrs_root.get("www-authenticate") or ""
@@ -68,7 +71,6 @@ def run_suite():
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        # Single standard browser context (NO http_credentials Basic Auth!)
         ctx = browser.new_context(viewport={"width": 1440, "height": 900})
         page = ctx.new_page()
 
@@ -82,7 +84,7 @@ def run_suite():
             f"url={page.url}",
         )
 
-        # Verify Clean Login Page (Item 2): Title is 'Program Analytics', logo has transparent background, no verbose subtitle/footer
+        # Verify Clean Login Page: Title is 'Program Analytics', logo has transparent background, no verbose subtitle/footer
         login_ui_check = page.evaluate("""() => {
             const titleText = document.querySelector('.login-title')?.innerText.trim() || '';
             const hasSubtitle = Boolean(document.querySelector('.login-subtitle'));
@@ -134,11 +136,6 @@ def run_suite():
         page.click("#mfaSubmitBtn")
         page.wait_for_selector("#summaryKpiRow .kpi", timeout=20000)
 
-        # Ensure clean baseline for Damien
-        page.evaluate("fetch('/api/worklist/reset', {method:'POST'})")
-        page.reload(wait_until="networkidle")
-        page.wait_for_selector("#summaryKpiRow .kpi", timeout=15000)
-
         d_title = page.title()
         d_logo = page.locator("#sidebarLogoName").inner_text().strip()
         record(
@@ -168,14 +165,105 @@ def run_suite():
             str(d_kpis),
         )
 
-        d_pulse = page.locator("#summaryWorklistPulse .kpi .kpi-val").all_inner_texts()
+        # ---------------------------------------------------------------------
+        # SECTION 2B: VERIFY 100% REMOVAL OF ALL EXCEL-DEPENDENT FEATURES
+        # ---------------------------------------------------------------------
+        nav_views = page.evaluate("""() => {
+            return Array.from(document.querySelectorAll('#sidebarNav .nav-btn')).map(b => b.getAttribute('data-view'));
+        }""")
+        expected_nav = ["summary", "financials", "sources", "paidmedia", "funnel", "refill", "medmix", "ask"]
         record(
-            "DAMIEN-04",
-            "Worklist pulse queue counts ('101', '37', '86', '186')",
-            d_pulse == ["101", "37", "86", "186"],
-            str(d_pulse),
+            "NO-EXCEL-01",
+            "Sidebar navigation contains strictly the 8 PowerPoint-driven views + Ask Bridge AI (zero 'worklist' or 'enrollment' tabs)",
+            nav_views == expected_nav,
+            f"nav_views={nav_views}",
         )
 
+        dom_excel_check = page.evaluate("""() => {
+            const removedIds = [
+                'view-worklist',
+                'view-enrollment',
+                'heroWorklistBtn',
+                'summaryWorklistPulse',
+                'simTodoSlider',
+                'simRefillSlider',
+                'simMarginSlider',
+                'simOutMargin',
+                'simOutProceeds',
+                'funnelWorklistNoteBox',
+                'btnRefillQueueLink',
+                'patientDetailModal',
+                'btnExportAuditCsv',
+                'btnExportQaCsv',
+                'secKpiPatientViews',
+                'secKpiEdits',
+                'secKpiExports'
+            ];
+            const presentIds = removedIds.filter(id => Boolean(document.getElementById(id)));
+            const allButtonsText = Array.from(document.querySelectorAll('button')).map(b => b.innerText.trim());
+            const csvButtons = allButtonsText.filter(t => /export csv|download csv|excel/i.test(t));
+            return { presentIds, csvButtons };
+        }""")
+        record(
+            "NO-EXCEL-02",
+            "DOM contains zero Worklist, Enrollment Reporting, Simulator, Patient Modal, or CSV/Excel Export elements",
+            len(dom_excel_check["presentIds"]) == 0 and len(dom_excel_check["csvButtons"]) == 0,
+            str(dom_excel_check),
+        )
+
+        api_excel_check = page.evaluate("""async () => {
+            const pData = await fetch('/api/portal-data').then(r => r.json());
+            const keys = Object.keys(pData).sort();
+            const rWlPatch = await fetch('/api/worklist/todo/todo-1', { method: 'PATCH' });
+            const rWlReset = await fetch('/api/worklist/reset', { method: 'POST' });
+            const rWlExport = await fetch('/api/worklist/export/todo');
+            const rAuditCsv = await fetch('/api/security/export/audit-csv');
+            const rQaCsv = await fetch('/api/security/export/qa-csv');
+            return {
+                keys,
+                hasWorklists: 'worklists' in pData || 'worklistSummary' in pData,
+                hasEnrollmentOrAnalysis: 'enrollmentReporting' in pData || 'analysisWorkbook' in pData,
+                wlPatchStatus: rWlPatch.status,
+                wlResetStatus: rWlReset.status,
+                wlExportStatus: rWlExport.status,
+                auditCsvStatus: rAuditCsv.status,
+                qaCsvStatus: rQaCsv.status
+            };
+        }""")
+        expected_keys = sorted([
+            "meta",
+            "slide2_summary",
+            "slide3_financials",
+            "slide4_sources",
+            "slide5_paidMedia",
+            "slide6_funnel",
+            "slide7_refill",
+            "slide8_medMix",
+            "slide9_appendix",
+            "slide10_retention",
+        ])
+        record(
+            "NO-EXCEL-03",
+            "/api/portal-data returns strictly PowerPoint Slides 1-10 keys (zero worklists, enrollmentReporting, or analysisWorkbook)",
+            api_excel_check["keys"] == expected_keys
+            and not api_excel_check["hasWorklists"]
+            and not api_excel_check["hasEnrollmentOrAnalysis"],
+            f"keys={api_excel_check['keys']}",
+        )
+        record(
+            "NO-EXCEL-04",
+            "Removed Excel/Worklist & CSV Export API routes (/api/worklist/*, /api/security/export/*) return 404 Not Found",
+            api_excel_check["wlPatchStatus"] == 404
+            and api_excel_check["wlResetStatus"] == 404
+            and api_excel_check["wlExportStatus"] == 404
+            and api_excel_check["auditCsvStatus"] == 404
+            and api_excel_check["qaCsvStatus"] == 404,
+            str(api_excel_check),
+        )
+
+        # ---------------------------------------------------------------------
+        # SECTION 2C: DAMIEN POWERPOINT SLIDES 3-10 & ASK BRIDGE AI
+        # ---------------------------------------------------------------------
         page.click("button[data-view='financials']")
         fin_kpis = page.locator("#financialsKpiRow .kpi .kpi-val").all_inner_texts()
         record(
@@ -188,112 +276,20 @@ def run_suite():
         fin_rows = page.locator("#tbodyYtdFinancials tr").count()
         record("DAMIEN-06", "Slide 3 YTD table has exact 9 rows", fin_rows == 9, f"rows={fin_rows}")
 
-        sim_margin = page.locator("#simOutMargin").inner_text().strip()
-        sim_proc = page.locator("#simOutProceeds").inner_text().strip()
-        record(
-            "DAMIEN-07",
-            "Financial simulator default outputs (+$65,325 lift, $1,027,016 projected YTD)",
-            sim_margin == "+$65,325" and sim_proc == "$1,027,016",
-            f"margin={sim_margin}, proceeds={sim_proc}",
-        )
-
         page.click("button[data-view='sources']")
         src_rows = page.locator("#tbodySources tr").count()
+        src_headers = [h.strip() for h in page.locator("#tableSources thead th").all_inner_texts()]
+        src_first_cells = page.locator("#tbodySources tr").first.locator("td").count()
         src_badge = page.locator("#sourcesMatchedBadge").inner_text().strip()
         record(
             "DAMIEN-08",
-            "Slide 4 Patient Sources table has 6 rows & '1,952 Matched Member Fills' badge",
-            src_rows == 6 and src_badge == "1,952 Matched Member Fills",
-            f"rows={src_rows}, badge='{src_badge}'",
-        )
-
-        # Verify Enrollment Reporting nav placement (directly below Patient Sources) & functionality
-        nav_views = page.evaluate("""() => {
-            return Array.from(document.querySelectorAll('#sidebarNav .nav-btn')).map(b => b.getAttribute('data-view'));
-        }""")
-        src_idx = nav_views.index("sources") if "sources" in nav_views else -1
-        enr_idx = nav_views.index("enrollment") if "enrollment" in nav_views else -1
-        record(
-            "DAMIEN-08B",
-            "Enrollment Reporting nav item is positioned directly below Patient Sources",
-            src_idx != -1 and enr_idx == src_idx + 1,
-            f"nav_views={nav_views}",
-        )
-
-        page.click("button[data-view='enrollment']")
-        enr_kpis_ytd = page.locator("#enrollmentKpiRow .kpi .kpi-val").all_inner_texts()
-        enr_ch_rows = page.locator("#tbodyEnrollmentChannels tr").count()
-        enr_emp_rows = page.locator("#tbodyEnrollmentEmployers tr").count()
-        record(
-            "DAMIEN-08C",
-            "Enrollment Reporting default YTD KPIs (1,036 enrolled, 264 disenrolled, 862 active, +837 net, 49.6% broker share), 7 channel rows (6+Total), 39 employer rows",
-            enr_kpis_ytd[0] == "1,036"
-            and enr_kpis_ytd[1] == "264"
-            and enr_kpis_ytd[2] == "862"
-            and enr_ch_rows == 7
-            and enr_emp_rows == 39,
-            f"kpis={enr_kpis_ytd}, ch_rows={enr_ch_rows}, emp_rows={enr_emp_rows}",
-        )
-
-        # Filter Enrollment Reporting by Timeframe = Sep
-        page.select_option("#enrollTimeframeFilter", "Sep")
-        enr_kpis_sep = page.locator("#enrollmentKpiRow .kpi .kpi-val").all_inner_texts()
-        record(
-            "DAMIEN-08D",
-            "Enrollment Reporting Timeframe filter 'Sep' updates KPIs (273 enrolled, 91 disenrolled, 862 active, +207 net, 62.3% broker share)",
-            enr_kpis_sep == ["273", "91", "862", "+207", "62.3%"],
-            f"sep_kpis={enr_kpis_sep}",
-        )
-
-        # Filter Enrollment Reporting by Channel = EPIC & Timeframe = YTD
-        page.select_option("#enrollTimeframeFilter", "YTD")
-        page.select_option("#enrollChannelFilter", "EPIC")
-        enr_kpis_epic = page.locator("#enrollmentKpiRow .kpi .kpi-val").all_inner_texts()
-        epic_emp_rows = page.locator("#tbodyEnrollmentEmployers tr").count()
-        record(
-            "DAMIEN-08E",
-            "Enrollment Reporting Channel filter 'EPIC' updates KPIs (452 enrolled, 68 disenrolled, 384 active) and filters employers to EPIC groups",
-            enr_kpis_epic[0] == "452" and enr_kpis_epic[1] == "68" and enr_kpis_epic[2] == "384" and epic_emp_rows >= 25,
-            f"epic_kpis={enr_kpis_epic}, epic_emp_rows={epic_emp_rows}",
-        )
-
-        # Search Employer = 'City of Evansville'
-        page.select_option("#enrollChannelFilter", "ALL")
-        page.fill("#enrollEmployerSearch", "City of Evansville")
-        evans_kpis = page.locator("#enrollmentKpiRow .kpi .kpi-val").all_inner_texts()
-        evans_rows = page.locator("#tbodyEnrollmentEmployers tr").count()
-        page.click("#btnResetEnrollmentFilters")
-        record(
-            "DAMIEN-08F",
-            "Enrollment Reporting Employer search 'City of Evansville' dynamically filters to City of Evansville (80 enrolled, 9 disenrolled, 71 active)",
-            evans_rows == 1 and evans_kpis[0] == "80" and evans_kpis[1] == "9" and evans_kpis[2] == "71",
-            f"evans_kpis={evans_kpis}, evans_rows={evans_rows}",
-        )
-
-        # Verify AllKin Utilization Screenshot UI elements (4 color-coded KPI cards, horizontal channel progress bars, SVG sparklines, Copy Employee Link / Copy HR buttons)
-        util_ui_check = page.evaluate("""() => {
-            const kpiCards = document.querySelectorAll('#enrollmentKpiRow .util-kpi-card');
-            const progBars = document.querySelectorAll('#enrollmentChannelProgressList .channel-progress-item');
-            const sparklines = document.querySelectorAll('#tbodyEnrollmentEmployers svg polyline');
-            const copyBtns = document.querySelectorAll('#tbodyEnrollmentEmployers .btn-copy-link');
-            const hlText = document.getElementById('enrollmentHeadline')?.innerText || '';
-            return {
-                kpiCount: kpiCards.length,
-                progBarCount: progBars.length,
-                sparklineCount: sparklines.length,
-                copyBtnCount: copyBtns.length,
-                hlText
-            };
-        }""")
-        record(
-            "DAMIEN-08G",
-            "AllKin Utilization UI: 4 KPI cards, 6 horizontal channel progress bars, 39 employer SVG sparklines, and Copy Employee Link / Copy HR buttons",
-            util_ui_check["kpiCount"] == 4
-            and util_ui_check["progBarCount"] == 6
-            and util_ui_check["sparklineCount"] == 39
-            and util_ui_check["copyBtnCount"] >= 70
-            and "Utilization" in util_ui_check["hlText"],
-            str(util_ui_check),
+            "Slide 4 Patient Sources table has 6 rows, exact 8 PowerPoint columns (no Worklist column), & '1,952 Matched Member Fills' badge",
+            src_rows == 6
+            and src_first_cells == 8
+            and len(src_headers) == 8
+            and "Worklist" not in src_headers
+            and src_badge == "1,952 Matched Member Fills",
+            f"rows={src_rows}, cols={src_first_cells}, headers={src_headers}, badge='{src_badge}'",
         )
 
         page.click("button[data-view='paidmedia']")
@@ -309,22 +305,22 @@ def run_suite():
         page.click("button[data-view='funnel']")
         funnel_title = page.locator("#funnelChartTitle").inner_text().strip()
         drop_nums = page.locator("#funnelDropoffCards .dropoff-num").all_inner_texts()
+        drop_text = page.locator("#funnelDropoffCards").inner_text()
         record(
             "DAMIEN-10",
-            "Slide 6 Funnel title (760 patients) & dropoff cards (76, 76, 85)",
-            "760 patients" in funnel_title and drop_nums == ["76", "76", "85"],
+            "Slide 6 Funnel title (760 patients) & dropoff cards (76, 76, 85) with zero worklist links",
+            "760 patients" in funnel_title and drop_nums == ["76", "76", "85"] and "Inspect patients" not in drop_text,
             f"title='{funnel_title}', dropoffs={drop_nums}",
         )
 
         page.click("button[data-view='refill']")
         refill_steps = page.locator("#tbodyRefillSteps tr").count()
         ret_rows = page.locator("#tbodyRetentionMatrix tr").count()
-        refill_btn = page.locator("#btnRefillQueueLink").inner_text().strip()
         record(
             "DAMIEN-11",
-            "Slide 7 & 10 Refill steps (7 rows), Retention matrix (9 rows), Queue button (37)",
-            refill_steps == 7 and ret_rows == 9 and "(37)" in refill_btn,
-            f"steps={refill_steps}, ret={ret_rows}, btn='{refill_btn}'",
+            "Slide 7 & 10 Refill steps (7 rows) & Retention matrix (9 rows)",
+            refill_steps == 7 and ret_rows == 9,
+            f"steps={refill_steps}, ret={ret_rows}",
         )
 
         page.click("button[data-view='medmix']")
@@ -335,57 +331,6 @@ def run_suite():
             "Slide 8 Med Mix header ('September Dispenses (673)') & callouts (411, 256, 6)",
             med_hdr == "September Dispenses (673)" and med_vals == ["411", "256", "6"],
             f"hdr='{med_hdr}', vals={med_vals}",
-        )
-
-        page.click("button[data-view='worklist']")
-        todo_rows = page.locator("#tbodyWorklistTodo tr").count()
-        todo_headers = [h.strip().upper() for h in page.locator("#wlSubtab-todo table thead th").all_inner_texts()]
-        todo_first_row_cells = page.locator("#tbodyWorklistTodo tr").first.locator("td").count()
-        prio_opts = page.locator("#todoPriorityFilter option").all_inner_texts()
-        record(
-            "DAMIEN-13",
-            "Worklist To-Do has 101 rows, exact 7 columns (Priority, ID, Status, Contacted, Notes, Finding, Days), and dynamic priority filter options",
-            todo_rows == 101
-            and todo_headers == ["PRIORITY", "ID", "STATUS", "CONTACTED", "NOTES", "FINDING", "DAYS"]
-            and todo_first_row_cells == 7
-            and "All Priorities (101)" in prio_opts[0]
-            and len(prio_opts) == 4,
-            f"rows={todo_rows}, headers={todo_headers}, cells={todo_first_row_cells}, opts={prio_opts}",
-        )
-
-        page.select_option("#todoFuzzyFilter", "fuzzy")
-        fuzzy_todo_rows = page.locator("#tbodyWorklistTodo tr").count()
-        page.select_option("#todoFuzzyFilter", "")
-        record(
-            "DAMIEN-14",
-            "Worklist To-Do fuzzy filter shows exact 15 patients with possible Data Fix match",
-            fuzzy_todo_rows == 15,
-            f"fuzzy_todo_rows={fuzzy_todo_rows}",
-        )
-
-        page.click("#wlTabBtn-refill")
-        refill_wl_rows = page.locator("#tbodyWorklistRefill tr").count()
-        record("DAMIEN-15", "Worklist Refill Follow-Up has 37 rows", refill_wl_rows == 37, f"rows={refill_wl_rows}")
-
-        page.click("#wlTabBtn-fixes")
-        unmatched_rows = page.locator("#tbodyFixesUnmatched tr").count()
-        noid_rows = page.locator("#tbodyFixesNoId tr").count()
-        sep_glp1_badges = page.locator("#tbodyFixesNoId .know-badge").count()
-        record(
-            "DAMIEN-16",
-            "Worklist Data Fixes has 31 Unmatched rows, 55 No-ID rows, and exact 51 'Sep P&L GLP-1 Fill' badges",
-            unmatched_rows == 31 and noid_rows == 55 and sep_glp1_badges == 51,
-            f"unmatched={unmatched_rows}, noid={noid_rows}, sep_glp1={sep_glp1_badges}",
-        )
-
-        page.click("#wlTabBtn-ended")
-        ended_wl_rows = page.locator("#tbodyWorklistEnded tr").count()
-        ended_kpis = page.locator("#endedStageKpiRow .kpi .kpi-val").all_inner_texts()
-        record(
-            "DAMIEN-17",
-            "Worklist Ended – Never Filled has 186 rows & stage KPIs (74, 62, 47, 3)",
-            ended_wl_rows == 186 and ended_kpis == ["74", "62", "47", "3"],
-            f"rows={ended_wl_rows}, kpis={ended_kpis}",
         )
 
         page.click("#btnOpenDefinitions")
@@ -420,125 +365,36 @@ def run_suite():
             str(ai_rich_dom),
         )
 
-        # Verify analysisWorkbook A1-A8 structure & zero member-level data in analysisWorkbook
-        aw_check = page.evaluate("""async () => {
-            const resp = await fetch('/api/portal-data');
-            const d = await resp.json();
-            const aw = d.analysisWorkbook || {};
-            const awStr = JSON.stringify(aw);
+        # Verify Ask Bridge AI answers Patient Sources, First-Fill Funnel, Refill/Retention, and Med Mix strictly from PowerPoint Slides 1-10
+        qa_slides_test = page.evaluate("""async () => {
+            const rSrc = await fetch('/api/ask', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({question: 'Compare our Patient Sources by active members, first-fill conversion, and YTD pharmacy margin.', mode: 'instant'})
+            }).then(r => r.json());
+            const rFun = await fetch('/api/ask', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({question: 'Break down our First-Fill Funnel conversion stages and drop-off points.', mode: 'instant'})
+            }).then(r => r.json());
+            const rMed = await fetch('/api/ask', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({question: 'What is our GLP-1 medication mix across Wegovy Pen, Wegovy Pill, and Ozempic in September?', mode: 'instant'})
+            }).then(r => r.json());
             return {
-                privacyPolicy: aw.privacyPolicy,
-                clientScope: aw.clientScope,
-                sepRev: aw.exhibits?.monthlyPnL?.Revenue?.Sep,
-                augRev: aw.exhibits?.monthlyPnL?.Revenue?.Aug,
-                ytdCanc: aw.exhibits?.cancellationsBySourceMonthly?.find(r => r.source === 'Total')?.YTD,
-                sepTracker: aw.exhibits?.activePatientTrackerMonthly?.Sep,
-                doseCount: aw.exhibits?.dispensesByDoseMonthly?.length,
-                employerCount: aw.alphaAnalytics?.allEmployerGroups?.length,
-                topPrescriber: aw.dispenseAnalytics?.byPrescriber?.[0]?.prescriber,
-                topPrescriberFills: aw.dispenseAnalytics?.byPrescriber?.[0]?.completedFills,
-                topPayer: aw.dispenseAnalytics?.byPrimaryThirdPartyPayer?.[0]?.primaryPayer,
-                topPayerFills: aw.dispenseAnalytics?.byPrimaryThirdPartyPayer?.[0]?.completedFills,
-                hasUuidOrPatientIdKey: awStr.includes('user_uuid') || awStr.includes('Patient Alternate ID') || awStr.includes('6d3f1831')
+                srcReply: rSrc.reply || '',
+                funReply: rFun.reply || '',
+                medReply: rMed.reply || ''
             };
         }""")
         record(
             "DAMIEN-20",
-            "Analysis.xlsx (A1-A8) aggregate tables loaded in portal_data.json with ZERO member-level IDs",
-            aw_check["privacyPolicy"] == "AGGREGATE_ONLY_NO_MEMBER_LEVEL_DATA"
-            and aw_check["sepRev"] == 769074.12
-            and aw_check["augRev"] == 558672.02
-            and aw_check["ytdCanc"] == 264
-            and aw_check["sepTracker"] == 862
-            and aw_check["doseCount"] == 14
-            and aw_check["employerCount"] >= 35
-            and aw_check["topPrescriber"] == "Townsend, Fawn"
-            and aw_check["topPrescriberFills"] == 402
-            and aw_check["topPayer"] == "Wegovy Savings Card"
-            and aw_check["topPayerFills"] == 1897
-            and not aw_check["hasUuidOrPatientIdKey"],
-            str(aw_check),
-        )
-
-        # Free-form AI Q&A tests against Analysis.xlsx (both instant/deterministic and full AI endpoint)
-        qa_monthly_rev = page.evaluate("""async () => {
-            const r = await fetch('/api/ask', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({question: 'What was our monthly pharmacy revenue in August and September 2026, and what was the gross margin per Rx?'})
-            });
-            return await r.json();
-        }""")
-        reply_rev = qa_monthly_rev.get("reply", "")
-        record(
-            "DAMIEN-21",
-            "Ask Bridge AI answers monthly pharmacy revenue ($558,672 Aug, $769,074 Sep) from Analysis.xlsx",
-            ("558,672" in reply_rev) and ("769,074" in reply_rev) and ("911" in reply_rev),
-            reply_rev[:160].replace("\n", " "),
-        )
-
-        qa_doses = page.evaluate("""async () => {
-            const r = await fetch('/api/ask', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({question: 'What is the breakdown of Wegovy and Ozempic dispenses by specific dose strength in September and YTD?'})
-            });
-            return await r.json();
-        }""")
-        reply_doses = qa_doses.get("reply", "")
-        record(
-            "DAMIEN-22",
-            "Ask Bridge AI answers dose-level dispenses (Wegovy 0.25mg 400 YTD, Wegovy 0.5mg 332 YTD, Wegovy 1.5mg Tablet 263 YTD)",
-            ("400" in reply_doses) and ("332" in reply_doses) and ("263" in reply_doses),
-            reply_doses[:160].replace("\n", " "),
-        )
-
-        qa_presc = page.evaluate("""async () => {
-            const r = await fetch('/api/ask', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({question: 'Who are our top prescribers by completed fills, pharmacy revenue, and margin?'})
-            });
-            return await r.json();
-        }""")
-        reply_presc = qa_presc.get("reply", "")
-        record(
-            "DAMIEN-23",
-            "Ask Bridge AI answers prescriber analytics (Townsend 402 fills, Staiger 370, Pedersen 366) from Damien Dispense Data",
-            ("Townsend" in reply_presc and "402" in reply_presc) and ("Staiger" in reply_presc and "370" in reply_presc),
-            reply_presc[:160].replace("\n", " "),
-        )
-
-        qa_payer = page.evaluate("""async () => {
-            const r = await fetch('/api/ask', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({question: 'What is the breakdown of completed fills and revenue by primary and secondary third party payer and savings card?'})
-            });
-            return await r.json();
-        }""")
-        reply_payer = qa_payer.get("reply", "")
-        record(
-            "DAMIEN-24",
-            "Ask Bridge AI answers third-party payer & savings card analytics (Wegovy Savings Card 1,897 fills, Connective RX 54, Anthem 38)",
-            ("1,897" in reply_payer or "1897" in reply_payer) and ("Connective" in reply_payer) and ("Anthem" in reply_payer),
-            reply_payer[:160].replace("\n", " "),
-        )
-
-        qa_canc = page.evaluate("""async () => {
-            const r = await fetch('/api/ask', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({question: 'How many membership cancellations have we had in September and YTD by source?'})
-            });
-            return await r.json();
-        }""")
-        reply_canc = qa_canc.get("reply", "")
-        record(
-            "DAMIEN-25",
-            "Ask Bridge AI answers membership cancellations by source and month (264 YTD / 25.5%, 91 in Sep / 33.3%, Paid Media 151, EPIC 68)",
-            ("264" in reply_canc) and ("91" in reply_canc) and ("151" in reply_canc) and ("68" in reply_canc),
-            reply_canc[:160].replace("\n", " "),
+            "Ask Bridge AI answers Patient Sources (452 EPIC YTD, 417 Paid Media YTD), Funnel (760 enrolled, 523 filled), and Medication Mix (411 Wegovy Pen, 256 Pill, 6 Ozempic) strictly from Slides 1-10",
+            ("452" in qa_slides_test["srcReply"] and "417" in qa_slides_test["srcReply"])
+            and ("760" in qa_slides_test["funReply"] and "523" in qa_slides_test["funReply"])
+            and ("411" in qa_slides_test["medReply"] and "256" in qa_slides_test["medReply"]),
+            f"srcLen={len(qa_slides_test['srcReply'])}, funLen={len(qa_slides_test['funReply'])}, medLen={len(qa_slides_test['medReply'])}",
         )
 
         qa_member_block = page.evaluate("""async () => {
@@ -568,23 +424,22 @@ def run_suite():
             d1_resp.get("reply", "")[:140].replace("\n", " "),
         )
 
-        # Verify natural conversational question with numbers / 'specific member' phrase is NOT falsely blocked and uses real LLM
+        # Verify natural conversational question synthesizes PowerPoint Slides 1-10 via real Gemini LLM
         qa_natural = page.evaluate("""async () => {
             const r = await fetch('/api/ask', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({question: 'Compare our EPIC broker channel vs Paid Media in terms of enrollments, disenrollments, active retention, and first-fill conversion. Which employers are driving EPIC growth in August and September?'})
+                body: JSON.stringify({question: 'Compare our EPIC vs Paid Media channels in terms of YTD enrollments, first-fill conversion, and YTD pharmacy gross margin.'})
             });
             return await r.json();
         }""")
         reply_nat = qa_natural.get("reply", "")
         record(
             "DAMIEN-27",
-            "Conversational AI synthesizes across PPTX & XLSX (EPIC 452 vs Paid Media 417, disenrollments 68 vs 151, City of Evansville 80, Hamilton Center 29) without false-positive blocks",
+            "Conversational AI synthesizes across PowerPoint Slides 1-10 (EPIC 452 YTD / $696,172 margin vs Paid Media 417 YTD / $673,832 margin) without false-positive blocks",
             not bool(qa_natural.get("memberLevelBlocked"))
             and ("452" in reply_nat)
-            and ("417" in reply_nat)
-            and ("Evansville" in reply_nat),
+            and ("417" in reply_nat),
             f"aiPowered={qa_natural.get('aiPowered')}, model={qa_natural.get('aiModel')}, reply={reply_nat[:140].replace(chr(10), ' ')}",
         )
 
@@ -609,11 +464,6 @@ def run_suite():
         page.fill("#mfaCodeInput", mfa_code_m)
         page.click("#mfaSubmitBtn")
         page.wait_for_selector("#summaryKpiRow .kpi", timeout=20000)
-
-        # Ensure clean baseline for Metro
-        page.evaluate("fetch('/api/worklist/reset', {method:'POST'})")
-        page.reload(wait_until="networkidle")
-        page.wait_for_selector("#summaryKpiRow .kpi", timeout=15000)
 
         m_title = page.title()
         m_logo = page.locator("#sidebarLogoName").inner_text().strip()
@@ -644,14 +494,6 @@ def run_suite():
             str(m_kpis),
         )
 
-        m_pulse = page.locator("#summaryWorklistPulse .kpi .kpi-val").all_inner_texts()
-        record(
-            "METRO-04",
-            "Metro Worklist pulse queue counts ('42', '18', '37', '60')",
-            m_pulse == ["42", "18", "37", "60"],
-            str(m_pulse),
-        )
-
         page.click("button[data-view='financials']")
         m_fin_kpis = page.locator("#financialsKpiRow .kpi .kpi-val").all_inner_texts()
         record(
@@ -661,34 +503,14 @@ def run_suite():
             str(m_fin_kpis),
         )
 
-        m_todo_max = page.locator("#simTodoSlider").get_attribute("max")
-        m_refill_max = page.locator("#simRefillSlider").get_attribute("max")
-        m_margin_val = page.locator("#simMarginSlider").input_value()
-        record(
-            "METRO-06",
-            "Metro Financial Simulator bounds dynamically adapt (max=42 To-Do, max=18 Refill, $895 margin/fill)",
-            m_todo_max == "42" and m_refill_max == "18" and m_margin_val == "895",
-            f"todoMax={m_todo_max}, refillMax={m_refill_max}, margin={m_margin_val}",
-        )
-
         page.click("button[data-view='funnel']")
         m_funnel_title = page.locator("#funnelChartTitle").inner_text().strip()
-        m_funnel_note = page.locator("#funnelWorklistNoteBox").inner_text()
+        m_drop_nums = page.locator("#funnelDropoffCards .dropoff-num").all_inner_texts()
         record(
             "METRO-07",
-            "Metro Funnel dynamically shows 500 pre-Sep patients and Open Pharmacy To-Do (42)",
-            "500 patients" in m_funnel_title and "Open Pharmacy To-Do (42)" in m_funnel_note,
-            f"title='{m_funnel_title}'",
-        )
-
-        page.click("button[data-view='worklist']")
-        m_todo_rows = page.locator("#tbodyWorklistTodo tr").count()
-        m_prio_first = page.locator("#todoPriorityFilter option").first.inner_text()
-        record(
-            "METRO-08",
-            "Metro Worklist To-Do has 42 rows & dynamic dropdown 'All Priorities (42)'",
-            m_todo_rows == 42 and m_prio_first == "All Priorities (42)",
-            f"rows={m_todo_rows}, firstOpt='{m_prio_first}'",
+            "Metro Funnel dynamically shows 500 pre-Sep patients and Metro dropoff cards",
+            "500 patients" in m_funnel_title and len(m_drop_nums) == 3,
+            f"title='{m_funnel_title}', dropoffs={m_drop_nums}",
         )
 
         body_text_m = page.locator("body").inner_text()
@@ -711,46 +533,6 @@ def run_suite():
             ai_reply_m[:160].replace("\n", " "),
         )
 
-        qa_metro_presc = page.evaluate("""async () => {
-            const r = await fetch('/api/ask', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({question: 'Who are our top prescribers by completed fills and revenue?'})
-            });
-            return await r.json();
-        }""")
-        reply_m_presc = qa_metro_presc.get("reply", "")
-        record(
-            "METRO-11",
-            "Ask Bridge AI for Metro cites Metro prescribers (Vance 520, Rostova 460) with zero Damien leakage",
-            ("Vance" in reply_m_presc and "520" in reply_m_presc) and ("Rostova" in reply_m_presc) and ("damien" not in reply_m_presc.lower()),
-            reply_m_presc[:160].replace("\n", " "),
-        )
-
-        # ---------------------------------------------------------------------
-        # SECTION 4: CROSS-TENANT WORKLIST EDIT PERSISTENCE & ISOLATION
-        # ---------------------------------------------------------------------
-        page.click("button[data-view='worklist']")
-        page.click("#wlTabBtn-todo")
-        first_row_m = page.locator("#tbodyWorklistTodo tr").first
-        first_row_m.locator("select.edit-cell-select").select_option("Contacted patient")
-        note_input_m = first_row_m.locator("input[type='text'].edit-cell-input")
-        note_input_m.fill("Metro pharmacist verified refill")
-        note_input_m.dispatch_event("change")
-        page.wait_for_timeout(600)
-
-        page.reload(wait_until="networkidle")
-        page.click("button[data-view='worklist']")
-        reloaded_row_m = page.locator("#tbodyWorklistTodo tr").first
-        persisted_status_m = reloaded_row_m.locator("select.edit-cell-select").input_value()
-        persisted_note_m = reloaded_row_m.locator("input[type='text'].edit-cell-input").input_value()
-        record(
-            "ISO-01",
-            "Metro worklist edits persist across page reloads",
-            persisted_status_m == "Contacted patient" and persisted_note_m == "Metro pharmacist verified refill",
-            f"status='{persisted_status_m}', note='{persisted_note_m}'",
-        )
-
         # Verify query/header spoofing (?clientId=damien) while logged in as Metro is ignored
         spoof_client = page.evaluate(
             "fetch('/api/portal-data?clientId=damien', {headers:{'X-Client-Id':'damien'}}).then(r=>r.json()).then(d=>d.meta.clientId)"
@@ -760,17 +542,6 @@ def run_suite():
             "Query/Header tenant spoofing (?clientId=damien) is strictly ignored when logged in as Metro",
             spoof_client == "metro",
             f"returned_clientId='{spoof_client}'",
-        )
-
-        # Reset Metro worklist back to clean baseline
-        page.click("#btnResetWorklistEdits")
-        page.wait_for_timeout(600)
-        reset_status_m = page.locator("#tbodyWorklistTodo tr").first.locator("select.edit-cell-select").input_value()
-        record(
-            "ISO-03",
-            "Resetting Metro worklist restores Metro baseline cleanly",
-            reset_status_m == "Not started",
-            f"reset_status='{reset_status_m}'",
         )
 
         # ---------------------------------------------------------------------
@@ -801,7 +572,6 @@ def run_suite():
         )
 
         # SEC-03: Mandatory MFA (No Turn-Off Checkbox) & Strict Role-Based Access Control (RBAC) for Standard User
-        user_badge_txt = page.locator("#badgeCurrentUser").inner_text().strip()
         page.click("#btnOpenSecurityModal")
         page.wait_for_selector("#securityModal.open", timeout=10000)
         page.wait_for_timeout(500)
@@ -960,7 +730,6 @@ def run_suite():
         page.wait_for_selector("#mfaForm", state="visible", timeout=15000)
         has_both_tabs = page.locator("#mfaTabEmail").is_visible() and page.locator("#mfaTabTotp").is_visible()
 
-        # Click Authenticator App tab and verify scannable QR code image & manual Base32 secret are rendered
         page.click("#mfaTabTotp")
         page.wait_for_selector("#mfaTotpQrImg", state="visible", timeout=10000)
         qr_check = page.evaluate("""() => {
@@ -972,7 +741,6 @@ def run_suite():
                 secretText: secretEl ? secretEl.innerText.trim() : ''
             };
         }""")
-        # Generate real 6-digit RFC 6238 TOTP code from the secret shown on screen!
         totp_key = base64.b32decode(qr_check["secretText"].upper())
         totp_counter = struct.pack(">Q", int(time.time()) // 30)
         totp_hmac = hmac.new(totp_key, totp_counter, hashlib.sha1).digest()
@@ -1003,32 +771,32 @@ def run_suite():
         )
 
         # SEC-08: Wrong 6-Digit MFA Code Rejection (401) & Resend Email Code Flow
-        mfa_edge_test = page.evaluate(f"""async () => {{
-            const r1 = await fetch('/api/auth/login', {{
+        mfa_edge_test = page.evaluate("""async () => {
+            const r1 = await fetch('/api/auth/login', {
                 method: 'POST',
-                headers: {{'Content-Type': 'application/json'}},
-                body: JSON.stringify({{ username: 'pharmacist.damien', password: 'DamienPharm2026!' }})
-            }});
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ username: 'pharmacist.damien', password: 'DamienPharm2026!' })
+            });
             const d1 = await r1.json();
-            const rWrong = await fetch('/api/auth/verify-mfa', {{
+            const rWrong = await fetch('/api/auth/verify-mfa', {
                 method: 'POST',
-                headers: {{'Content-Type': 'application/json'}},
-                body: JSON.stringify({{ challengeToken: d1.challengeToken, code: '000000', trustDevice: false }})
-            }});
-            const rResend = await fetch('/api/auth/resend-mfa', {{
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ challengeToken: d1.challengeToken, code: '000000', trustDevice: false })
+            });
+            const rResend = await fetch('/api/auth/resend-mfa', {
                 method: 'POST',
-                headers: {{'Content-Type': 'application/json'}},
-                body: JSON.stringify({{ challengeToken: d1.challengeToken }})
-            }});
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ challengeToken: d1.challengeToken })
+            });
             const dResend = await rResend.json();
-            const rRight = await fetch('/api/auth/verify-mfa', {{
+            const rRight = await fetch('/api/auth/verify-mfa', {
                 method: 'POST',
-                headers: {{'Content-Type': 'application/json'}},
-                body: JSON.stringify({{ challengeToken: d1.challengeToken, code: dResend.emailCodePreview, trustDevice: false }})
-            }});
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ challengeToken: d1.challengeToken, code: dResend.emailCodePreview, trustDevice: false })
+            });
             const dRight = await rRight.json();
-            return {{ wrongStatus: rWrong.status, resendOk: dResend.ok, rightOk: dRight.ok }};
-        }}""")
+            return { wrongStatus: rWrong.status, resendOk: dResend.ok, rightOk: dRight.ok };
+        }""")
         record(
             "SEC-08",
             "MFA Verification rejects wrong 6-digit code (401) and Resend Email Code (/api/auth/resend-mfa) issues fresh working code",
@@ -1068,32 +836,6 @@ def run_suite():
             str(pwd_policy_test),
         )
 
-        # SEC-10: Named-User Row Edit Attribution ('Updated by' & 'Updated at') in Worklist & Patient Detail Modal
-        row_attr_test = page.evaluate("""async () => {
-            const pData = await fetch('/api/portal-data').then(r => r.json());
-            const firstTodoId = pData.worklists.pharmacyTodo.rows[0].id;
-            const rPatch = await fetch(`/api/worklist/todo/${firstTodoId}`, {
-                method: 'PATCH',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ Status: 'Contacted patient', Notes: 'Verified by named pharmacist' })
-            });
-            const dPatch = await rPatch.json();
-            await fetch('/api/worklist/reset', { method: 'POST' });
-            return {
-                ok: dPatch.ok,
-                updatedBy: dPatch.row?.['Updated by'] || '',
-                updatedAt: dPatch.row?.['Updated at'] || ''
-            };
-        }""")
-        record(
-            "SEC-10",
-            "Worklist row edits automatically stamp 'Updated by' (Named User) and 'Updated at' (ISO timestamp)",
-            bool(row_attr_test["ok"])
-            and "pharmacist" in row_attr_test["updatedBy"].lower()
-            and len(row_attr_test["updatedAt"]) >= 19,
-            str(row_attr_test),
-        )
-
         # SEC-11: Bridge Super-Admin (rishi.damien) Full Directory & Audit Trail Visibility
         admin_audit_test = page.evaluate("""async () => {
             const r1 = await fetch('/api/auth/login', {
@@ -1114,7 +856,7 @@ def run_suite():
                 isBridgeAdmin: ov.isBridgeAdmin,
                 userCount: usernames.length,
                 hasDamienAndBrady: usernames.includes('damien') && usernames.includes('brady.admin'),
-                hasMfaAndEditEvents: eventTypes.includes('LOGIN_SUCCESS_MFA') && eventTypes.includes('WORKLIST_ROW_EDIT')
+                hasMfaEvents: eventTypes.includes('LOGIN_SUCCESS_MFA')
             };
         }""")
         record(
@@ -1123,21 +865,15 @@ def run_suite():
             bool(admin_audit_test["isBridgeAdmin"])
             and admin_audit_test["userCount"] >= 4
             and bool(admin_audit_test["hasDamienAndBrady"])
-            and bool(admin_audit_test["hasMfaAndEditEvents"]),
+            and bool(admin_audit_test["hasMfaEvents"]),
             str(admin_audit_test),
         )
 
-        # SEC-13: "Who Viewed What" Read & Navigation Telemetry (SECTION_VIEW, WORKLIST_SUBTAB_VIEW, PATIENT_RECORD_VIEW, DEFINITIONS_VIEW)
+        # SEC-13: "Who Viewed What" Read & Navigation Telemetry (SECTION_VIEW & DEFINITIONS_VIEW)
         who_viewed_test = page.evaluate("""async () => {
             switchView('financials');
-            switchView('worklist');
-            switchWorklistSubtab('refill');
-            switchWorklistSubtab('todo');
-            const firstId = PORTAL_DATA?.worklists?.pharmacyTodo?.rows?.[0]?.id;
-            if (firstId) {
-                openPatientModal('todo', firstId);
-                closePatientModal();
-            }
+            switchView('sources');
+            switchView('funnel');
             openDefinitionsModal();
             closeDefinitionsModal();
             await new Promise(r => setTimeout(r, 250));
@@ -1146,45 +882,37 @@ def run_suite():
             const summaries = (ov.auditEvents || []).slice(0, 12).map(e => e.summary || '');
             return {
                 hasSectionView: evTypes.includes('SECTION_VIEW'),
-                hasSubtabView: evTypes.includes('WORKLIST_SUBTAB_VIEW'),
-                hasPatientView: evTypes.includes('PATIENT_RECORD_VIEW'),
                 hasDefsView: evTypes.includes('DEFINITIONS_VIEW'),
                 sampleSummaries: summaries.slice(0, 4)
             };
         }""")
         record(
             "SEC-13",
-            "'Who Viewed What' telemetry logs SECTION_VIEW, WORKLIST_SUBTAB_VIEW, PATIENT_RECORD_VIEW & DEFINITIONS_VIEW with human-readable summaries",
+            "'Who Viewed What' telemetry logs SECTION_VIEW & DEFINITIONS_VIEW with human-readable summaries",
             bool(who_viewed_test["hasSectionView"])
-            and bool(who_viewed_test["hasSubtabView"])
-            and bool(who_viewed_test["hasPatientView"])
             and bool(who_viewed_test["hasDefsView"]),
             str(who_viewed_test),
         )
 
-        # SEC-14: Executive Usage KPI Row & Per-User Usage Counters in Security Modal
+        # SEC-14: Executive Usage KPI Row (3 KPIs: Sign-Ins, Section Views, AI Questions) & Per-User Usage Counters
         usage_kpi_test = page.evaluate("""async () => {
             await openSecurityModal();
             const kpis = {
                 logins: Number(document.getElementById('secKpiLogins')?.innerText || 0),
                 views: Number(document.getElementById('secKpiViews')?.innerText || 0),
-                patientViews: Number(document.getElementById('secKpiPatientViews')?.innerText || 0),
-                edits: Number(document.getElementById('secKpiEdits')?.innerText || 0),
                 aiQueries: Number(document.getElementById('secKpiAiQueries')?.innerText || 0)
             };
             const userRowsText = document.getElementById('tbodySecurityUsers')?.innerText || '';
             return {
                 kpis,
-                hasPerUserCounters: userRowsText.includes('logins') && userRowsText.includes('views') && userRowsText.includes('edits')
+                hasPerUserCounters: userRowsText.includes('logins') && userRowsText.includes('views') && userRowsText.includes('AI')
             };
         }""")
         record(
             "SEC-14",
-            "Admin Usage Dashboard renders non-zero Sign-Ins, Views, Patient Lookups, Edits & AI Question KPIs plus per-user activity counters",
+            "Admin Usage Dashboard renders non-zero Sign-Ins, Section Views & AI Questions KPIs plus per-user activity counters",
             usage_kpi_test["kpis"]["logins"] >= 1
             and usage_kpi_test["kpis"]["views"] >= 2
-            and usage_kpi_test["kpis"]["patientViews"] >= 1
-            and usage_kpi_test["kpis"]["edits"] >= 1
             and usage_kpi_test["kpis"]["aiQueries"] >= 1
             and bool(usage_kpi_test["hasPerUserCounters"]),
             str(usage_kpi_test),
@@ -1284,80 +1012,6 @@ def run_suite():
             and lifecycle_test["delProtectedStatus"] == 400
             and lifecycle_test["delCustomStatus"] == 200,
             str(lifecycle_test),
-        )
-
-        # SEC-18: Admin CSV Export Endpoints for Audit Log & Ask Bridge AI Q&A History
-        csv_export_test = page.evaluate("""async () => {
-            const rAudit = await fetch('/api/security/export/audit-csv');
-            const auditText = await rAudit.text();
-            const rQa = await fetch('/api/security/export/qa-csv');
-            const qaText = await rQa.text();
-            return {
-                auditStatus: rAudit.status,
-                auditHasHeader: auditText.includes('Timestamp (UTC),Tenant,Username') && auditText.includes('SECTION_VIEW'),
-                qaStatus: rQa.status,
-                qaHasHeader: qaText.includes('Question Asked,AI Response') && qaText.includes('September active membership')
-            };
-        }""")
-        record(
-            "SEC-18",
-            "Bridge Super-Admin exports both Security Audit Log CSV and Ask Bridge AI Q&A Transcript CSV",
-            csv_export_test["auditStatus"] == 200
-            and bool(csv_export_test["auditHasHeader"])
-            and csv_export_test["qaStatus"] == 200
-            and bool(csv_export_test["qaHasHeader"]),
-            str(csv_export_test),
-        )
-
-        # SEC-19: Non-Hex Patient ID Masking ('[Masked Non-Hex ID]') & Strict Anti-PII Input Rejection (400 Bad Request)
-        pii_guard_test = page.evaluate("""async () => {
-            const pData = await fetch('/api/portal-data?silent=1').then(r => r.json());
-            const rawJson = JSON.stringify(pData).toLowerCase();
-            const unmatchedIds = (pData.worklists?.pharmacyDataFixes?.unmatchedRows || []).map(r => r['Patient ID on file']);
-            const hasMaskedPlaceholder = unmatchedIds.includes('[Masked Non-Hex ID]');
-
-            // 1. Attempt to submit a patient name into 'Corrected patient ID' -> must be rejected (400)
-            const rRejectNameId = await fetch('/api/worklist/fixes-unmatched/fix-unmatched-22', {
-                method: 'PATCH',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ 'Corrected patient ID': 'JohnSmith' })
-            });
-
-            // 2. Attempt to submit SSN or phone/email PII into 'Notes' -> must be rejected (400)
-            const rRejectPiiNote = await fetch('/api/worklist/todo/todo-1', {
-                method: 'PATCH',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ 'Notes': 'Patient SSN 123-45-6789 called from 317-555-0199' })
-            });
-
-            // 3. Submit a valid 8-char hex ID into 'Corrected patient ID' -> must succeed (200)
-            const rValidHexId = await fetch('/api/worklist/fixes-unmatched/fix-unmatched-22', {
-                method: 'PATCH',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ 'Corrected patient ID': '6d3f1831', autoUpdateTodo: false })
-            });
-            await fetch('/api/worklist/reset', { method: 'POST' });
-
-            const ov = await fetch('/api/security/overview').then(r => r.json());
-            const hasPiiRejectedAudit = (ov.auditEvents || []).some(e => e.eventType === 'PII_INPUT_REJECTED');
-
-            return {
-                hasMaskedPlaceholder,
-                rejectNameIdStatus: rRejectNameId.status,
-                rejectPiiNoteStatus: rRejectPiiNote.status,
-                validHexIdStatus: rValidHexId.status,
-                hasPiiRejectedAudit
-            };
-        }""")
-        record(
-            "SEC-19",
-            "Non-hex patient IDs are masked as '[Masked Non-Hex ID]', and worklist API strictly rejects patient names/PII in 'Corrected patient ID' & 'Notes' (400 + PII_INPUT_REJECTED audit event)",
-            bool(pii_guard_test["hasMaskedPlaceholder"])
-            and pii_guard_test["rejectNameIdStatus"] == 400
-            and pii_guard_test["rejectPiiNoteStatus"] == 400
-            and pii_guard_test["validHexIdStatus"] == 200
-            and bool(pii_guard_test["hasPiiRejectedAudit"]),
-            str(pii_guard_test),
         )
 
         # SEC-12: Strict XSS HTML Escaping in formatMarkdownText() & Session Revocation on Logout
