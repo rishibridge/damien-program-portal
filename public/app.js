@@ -2462,25 +2462,35 @@ async function refreshSecurityModalData() {
     const data = await resp.json();
 
     const cur = data.currentUser || {};
+    const isBridgeAdmin = Boolean(data.isBridgeAdmin);
     const meUserRec = (data.users || []).find(u => u.username.toLowerCase() === String(cur.username || '').toLowerCase());
     const lbl = document.getElementById('secCurrentUserLabel');
     if (lbl) {
-      lbl.textContent = `Signed in as ${cur.displayName || cur.username} (${cur.username}) · Role: ${cur.role || 'admin'}`;
+      lbl.textContent = `Signed in as ${cur.displayName || cur.username} (${cur.username}) · Role: ${cur.role || 'client_user'}`;
     }
 
-    const mfaChk = document.getElementById('secMyMfaEnabled');
     const mfaSel = document.getElementById('secMyMfaMethod');
     const mfaEmail = document.getElementById('secMyMfaEmail');
     const secretBox = document.getElementById('secMyTotpSecretBox');
     const secretCode = document.getElementById('secMyTotpSecretCode');
     if (meUserRec) {
-      if (mfaChk) mfaChk.checked = Boolean(meUserRec.mfaEnabled);
       if (mfaSel) mfaSel.value = meUserRec.mfaMethod || 'email';
-      if (mfaEmail) mfaEmail.value = meUserRec.email || '';
+      if (mfaEmail) {
+        mfaEmail.value = meUserRec.email || '';
+        mfaEmail.readOnly = !isBridgeAdmin;
+        mfaEmail.style.background = isBridgeAdmin ? '#ffffff' : '#f1f5f9';
+      }
       if (secretBox && secretCode && meUserRec.totpSecret) {
         secretBox.style.display = 'block';
         secretCode.textContent = meUserRec.totpSecret;
       }
+    }
+
+    const createForm = document.getElementById('secCreateUserForm');
+    const rbacNotice = document.getElementById('secRbacNoticeForNonAdmin');
+    if (createForm && rbacNotice) {
+      createForm.style.display = isBridgeAdmin ? 'grid' : 'none';
+      rbacNotice.style.display = isBridgeAdmin ? 'none' : 'block';
     }
 
     const tbodyUsers = document.getElementById('tbodySecurityUsers');
@@ -2490,7 +2500,7 @@ async function refreshSecurityModalData() {
           <td><strong>${escapeAttr(u.username)}</strong></td>
           <td>${escapeAttr(u.displayName)}</td>
           <td style="font-size:0.75rem;color:#334155">${escapeAttr(u.email || '')}</td>
-          <td>${u.mfaEnabled ? `<span style="color:#059669;font-weight:600">On (${escapeAttr(u.mfaMethod)})</span>` : '<span style="color:#64748b">Optional</span>'}</td>
+          <td><span style="color:#059669;font-weight:700">Mandatory (Email / App)</span></td>
         </tr>
       `).join('');
     }
@@ -2521,14 +2531,17 @@ async function refreshSecurityModalData() {
 }
 
 async function saveMyMfaSettings() {
-  const mfaEnabled = document.getElementById('secMyMfaEnabled')?.checked;
   const mfaMethod = document.getElementById('secMyMfaMethod')?.value || 'email';
-  const email = document.getElementById('secMyMfaEmail')?.value?.trim();
+  const emailInput = document.getElementById('secMyMfaEmail');
+  const payload = { mfaMethod };
+  if (emailInput && !emailInput.readOnly && emailInput.value.trim()) {
+    payload.email = emailInput.value.trim();
+  }
   try {
     const resp = await fetch('/api/security/mfa-config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mfaEnabled, mfaMethod, email })
+      body: JSON.stringify(payload)
     });
     if (resp.ok) {
       await refreshSecurityModalData();
@@ -2572,7 +2585,6 @@ async function handleCreateNamedUser(e) {
   const displayName = document.getElementById('newUserDisplayName').value.trim();
   const email = document.getElementById('newUserEmail').value.trim();
   const password = document.getElementById('newUserPassword').value;
-  const mfaEnabled = document.getElementById('newUserMfaEnabled').checked;
   const msgEl = document.getElementById('newUserMsg');
   try {
     const resp = await fetch('/api/security/users', {
@@ -2584,7 +2596,6 @@ async function handleCreateNamedUser(e) {
         email,
         password,
         role: 'pharmacist',
-        mfaEnabled,
         mfaMethod: 'email'
       })
     });

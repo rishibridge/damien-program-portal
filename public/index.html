@@ -1038,19 +1038,24 @@
           </div>
 
           <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:14px">
-            <div style="font-size:0.8rem;font-weight:600;color:#1e293b;margin-bottom:8px">Two-Factor Authentication (MFA)</div>
-            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
-              <label style="font-size:0.8rem;display:flex;align-items:center;gap:6px">
-                <input type="checkbox" id="secMyMfaEnabled" /> Require 2-Step Verification on Sign-In
-              </label>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+              <div style="font-size:0.8rem;font-weight:600;color:#1e293b">Two-Factor Authentication (MFA)</div>
+              <span class="badge" style="background:#dcfce7;color:#166534;border:1px solid #86efac;font-size:0.7rem;font-weight:700">MANDATORY · ALWAYS ON</span>
+            </div>
+            <div style="font-size:0.76rem;color:#475569;margin-bottom:8px;line-height:1.4">
+              Every user is required to complete 2-step verification and chooses <strong>Email 6-Digit Code</strong> or <strong>Authenticator App</strong> at each sign-in.
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+              <span style="font-size:0.76rem;font-weight:600;color:#334155">Default Tab on Sign-In:</span>
               <select id="secMyMfaMethod" style="padding:5px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.78rem">
                 <option value="email">Email 6-Digit Code</option>
                 <option value="totp">Authenticator App (TOTP)</option>
               </select>
+              <button type="button" class="btn-bridge-primary" style="padding:5px 10px;font-size:0.76rem" onclick="saveMyMfaSettings()">Save Preference</button>
             </div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <input type="email" id="secMyMfaEmail" placeholder="MFA Email Address" style="flex:1;min-width:190px;padding:5px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.78rem" />
-              <button type="button" class="btn-bridge-primary" style="padding:5px 10px;font-size:0.76rem" onclick="saveMyMfaSettings()">Save MFA</button>
+              <span style="font-size:0.75rem;color:#475569;font-weight:600">Assigned MFA Email:</span>
+              <input type="email" id="secMyMfaEmail" readonly style="flex:1;min-width:180px;padding:5px 8px;border:1px solid #e2e8f0;background:#f1f5f9;color:#334155;border-radius:6px;font-size:0.78rem" />
             </div>
             <div id="secMyTotpSecretBox" style="margin-top:8px;font-size:0.75rem;color:#475569;display:none">
               Authenticator Setup Key (Base32): <code id="secMyTotpSecretCode" style="background:#e2e8f0;padding:2px 6px;border-radius:4px;font-weight:700"></code>
@@ -1068,12 +1073,12 @@
           </form>
         </div>
 
-        <!-- Right Card: Named Users Directory & Add Named User -->
-        <div class="card" style="padding:16px">
+        <!-- Right Card: Named Users Directory & Add Named User (Bridge Super-Admin Only) -->
+        <div class="card" id="secAdminUsersCard" style="padding:16px">
           <div class="card-hd" style="margin-bottom:10px">
             <div>
               Named Users Directory
-              <br /><small>Individual accounts for named-user audit attribution</small>
+              <br /><small id="secUsersDirSubtitle">Individual accounts for named-user audit attribution</small>
             </div>
           </div>
 
@@ -1084,23 +1089,25 @@
                   <th>Username</th>
                   <th>Display Name</th>
                   <th>MFA Email</th>
-                  <th>MFA</th>
+                  <th>MFA Policy</th>
                 </tr>
               </thead>
               <tbody id="tbodySecurityUsers"></tbody>
             </table>
           </div>
 
-          <form onsubmit="handleCreateNamedUser(event)" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            <div style="grid-column:1/-1;font-size:0.78rem;font-weight:600;color:#1e293b">Add Named User Account</div>
+          <div id="secRbacNoticeForNonAdmin" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;border-radius:8px;padding:10px 12px;font-size:0.77rem;line-height:1.45">
+            <strong>Role-Based Access Control (RBAC):</strong> Adding or modifying named users and changing assigned MFA email addresses is restricted to <strong>Bridge Super-Admins</strong> (<code>bridge_admin</code>).
+          </div>
+
+          <form id="secCreateUserForm" onsubmit="handleCreateNamedUser(event)" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div style="grid-column:1/-1;font-size:0.78rem;font-weight:600;color:#1e293b">Add Named User Account (Bridge Super-Admin Only)</div>
             <input type="text" id="newUserUsername" placeholder="Username (e.g. jsmith.pharm)" required style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.78rem" />
             <input type="text" id="newUserDisplayName" placeholder="Full Name &amp; Title" required style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.78rem" />
             <input type="email" id="newUserEmail" placeholder="Email for MFA code" required style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.78rem" />
             <input type="password" id="newUserPassword" placeholder="Password (12+ chars)" required style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.78rem" />
             <div style="grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;gap:8px">
-              <label style="font-size:0.76rem;display:flex;align-items:center;gap:5px">
-                <input type="checkbox" id="newUserMfaEnabled" /> Enable Email/App MFA
-              </label>
+              <span style="font-size:0.74rem;color:#059669;font-weight:600">Mandatory MFA (Email + App) Enforced</span>
               <span id="newUserMsg" style="font-size:0.74rem;color:#64748b"></span>
               <button type="submit" class="btn-bridge-primary" style="padding:5px 12px;font-size:0.76rem">Create User</button>
             </div>

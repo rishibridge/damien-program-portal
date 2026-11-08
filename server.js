@@ -260,8 +260,8 @@ function buildDefaultUsers() {
       clientId: primaryClient,
       displayName: 'Damien Center Program Lead (damien)',
       email: 'brady@bridgehealthhub.com',
-      role: 'admin',
-      mfaEnabled: false,
+      role: 'client_user',
+      mfaEnabled: true,
       mfaMethod: 'email',
       totpSecret: generateTotpSecret(),
       passwordUpdatedAt: '2026-11-01T00:00:00.000Z',
@@ -274,8 +274,8 @@ function buildDefaultUsers() {
       clientId: 'metro',
       displayName: 'Metro Health Program Lead (metro)',
       email: 'metro@bridgehealthhub.com',
-      role: 'admin',
-      mfaEnabled: false,
+      role: 'client_user',
+      mfaEnabled: true,
       mfaMethod: 'email',
       totpSecret: generateTotpSecret(),
       passwordUpdatedAt: '2026-11-01T00:00:00.000Z',
@@ -286,10 +286,38 @@ function buildDefaultUsers() {
       username: 'rishi.damien',
       passwordHash: hashPasswordScrypt('BridgeDamien2026!'),
       clientId: 'damien',
-      displayName: 'Rishi (Bridge Health Hub)',
+      displayName: 'Rishi (Bridge Super-Admin)',
       email: 'rishi@bridgehealthhub.com',
-      role: 'admin',
-      mfaEnabled: false,
+      role: 'bridge_admin',
+      mfaEnabled: true,
+      mfaMethod: 'email',
+      totpSecret: generateTotpSecret(),
+      passwordUpdatedAt: '2026-11-01T00:00:00.000Z',
+      passwordMaxAgeDays: 0,
+      passwordHistory: []
+    },
+    {
+      username: 'brady.admin',
+      passwordHash: hashPasswordScrypt('BridgeBrady2026!'),
+      clientId: 'damien',
+      displayName: 'Brady (Bridge Super-Admin)',
+      email: 'brady@bridgehealthhub.com',
+      role: 'bridge_admin',
+      mfaEnabled: true,
+      mfaMethod: 'email',
+      totpSecret: generateTotpSecret(),
+      passwordUpdatedAt: '2026-11-01T00:00:00.000Z',
+      passwordMaxAgeDays: 0,
+      passwordHistory: []
+    },
+    {
+      username: 'rishi.metro',
+      passwordHash: hashPasswordScrypt('BridgeMetro2026!'),
+      clientId: 'metro',
+      displayName: 'Rishi (Bridge Super-Admin)',
+      email: 'rishi@bridgehealthhub.com',
+      role: 'bridge_admin',
+      mfaEnabled: true,
       mfaMethod: 'email',
       totpSecret: generateTotpSecret(),
       passwordUpdatedAt: '2026-11-01T00:00:00.000Z',
@@ -303,7 +331,7 @@ function buildDefaultUsers() {
       displayName: 'Damien Clinical Pharmacist',
       email: 'pharmacy@damien.org',
       role: 'pharmacist',
-      mfaEnabled: false,
+      mfaEnabled: true,
       mfaMethod: 'email',
       totpSecret: generateTotpSecret(),
       passwordUpdatedAt: '2026-11-01T00:00:00.000Z',
@@ -326,8 +354,8 @@ function buildDefaultUsers() {
             clientId: c,
             displayName: `${u} (${c})`,
             email: `${u}@bridgehealthhub.com`,
-            role: 'admin',
-            mfaEnabled: false,
+            role: 'client_user',
+            mfaEnabled: true,
             mfaMethod: 'email',
             totpSecret: generateTotpSecret(),
             passwordUpdatedAt: '2026-11-01T00:00:00.000Z',
@@ -351,14 +379,20 @@ function loadUsersDirectory() {
     try {
       const saved = JSON.parse(fs.readFileSync(USERS_LOCAL_PATH, 'utf8'));
       if (Array.isArray(saved) && saved.length > 0) {
-        // Ensure preserved accounts (damien / metro) always exist and damien placeholder email is upgraded to brady@bridgehealthhub.com
         for (const def of defaults) {
           const existing = saved.find(u => u.username.toLowerCase() === def.username.toLowerCase());
           if (!existing) {
             saved.push(def);
-          } else if (existing.username.toLowerCase() === 'damien' && existing.email === 'damien@bridgehealthhub.com') {
-            existing.email = 'brady@bridgehealthhub.com';
+          } else {
+            existing.mfaEnabled = true; // Mandatory MFA for every user
+            existing.role = def.role;
+            if (existing.username.toLowerCase() === 'damien' && existing.email === 'damien@bridgehealthhub.com') {
+              existing.email = 'brady@bridgehealthhub.com';
+            }
           }
+        }
+        for (const u of saved) {
+          u.mfaEnabled = true; // Enforce mandatory MFA across all accounts
         }
         usersDirectoryCache = saved;
         return usersDirectoryCache;
@@ -680,11 +714,11 @@ app.post('/api/auth/login', (req, res) => {
     ? `${String(operatorName).trim()} (${matched.username})`
     : (matched.displayName || matched.username);
 
-  // Check if MFA is enabled for this user and browser is not already trusted for 30 days
+  // Mandatory MFA for EVERY user on sign-in unless browser has valid 30-day trust cookie
   const cookies = parseCookies(req);
   const isBrowserTrusted = verifyMfaTrustCookie(cookies[MFA_TRUST_COOKIE_NAME], matched.username, matched.clientId);
 
-  if (matched.mfaEnabled && !isBrowserTrusted) {
+  if (!isBrowserTrusted) {
     const challengeToken = crypto.randomBytes(24).toString('hex');
     const emailCode = String(crypto.randomInt(100000, 999999));
     pendingMfaChallenges.set(challengeToken, {
@@ -692,13 +726,13 @@ app.post('/api/auth/login', (req, res) => {
       clientId: matched.clientId,
       displayName: effectiveDisplayName,
       email: matched.email || `${matched.username}@bridgehealthhub.com`,
-      role: matched.role || 'admin',
+      role: matched.role || 'client_user',
       mfaMethod: matched.mfaMethod || 'email',
       emailCode,
       totpSecret: matched.totpSecret,
       expiresAt: Date.now() + 10 * 60 * 1000
     });
-    recordAuditEvent(req, 'MFA_CHALLENGE_ISSUED', { method: matched.mfaMethod || 'email', email: matched.email }, matched.clientId, matched.username);
+    recordAuditEvent(req, 'MFA_CHALLENGE_ISSUED', { supportedMethods: ['email', 'totp'], email: matched.email }, matched.clientId, matched.username);
     const maskedEmail = (matched.email || `${matched.username}@bridgehealthhub.com`).replace(/^(.)(.*)(@.*)$/, (_, a, b, c) => `${a}${'*'.repeat(Math.min(b.length, 4))}${c}`);
     return res.json({
       ok: true,
@@ -706,7 +740,7 @@ app.post('/api/auth/login', (req, res) => {
       challengeToken,
       mfaMethod: matched.mfaMethod || 'email',
       maskedEmail,
-      // Expose demo/dev email preview when no external SMTP server is configured so user/admin can test Email MFA seamlessly
+      // Expose preview code when no external SMTP server is configured so testers can verify Email MFA immediately
       emailCodePreview: process.env.SMTP_HOST ? undefined : emailCode
     });
   }
@@ -824,43 +858,60 @@ app.use((req, res, next) => {
 app.get('/api/auth/me', (req, res) => {
   const users = loadUsersDirectory();
   const userRec = users.find(u => u.username.toLowerCase() === String(req.authenticatedUser || '').toLowerCase());
+  const effectiveRole = userRec?.role || req.authenticatedRole || 'client_user';
   res.json({
     authenticated: true,
     user: req.authenticatedUser,
     displayName: req.authenticatedDisplayName || req.authenticatedUser,
     email: userRec?.email || req.authenticatedEmail || '',
-    role: userRec?.role || req.authenticatedRole || 'admin',
+    role: effectiveRole,
+    isBridgeAdmin: effectiveRole === 'bridge_admin',
     clientId: req.clientId,
-    mfaEnabled: Boolean(userRec?.mfaEnabled),
+    mfaEnabled: true,
     mfaMethod: userRec?.mfaMethod || 'email'
   });
 });
 
 // ============================================================================
 // NAMED-USER MANAGEMENT, PASSWORD COMPLEXITY CHANGE, MFA CONFIG & AUDIT API
+// STRICT ROLE-BASED ACCESS CONTROL (RBAC): ONLY bridge_admin CAN MANAGE USERS
 // ============================================================================
+function isCallerBridgeAdmin(req) {
+  const users = loadUsersDirectory();
+  const userRec = users.find(u => u.username.toLowerCase() === String(req.authenticatedUser || '').toLowerCase());
+  const role = userRec?.role || req.authenticatedRole || 'client_user';
+  return role === 'bridge_admin';
+}
+
 app.get('/api/security/overview', (req, res) => {
   const clientId = req.clientId || 'damien';
-  const users = loadUsersDirectory()
-    .filter(u => u.clientId === clientId)
+  const isAdmin = isCallerBridgeAdmin(req);
+  const allTenantUsers = loadUsersDirectory().filter(u => u.clientId === clientId);
+  const visibleUsers = (isAdmin ? allTenantUsers : allTenantUsers.filter(u => u.username.toLowerCase() === String(req.authenticatedUser || '').toLowerCase()))
     .map(u => ({
       username: u.username,
       displayName: u.displayName,
       email: u.email,
       role: u.role,
-      mfaEnabled: Boolean(u.mfaEnabled),
+      mfaEnabled: true,
       mfaMethod: u.mfaMethod || 'email',
-      totpSecret: u.username.toLowerCase() === String(req.authenticatedUser || '').toLowerCase() ? u.totpSecret : undefined,
+      totpSecret: (isAdmin || u.username.toLowerCase() === String(req.authenticatedUser || '').toLowerCase()) ? u.totpSecret : undefined,
       passwordUpdatedAt: u.passwordUpdatedAt
     }));
-  const auditEvents = loadClientAuditLog(clientId).slice(0, 100);
+  const allAuditEvents = loadClientAuditLog(clientId);
+  const auditEvents = (isAdmin
+    ? allAuditEvents
+    : allAuditEvents.filter(ev => String(ev.user || '').toLowerCase() === String(req.authenticatedUser || '').toLowerCase())
+  ).slice(0, 100);
+
   res.json({
     ok: true,
     clientId,
+    isBridgeAdmin: isAdmin,
     currentUser: {
       username: req.authenticatedUser,
       displayName: req.authenticatedDisplayName,
-      role: req.authenticatedRole
+      role: isAdmin ? 'bridge_admin' : (visibleUsers[0]?.role || 'client_user')
     },
     securityPolicy: {
       geoRestriction: 'US_ONLY',
@@ -869,16 +920,25 @@ app.get('/api/security/overview', (req, res) => {
       idleTimeoutMinutes: 30,
       passwordMinLength: 12,
       passwordComplexityCategories: 3,
-      mfaSupportedMethods: ['email', 'totp']
+      mfaMandatory: true,
+      mfaSupportedMethods: ['email', 'totp'],
+      rbacEnforced: true
     },
-    users,
+    users: visibleUsers,
     auditEvents
   });
 });
 
 app.post('/api/security/users', (req, res) => {
+  if (!isCallerBridgeAdmin(req)) {
+    recordAuditEvent(req, 'UNAUTHORIZED_ADMIN_ATTEMPT', { endpoint: '/api/security/users' });
+    return res.status(403).json({
+      ok: false,
+      error: 'Forbidden: Only Bridge Super-Admins (bridge_admin) can add or manage user accounts.'
+    });
+  }
   const clientId = req.clientId || 'damien';
-  const { username, password, displayName, email, role, mfaEnabled, mfaMethod } = req.body || {};
+  const { username, password, displayName, email, role, mfaMethod } = req.body || {};
   const cleanUser = String(username || '').trim();
   if (!cleanUser || cleanUser.length < 3) {
     return res.status(400).json({ ok: false, error: 'Username must be at least 3 characters.' });
@@ -897,9 +957,9 @@ app.post('/api/security/users', (req, res) => {
     clientId,
     displayName: String(displayName || cleanUser).trim(),
     email: String(email || `${cleanUser}@bridgehealthhub.com`).trim(),
-    role: role || 'pharmacist',
-    mfaEnabled: Boolean(mfaEnabled),
-    mfaMethod: mfaMethod || 'email',
+    role: ['bridge_admin', 'client_user', 'pharmacist'].includes(role) ? role : 'pharmacist',
+    mfaEnabled: true, // Mandatory MFA for every user — cannot be disabled
+    mfaMethod: ['email', 'totp'].includes(mfaMethod) ? mfaMethod : 'email',
     totpSecret: generateTotpSecret(),
     passwordUpdatedAt: new Date().toISOString(),
     passwordMaxAgeDays: 0,
@@ -907,7 +967,7 @@ app.post('/api/security/users', (req, res) => {
   };
   users.push(newUser);
   saveUsersDirectory(users);
-  recordAuditEvent(req, 'USER_CREATED', { createdUsername: cleanUser, role: newUser.role, mfaEnabled: newUser.mfaEnabled });
+  recordAuditEvent(req, 'USER_CREATED', { createdUsername: cleanUser, role: newUser.role, mfaEnabled: true });
   res.json({
     ok: true,
     user: {
@@ -915,7 +975,7 @@ app.post('/api/security/users', (req, res) => {
       displayName: newUser.displayName,
       email: newUser.email,
       role: newUser.role,
-      mfaEnabled: newUser.mfaEnabled,
+      mfaEnabled: true,
       mfaMethod: newUser.mfaMethod
     }
   });
@@ -948,24 +1008,36 @@ app.post('/api/security/change-password', (req, res) => {
 });
 
 app.post('/api/security/mfa-config', (req, res) => {
-  const { targetUsername, mfaEnabled, mfaMethod, email } = req.body || {};
+  const { targetUsername, mfaMethod, email } = req.body || {};
+  const isAdmin = isCallerBridgeAdmin(req);
+  const callerUser = String(req.authenticatedUser || '').toLowerCase();
   const lookupUser = String(targetUsername || req.authenticatedUser || '').toLowerCase();
+
+  // Non-admins cannot modify another user or alter their assigned MFA email address
+  if (!isAdmin && (lookupUser !== callerUser || email !== undefined)) {
+    recordAuditEvent(req, 'UNAUTHORIZED_ADMIN_ATTEMPT', { endpoint: '/api/security/mfa-config', targetUsername: lookupUser });
+    return res.status(403).json({
+      ok: false,
+      error: 'Forbidden: Only Bridge Super-Admins can change assigned MFA email addresses or modify other users.'
+    });
+  }
+
   const users = loadUsersDirectory();
   const userRec = users.find(u => u.username.toLowerCase() === lookupUser && u.clientId === req.clientId);
   if (!userRec) {
     return res.status(404).json({ ok: false, error: 'User not found in this tenant.' });
   }
-  if (mfaEnabled !== undefined) userRec.mfaEnabled = Boolean(mfaEnabled);
+  userRec.mfaEnabled = true; // Mandatory MFA — can never be turned off
   if (mfaMethod && ['email', 'totp'].includes(mfaMethod)) userRec.mfaMethod = mfaMethod;
-  if (email && String(email).includes('@')) userRec.email = String(email).trim();
+  if (isAdmin && email && String(email).includes('@')) userRec.email = String(email).trim();
   if (!userRec.totpSecret) userRec.totpSecret = generateTotpSecret();
   saveUsersDirectory(users);
-  recordAuditEvent(req, 'MFA_CONFIG_UPDATED', { targetUsername: userRec.username, email: userRec.email, mfaEnabled: userRec.mfaEnabled, mfaMethod: userRec.mfaMethod });
+  recordAuditEvent(req, 'MFA_CONFIG_UPDATED', { targetUsername: userRec.username, email: userRec.email, mfaEnabled: true, mfaMethod: userRec.mfaMethod });
   res.json({
     ok: true,
     username: userRec.username,
     email: userRec.email,
-    mfaEnabled: userRec.mfaEnabled,
+    mfaEnabled: true,
     mfaMethod: userRec.mfaMethod,
     totpSecret: userRec.totpSecret
   });
