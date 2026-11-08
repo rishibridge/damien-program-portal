@@ -532,6 +532,7 @@ function formatAuditSummary(eventType, details = {}) {
   if (et === 'MFA_CONFIG_UPDATED') return `Updated MFA settings for '${details.targetUsername}' (method: ${details.mfaMethod})`;
   if (et === 'PASSWORD_CHANGED') return 'Updated account password';
   if (et === 'UNAUTHORIZED_ADMIN_ATTEMPT') return `Blocked unauthorized admin call to ${details.endpoint || 'admin API'}`;
+  if (et === 'PII_INPUT_REJECTED') return `Rejected prohibited PII / non-hex input in ${details.field || 'worklist'} (${details.reason || 'policy'})`;
   return JSON.stringify(details || {});
 }
 
@@ -1736,6 +1737,76 @@ function getAllWorklistRows(wl) {
   ];
 }
 
+function isValidHexPatientId(val) {
+  const clean = String(val || '').trim();
+  if (!clean) return false;
+  // Must be a 6-to-8 char hexadecimal ID (or full UUID) containing at least one digit 0-9
+  return /^[0-9a-f]{6,8}(-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$/i.test(clean) && /\d/.test(clean);
+}
+
+function sanitizeWorklistPatientIds(state) {
+  if (!state || !state.worklists) return;
+  const rows = getAllWorklistRows(state.worklists);
+  for (const r of rows) {
+    for (const field of ['Patient ID on file', 'Pharmacy patient ID']) {
+      if (r[field] !== undefined && r[field] !== null && String(r[field]).trim() !== '') {
+        const val = String(r[field]).trim();
+        // Mask any alphabetic name / non-numeric string accidentally entered as a patient ID
+        if (val !== '[Masked Non-Hex ID]' && !/\d/.test(val)) {
+          r[field] = '[Masked Non-Hex ID]';
+        }
+      }
+    }
+    if (r['Corrected patient ID'] && !isValidHexPatientId(r['Corrected patient ID'])) {
+      r['Corrected patient ID'] = '';
+    }
+  }
+}
+
+function validateWorklistEditInput(updates) {
+  if (!updates || typeof updates !== 'object') return { valid: true };
+
+  // 1. Strict Hex-Only Validation for 'Corrected patient ID' (Rejects names, non-hex strings, PII)
+  if (Object.prototype.hasOwnProperty.call(updates, 'Corrected patient ID')) {
+    const rawId = String(updates['Corrected patient ID'] ?? '').trim();
+    if (rawId !== '' && !isValidHexPatientId(rawId)) {
+      return {
+        valid: false,
+        field: 'Corrected patient ID',
+        reason: 'non_hex_or_pii_patient_id',
+        error: 'Rejected: Corrected patient ID must be a de-identified 6–8 character hexadecimal ID (e.g. 6d3f1831). Patient names and non-hex strings are strictly prohibited.'
+      };
+    }
+  }
+
+  // 2. Anti-PII Guard for 'Notes' (Rejects SSNs, Phone Numbers, Email Addresses, DOBs, or Patient Names)
+  if (Object.prototype.hasOwnProperty.call(updates, 'Notes')) {
+    const note = String(updates['Notes'] ?? '').trim();
+    if (note) {
+      const ssnRegex = /\b\d{3}-\d{2}-\d{4}\b/;
+      const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/;
+      const phoneRegex = /\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}\b/;
+      const explicitPiiLabel = /\b(patient\s+name|first\s+name|last\s+name|dob|date\s+of\s+birth|ssn|social\s+security|street\s+address)\s*[:=]/i;
+      const legacyRedactedHash = '991a0d6a7f1457d29c76724c721f5e3b05364a84145020579850c5784f9e2f21';
+      const tokens = note.toLowerCase().split(/[\s,.;:!?()'"]+/).filter(Boolean);
+      const hasBlockedName = tokens.some(
+        t => crypto.createHash('sha256').update(t).digest('hex') === legacyRedactedHash
+      );
+
+      if (ssnRegex.test(note) || emailRegex.test(note) || phoneRegex.test(note) || explicitPiiLabel.test(note) || hasBlockedName) {
+        return {
+          valid: false,
+          field: 'Notes',
+          reason: 'prohibited_pii_in_notes',
+          error: 'Rejected: Entering patient names, phone numbers, email addresses, SSNs, or demographic PII in worklist notes is strictly prohibited.'
+        };
+      }
+    }
+  }
+
+  return { valid: true };
+}
+
 function applyOverlayToState(state, overlay) {
   if (!overlay || !overlay.edits) return;
   const rows = getAllWorklistRows(state.worklists);
@@ -1776,6 +1847,7 @@ async function ensureClientStateLoaded(clientId) {
     }
 
     applyOverlayToState(baseline, overlay);
+    sanitizeWorklistPatientIds(baseline);
     clientOverlays[clientId] = overlay;
     clientStates[clientId] = baseline;
     return baseline;
@@ -1918,6 +1990,22 @@ app.patch('/api/worklist/:sheet/:id', async (req, res) => {
   const row = targetArray.find(r => r.id === id);
   if (!row) {
     return res.status(404).json({ error: `Row ${id} not found in ${sheet}` });
+  }
+
+  // Enforce strict Hex-Only Patient ID & Anti-PII Input Validation
+  const validation = validateWorklistEditInput(updates);
+  if (!validation.valid) {
+    recordAuditEvent(req, 'PII_INPUT_REJECTED', {
+      sheet,
+      rowId: id,
+      field: validation.field,
+      reason: validation.reason
+    });
+    return res.status(400).json({
+      ok: false,
+      error: validation.error,
+      field: validation.field
+    });
   }
 
   for (const key of ALLOWED_EDIT_FIELDS) {
@@ -2108,11 +2196,13 @@ function isMemberLevelQuery(state, rawQuestion) {
   const ql = q.toLowerCase();
   const wl = state.worklists || {};
   const allRows = getAllWorklistRows(wl);
+  const legacyRedactedHash = '991a0d6a7f1457d29c76724c721f5e3b05364a84145020579850c5784f9e2f21';
 
-  // Only detect explicit 8-char hex member IDs or exact known patient IDs on file (e.g., 6d3f1831, trinidad)
+  // Detect explicit 8-char hex member IDs, known patient IDs on file, or redacted legacy tokens
   const tokens = ql.split(/[\s,?;:!()'"]+/).filter(t => t.length >= 6);
   for (const tok of tokens) {
-    if (/^[0-9a-f]{8}(-[0-9a-f]{4,})?$/.test(tok) || tok === 'trinidad') {
+    const tokHash = crypto.createHash('sha256').update(tok).digest('hex');
+    if (/^[0-9a-f]{8}(-[0-9a-f]{4,})?$/.test(tok) || tokHash === legacyRedactedHash) {
       return true;
     }
     const cleanTok = tok.replace(/^todo-|^refill-|^ended-|^fix-noid-|^fix-unmatched-/, '');
@@ -2523,7 +2613,7 @@ You are having an intelligent, natural, executive-ready conversation with a stak
 STRICT PRIVACY & AGGREGATE-ONLY RULE:
 - You ONLY provide AGGREGATE program, financial, enrollment/disenrollment, channel/broker, employer-group, prescriber, payer, medication/dose, and worklist summary analytics.
 - Zero individual member IDs, patient alternate IDs, or row-level member/patient records exist in your context. NEVER output or fabricate individual member IDs, patient alternate IDs, UUIDs, or individual member/patient records.
-- If someone asks to look up a specific member ID or individual patient record (e.g. an 8-char hex ID like 6d3f1831 or trinidad), politely explain that for member privacy, Ask Bridge AI only provides aggregate program, financial, channel, employer, prescriber, payer, medication, and worklist summary analytics—and direct them to use the search bar in the Pharmacy To-Do, Refill Follow-Up, Pharmacy Data Fixes, or Ended Memberships tabs for individual patient lookups.
+- If someone asks to look up a specific member ID or individual patient record (e.g. an 8-char hex ID like 6d3f1831), politely explain that for member privacy, Ask Bridge AI only provides aggregate program, financial, channel, employer, prescriber, payer, medication, and worklist summary analytics—and direct them to use the search bar in the Pharmacy To-Do, Refill Follow-Up, Pharmacy Data Fixes, or Ended Memberships tabs for individual patient lookups.
 
 HOW TO REASON & COMMUNICATE INTELLIGENTLY ACROSS BOTH PPTX AND XLSX DATA:
 - Synthesize across ALL THREE underlying data sources seamlessly:

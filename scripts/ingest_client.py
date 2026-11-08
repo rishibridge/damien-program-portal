@@ -155,6 +155,10 @@ def assign_stable_keys_and_fuzzy_links(pharmacy_todo, refill_followup, fixes_no_
         r["id"] = f"fix-unmatched-{i+1}"
         r["fixType"] = "Unmatched Patient ID"
         r["Corrected patient ID"] = r.get("Corrected patient ID") or ""
+        raw_pid_on_file = str(r.get("Patient ID on file") or "").strip()
+        # Automatically mask any alphabetic / non-hex patient name accidentally entered as a Patient ID
+        if raw_pid_on_file and not any(ch.isdigit() for ch in raw_pid_on_file):
+            r["Patient ID on file"] = "[Masked Non-Hex ID]"
         base_sig = f"{r.get('Patient ID on file') or ''}|{r.get('Date filled') or ''}|{r.get('Dispensed item') or ''}".lower()
         unmatched_occ[base_sig] = unmatched_occ.get(base_sig, 0) + 1
         r["stableKey"] = f"fixes-unmatched:{base_sig}|#{unmatched_occ[base_sig]}"
@@ -173,7 +177,7 @@ def assign_stable_keys_and_fuzzy_links(pharmacy_todo, refill_followup, fixes_no_
         best_dist = 99
         best_source = None
         best_record = None
-        if pid and pid != "trinidad":
+        if pid and not pid.startswith("[masked") and any(ch.isdigit() for ch in pid):
             for tid, rec in todo_by_id.items():
                 d = edit_distance(pid, tid)
                 if 0 < d <= 2 and d < best_dist:

@@ -1991,6 +1991,22 @@ function renderEndedTable() {
   `).join('');
 }
 
+function showSecurityToast(message) {
+  let toast = document.getElementById('securityPolicyToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'securityPolicyToast';
+    toast.style.cssText = 'position:fixed;bottom:22px;right:22px;z-index:9999;max-width:420px;background:#fef2f2;color:#991b1b;border:1px solid #f87171;border-radius:10px;padding:12px 16px;font-size:0.8rem;font-weight:600;box-shadow:0 10px 25px rgba(15,23,42,0.18);display:none';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.style.display = 'block';
+  clearTimeout(window.__secToastTimer);
+  window.__secToastTimer = setTimeout(() => {
+    toast.style.display = 'none';
+  }, 5500);
+}
+
 async function updateWorklistCell(sheet, id, field, value) {
   try {
     const resp = await fetch(`/api/worklist/${sheet}/${id}`, {
@@ -1999,6 +2015,11 @@ async function updateWorklistCell(sheet, id, field, value) {
       body: JSON.stringify({ [field]: value })
     });
     const data = await resp.json();
+    if (!resp.ok || !data.ok) {
+      showSecurityToast(data.error || 'Input rejected by security policy.');
+      renderWorklistsView();
+      return;
+    }
     if (data.ok) {
       const wl = PORTAL_DATA.worklists;
       let arr = null;

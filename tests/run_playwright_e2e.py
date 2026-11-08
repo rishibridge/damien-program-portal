@@ -1303,6 +1303,57 @@ def run_suite():
             str(csv_export_test),
         )
 
+        # SEC-19: Non-Hex Patient ID Masking ('[Masked Non-Hex ID]') & Strict Anti-PII Input Rejection (400 Bad Request)
+        pii_guard_test = page.evaluate("""async () => {
+            const pData = await fetch('/api/portal-data?silent=1').then(r => r.json());
+            const rawJson = JSON.stringify(pData).toLowerCase();
+            const unmatchedIds = (pData.worklists?.pharmacyDataFixes?.unmatchedRows || []).map(r => r['Patient ID on file']);
+            const hasMaskedPlaceholder = unmatchedIds.includes('[Masked Non-Hex ID]');
+
+            // 1. Attempt to submit a patient name into 'Corrected patient ID' -> must be rejected (400)
+            const rRejectNameId = await fetch('/api/worklist/fixes-unmatched/fix-unmatched-22', {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ 'Corrected patient ID': 'JohnSmith' })
+            });
+
+            // 2. Attempt to submit SSN or phone/email PII into 'Notes' -> must be rejected (400)
+            const rRejectPiiNote = await fetch('/api/worklist/todo/todo-1', {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ 'Notes': 'Patient SSN 123-45-6789 called from 317-555-0199' })
+            });
+
+            // 3. Submit a valid 8-char hex ID into 'Corrected patient ID' -> must succeed (200)
+            const rValidHexId = await fetch('/api/worklist/fixes-unmatched/fix-unmatched-22', {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ 'Corrected patient ID': '6d3f1831', autoUpdateTodo: false })
+            });
+            await fetch('/api/worklist/reset', { method: 'POST' });
+
+            const ov = await fetch('/api/security/overview').then(r => r.json());
+            const hasPiiRejectedAudit = (ov.auditEvents || []).some(e => e.eventType === 'PII_INPUT_REJECTED');
+
+            return {
+                hasMaskedPlaceholder,
+                rejectNameIdStatus: rRejectNameId.status,
+                rejectPiiNoteStatus: rRejectPiiNote.status,
+                validHexIdStatus: rValidHexId.status,
+                hasPiiRejectedAudit
+            };
+        }""")
+        record(
+            "SEC-19",
+            "Non-hex patient IDs are masked as '[Masked Non-Hex ID]', and worklist API strictly rejects patient names/PII in 'Corrected patient ID' & 'Notes' (400 + PII_INPUT_REJECTED audit event)",
+            bool(pii_guard_test["hasMaskedPlaceholder"])
+            and pii_guard_test["rejectNameIdStatus"] == 400
+            and pii_guard_test["rejectPiiNoteStatus"] == 400
+            and pii_guard_test["validHexIdStatus"] == 200
+            and bool(pii_guard_test["hasPiiRejectedAudit"]),
+            str(pii_guard_test),
+        )
+
         # SEC-12: Strict XSS HTML Escaping in formatMarkdownText() & Session Revocation on Logout
         xss_and_logout_test = page.evaluate("""async () => {
             const rendered = formatMarkdownText('<script>window.__xss=1</script><img src=x onerror=alert(1)> **Safe Bold**');
