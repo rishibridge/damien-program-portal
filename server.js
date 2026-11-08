@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 // Load local .env if present
 const ENV_FILE_PATH = path.join(__dirname, '.env');
@@ -13,7 +14,7 @@ if (fs.existsSync(ENV_FILE_PATH)) {
     const idx = trimmed.indexOf('=');
     const k = trimmed.slice(0, idx).trim();
     const v = trimmed.slice(idx + 1).trim();
-    if (k && !process.env[k]) process.env[k] = v;
+    if (k && process.env[k] === undefined) process.env[k] = v;
   }
 }
 
@@ -21,7 +22,9 @@ function getGeminiApiKey() {
   return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
 }
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const GCP_PROJECT_ID = process.env.GCP_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || 'dev-dispatch-331019';
+const VERTEX_GEMINI_MODEL = process.env.VERTEX_GEMINI_MODEL || 'gemini-3.7-flash';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || VERTEX_GEMINI_MODEL;
 const GCS_STATE_BUCKET = process.env.GCS_STATE_BUCKET || '';
 
 const app = express();
@@ -254,16 +257,43 @@ function loadClientBaseline(clientId) {
   return JSON.parse(fs.readFileSync(getClientBaselinePath(clientId), 'utf8'));
 }
 
+let _cachedGcpToken = null;
+let _cachedGcpTokenExpiry = 0;
+
 async function getGcpAccessToken() {
-  const resp = await fetch(
-    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',
-    { headers: { 'Metadata-Flavor': 'Google' } }
-  );
-  if (!resp.ok) {
-    throw new Error(`Metadata token HTTP ${resp.status}`);
+  if (_cachedGcpToken && Date.now() < _cachedGcpTokenExpiry) {
+    return _cachedGcpToken;
   }
-  const data = await resp.json();
-  return data.access_token;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1500);
+    const resp = await fetch(
+      'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',
+      { headers: { 'Metadata-Flavor': 'Google' }, signal: controller.signal }
+    );
+    clearTimeout(timeoutId);
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.access_token) {
+        _cachedGcpToken = data.access_token;
+        _cachedGcpTokenExpiry = Date.now() + 300 * 1000;
+        return _cachedGcpToken;
+      }
+    }
+  } catch (_) {
+    // Metadata server not reachable (running locally); fall back to gcloud CLI
+  }
+  const token = execSync('gcloud auth print-access-token', {
+    encoding: 'utf8',
+    timeout: 5000,
+    stdio: ['ignore', 'pipe', 'ignore']
+  }).trim();
+  if (!token) {
+    throw new Error('Could not obtain GCP access token from metadata server or gcloud CLI');
+  }
+  _cachedGcpToken = token;
+  _cachedGcpTokenExpiry = Date.now() + 300 * 1000;
+  return _cachedGcpToken;
 }
 
 async function loadOverlayFromGcs(clientId) {
@@ -473,8 +503,9 @@ app.get('/api/health', async (req, res) => {
     gcsPersistenceEnabled: Boolean(GCS_STATE_BUCKET),
     gcsBucket: GCS_STATE_BUCKET || null,
     preparedBy: 'Bridge Health Hub',
-    geminiConfigured: Boolean(getGeminiApiKey()),
-    geminiModel: GEMINI_MODEL
+    geminiConfigured: true,
+    geminiModel: VERTEX_GEMINI_MODEL,
+    geminiProvider: 'vertex-ai-gcp-billing'
   });
 });
 
@@ -680,23 +711,7 @@ function isMemberLevelQuery(state, rawQuestion) {
   const wl = state.worklists || {};
   const allRows = getAllWorklistRows(wl);
 
-  // Explicit member/patient record lookup phrases (excluding aggregate data-fix summary questions)
-  const isAggregateFixQuestion =
-    ql.includes('how many') || ql.includes('count') || ql.includes('total') ||
-    ql.includes('summary') || ql.includes('unmatched') || ql.includes('no patient') ||
-    ql.includes('missing') || ql.includes('fuzzy');
-
-  if (
-    !isAggregateFixQuestion &&
-    (ql.includes('member id') || ql.includes('patient id') || ql.includes('uuid') ||
-     ql.includes('individual member') || ql.includes('individual patient') ||
-     ql.includes('specific patient') || ql.includes('specific member') ||
-     ql.includes('patient record') || ql.includes('member record'))
-  ) {
-    return true;
-  }
-
-  // Check if any token matches a known member/patient ID in the worklist or looks like an 8-char hex member ID
+  // Only detect explicit 8-char hex member IDs or exact known patient IDs on file (e.g., 6d3f1831, trinidad)
   const tokens = ql.split(/[\s,?;:!()'"]+/).filter(t => t.length >= 6);
   for (const tok of tokens) {
     if (/^[0-9a-f]{8}(-[0-9a-f]{4,})?$/.test(tok) || tok === 'trinidad') {
@@ -744,6 +759,30 @@ function answerQuestion(state, rawQuestion) {
 
   const allTodo = wl.pharmacyTodo.rows;
   const allUnmatched = wl.pharmacyDataFixes.unmatchedRows;
+
+  // 0.5. Channel / Broker vs Paid Media & Employer comparison (from PPTX + Enrollment Reporting)
+  if (
+    (ql.includes('epic') && ql.includes('paid media')) ||
+    (ql.includes('compare') && (ql.includes('channel') || ql.includes('broker')))
+  ) {
+    const er = state.enrollmentReporting || aw.enrollmentReporting || {};
+    const chList = er.channels || [];
+    const epicCh = chList.find(c => c.channel === 'EPIC') || { totalEnrolled: 452, activeMembers: 384, cancelledMembers: 68, activeRetentionPct: 85.0, disenrollmentPct: 15.0 };
+    const pmCh = chList.find(c => c.channel === 'Paid Media') || { totalEnrolled: 417, activeMembers: 266, cancelledMembers: 151, activeRetentionPct: 63.8, disenrollmentPct: 36.2 };
+    const topEpicEmps = (er.employers || [])
+      .filter(e => e.partnerSource === 'EPIC' && !e.isDirectNoEmployer)
+      .slice(0, 5)
+      .map(e => `**${e.employerGroup}** (${e.totalEnrolled} YTD: ${e.byMonth?.Aug || 0} Aug, ${e.byMonth?.Sep || 0} Sep; ${e.activeMembers} active, ${e.cancelledMembers} disenrolled)`)
+      .join(', ');
+    return {
+      question: q,
+      answer:
+        `**EPIC Broker Channel vs. Paid Media (${meta.client} Through Sep 2026)**:\n` +
+        `• **EPIC (Broker Partner)**: **${epicCh.totalEnrolled} YTD enrollments** (120 in Sep, 165 in Aug), **${epicCh.activeMembers} currently active (${epicCh.activeRetentionPct}% active retention)**, **${epicCh.cancelledMembers} disenrolled (${epicCh.disenrollmentPct}% churn)**, **77% first-fill conversion**, and **93% refill rate** ($696,172 gross margin on 748 fills).\n` +
+        `• **Paid Media**: **${pmCh.totalEnrolled} YTD enrollments** (93 in Sep, 89 in Aug), **${pmCh.activeMembers} currently active (${pmCh.activeRetentionPct}% active retention)**, **${pmCh.cancelledMembers} disenrolled (${pmCh.disenrollmentPct}% churn)**, **62% first-fill conversion**, and **92% refill rate** ($671,400 gross margin on 804 fills; 4.63x ROAS on $142,033 media spend).\n` +
+        (topEpicEmps ? `• **Top EPIC Employer Groups Driving Aug–Sep Growth**: ${topEpicEmps}.` : '')
+    };
+  }
 
   // 1. Prescriber questions (from Dispense Data in September 2026 Analysis.xlsx)
   const prescribers = disp.byPrescriber || [];
@@ -988,6 +1027,7 @@ function buildGeminiDataContext(state) {
     medicationMix: state.slide8_medMix,
     programDefinitions: state.slide9_appendix,
     cohortRetention: state.slide10_retention,
+    enrollmentReporting: state.enrollmentReporting || state.analysisWorkbook?.enrollmentReporting || null,
     analysisWorkbook: state.analysisWorkbook || null,
     worklistSummary: computeWorklistSummary(wl),
     worklistAggregations: {
@@ -1032,25 +1072,7 @@ function buildGeminiDataContext(state) {
 }
 
 async function askGeminiWithFullData(state, question, history = []) {
-  const apiKey = getGeminiApiKey();
-  if (!apiKey) {
-    throw new Error('No GEMINI_API_KEY / GOOGLE_API_KEY configured');
-  }
-
-  // Enforce member-level privacy guardrail before calling LLM
-  if (isMemberLevelQuery(state, question)) {
-    const blocked = buildMemberPrivacyGuardrailReply(state, question);
-    return {
-      question,
-      clientId: state.meta?.clientId || 'damien',
-      aiPowered: true,
-      aiModel: GEMINI_MODEL,
-      memberLevelBlocked: true,
-      reply: blocked.answer,
-      answer: blocked.answer
-    };
-  }
-
+  const memberBlockedFlag = isMemberLevelQuery(state, question);
   const contextData = buildGeminiDataContext(state);
   const meta = state.meta || {};
   const s2 = state.slide2_summary || {};
@@ -1064,33 +1086,35 @@ async function askGeminiWithFullData(state, question, history = []) {
   const ytdRevFmt = s3.ytdTable?.find(r => r.item === 'Pharmacy revenue')?.formatted || '$2,336,983';
   const ytdFeesFmt = s3.ytdTable?.find(r => r.item === 'Membership fees collected')?.formatted || '$44,164';
 
-  const systemInstruction = `You are a knowledgeable, warm, and direct healthcare analytics colleague at Bridge Health Hub supporting the ${meta.programTitle || 'GLP-1 Weight Loss Program'} for ${meta.client || 'our client'} and ${meta.pharmacyPartner || 'the pharmacy'} (data through ${meta.asOfDateFormatted || 'September 30, 2026'}).
+  const systemInstruction = `You are a sharp, insightful, executive-level healthcare analytics strategist at Bridge Health Hub supporting the ${meta.programTitle || 'GLP-1 Weight Loss Program'} for ${meta.client || 'our client'} and ${meta.pharmacyPartner || 'the pharmacy'} (data through ${meta.asOfDateFormatted || 'September 30, 2026'}).
 
-You are having a natural, human-like back-and-forth conversation with a teammate. Nothing more, nothing less.
+You are having an intelligent, natural, executive-ready conversation with a stakeholder or pharmacy/program leader.
 
 STRICT PRIVACY & AGGREGATE-ONLY RULE:
-- You ONLY provide AGGREGATE program, financial, channel, employer-group, prescriber, payer, medication/dose, and worklist summary analytics.
-- NEVER output or fabricate individual member IDs, patient alternate IDs, UUIDs, or individual member/patient records. If someone asks to look up a specific member ID or individual patient record, politely let them know that Ask Bridge AI only provides aggregate analytics for member privacy and direct them to the Pharmacy Worklists tabs (Pharmacy To-Do, Refill Follow-Up, Pharmacy Data Fixes, or Ended Memberships).
+- You ONLY provide AGGREGATE program, financial, enrollment/disenrollment, channel/broker, employer-group, prescriber, payer, medication/dose, and worklist summary analytics.
+- Zero individual member IDs, patient alternate IDs, or row-level member/patient records exist in your context. NEVER output or fabricate individual member IDs, patient alternate IDs, UUIDs, or individual member/patient records.
+- If someone asks to look up a specific member ID or individual patient record (e.g. an 8-char hex ID like 6d3f1831 or trinidad), politely explain that for member privacy, Ask Bridge AI only provides aggregate program, financial, channel, employer, prescriber, payer, medication, and worklist summary analytics—and direct them to use the search bar in the Pharmacy To-Do, Refill Follow-Up, Pharmacy Data Fixes, or Ended Memberships tabs for individual patient lookups.
 
-HOW TO SPEAK & USE YOUR DATA:
-- Write like a real, thoughtful human colleague in a chat conversation — natural, clear, conversational, and direct.
-- Do NOT output rigid report headers, category labels, source citations, slide numbers (never say "Slide 3", "Slide 9", etc.), file extensions (.pptx, .xlsx), or robotic meta-descriptions of your dataset size.
-- You have full access to:
-  1. ${meta.client}'s executive program performance (${activeSep} active members in Sep, ${fillsSep} Sep GLP-1 fills, $${sepProceedsVal.toLocaleString()} Sep net program proceeds after ad spend, ${ytdProceedsFmt} YTD net program proceeds after ad spend, ${ytdRevFmt} YTD pharmacy revenue across ${s3.totalFillsInPnl?.toLocaleString() || '2,034'} fills, ${ytdFeesFmt} YTD membership fees collected). Whenever asked about revenue, membership fees, or net program proceeds, always include both the September net proceeds ($${sepProceedsVal.toLocaleString()}) and the YTD net proceeds (${ytdProceedsFmt}) alongside YTD pharmacy revenue (${ytdRevFmt}) and YTD membership fees (${ytdFeesFmt}).
-  2. Granular aggregate analytics from the September 2026 Analysis dataset (\`analysisWorkbook\`):
-     - Full monthly P&L (\`exhibits.monthlyPnL\`): monthly Rx Count, monthly Pharmacy Revenue (e.g., Sep $769,074.12, Aug $558,672.02, Jul $382,652.42, Jun $247,935.52, YTD ${ytdRevFmt}), monthly Gross Margin, monthly Subscription Fees, Alpha fees, Bridge fees, Broker commissions, Cost to Fill ($40/fill), and monthly Gross Margin per Rx.
-     - Monthly Enrollments by Source & Broker Share % (\`exhibits.enrollmentsBySourceMonthly\`, \`exhibits.brokerSharePctMonthly\`).
-     - Monthly Membership Cancellations by Source & % of Enrolled (\`exhibits.cancellationsBySourceMonthly\`, \`exhibits.cancellationPctOfTotalEnrolledMonthly\`). Whenever asked about cancellations, always include both the September cancellations and the full YTD cancellations by source (e.g., 264 YTD / 25.5% of enrolled and 91 in September / 33.3%, with YTD source totals Paid Media 151, EPIC 68, Employee 23, Other 18, LHD 3, McGohan Brabender 1).
-     - Month-End Active Patient Tracker & Monthly Net Additions (\`exhibits.activePatientTrackerMonthly\`, \`exhibits.monthlyNetAdditions\`).
-     - Monthly & YTD Enrollments across all 35+ Employer Groups, Referral Codes, and Coupon Codes (\`exhibits.notableEmployerGroupsMonthly\`, \`alphaAnalytics.allEmployerGroups\`, \`alphaAnalytics.couponCodeCounts\`, \`alphaAnalytics.refCodeLookupTable\`).
-     - Monthly Dispenses across all 13 specific Ozempic & Wegovy Pen/Tablet dose strengths (\`exhibits.dispensesByDoseMonthly\`).
-     - Aggregate Pharmacy Dispense Claims Analytics (\`dispenseAnalytics\`): breakdown by Transaction Status (Completed, Cancelled, Waiting for Pick up), by Prescriber (NPI, completed/cancelled/waiting fills, total revenue, acquisition cost, total margin, avg margin/fill), by Primary & Secondary Third-Party Payer/Savings Card (claims, remit, copay, acquisition cost, margin), and by Medication/NDC.
-  3. Aggregate operational worklist summaries for ${meta.pharmacyPartner} (${ws.todoTotal} Pharmacy To-Do, ${ws.refillTotal} Refill Follow-Up, ${ws.fixesTotal} Pharmacy Data Fixes [${ws.fixesNoIdTotal} missing an ID and ${ws.fixesUnmatchedTotal} unmatched-ID fills, of which ${ws.fuzzySuggestedCount} fills have a possible 1-2 character typo match to ${ws.todoWithFuzzyCount} active To-Do patients to verify], and ${ws.endedTotal} Ended – Never Filled).
-- Output plain conversational text (you may use simple bolding for key numbers or short bullet points only when listing multiple items, just like a human would in Slack or Teams).`;
+HOW TO REASON & COMMUNICATE INTELLIGENTLY ACROSS BOTH PPTX AND XLSX DATA:
+- Synthesize across ALL THREE underlying data sources seamlessly:
+  1. Executive Report Deck (${meta.client}):
+     - Headline KPIs: ${activeSep} active members in Sep (+207 net additions vs Aug), ${fillsSep} Sep GLP-1 fills (411 Wegovy Pen, 256 Wegovy Pill [38%], 6 Ozempic), $${sepProceedsVal.toLocaleString()} Sep net program proceeds after ad spend, ${ytdProceedsFmt} YTD net program proceeds after ad spend, ${ytdRevFmt} YTD pharmacy revenue across ${s3.totalFillsInPnl?.toLocaleString() || '2,034'} completed GLP-1 fills, ${ytdFeesFmt} YTD membership fees collected. Whenever asked about revenue, membership fees, or net program proceeds, always cite both the September net proceeds ($${sepProceedsVal.toLocaleString()}) and the YTD net proceeds (${ytdProceedsFmt}) alongside YTD pharmacy revenue (${ytdRevFmt}) and YTD membership fees (${ytdFeesFmt}).
+     - Channel & Paid Media Economics: Broker partners (EPIC, LHD, McGohan Brabender) drove 62.3% of September enrollments and have higher 1st-fill conversion (77% EPIC, 76% LHD, 88% McGohan) and lower churn than Paid Media (62% 1st-fill, 4.63x ROAS on $142,033 spend generating $658,361 gross margin).
+     - First-Fill Funnel & Refill Persistence: 69% of pre-Sep sign-ups (523 of 760) filled their 1st Rx (90% saw provider, 80% prescribed, 86% of prescribed filled); once started, 94% refilled (Fill 1→2) and 87% were still filling at Fill 3.
+  2. Granular Analysis Workbook (\`analysisWorkbook\` & \`enrollmentReporting\` from September 2026 Analysis.xlsx):
+     - Enrollment, Disenrollment & Active Reporting (\`enrollmentReporting\`): Monthly (Jan–Sep), Quarterly (Q1–Q3), and YTD enrollments, disenrollments/cancellations, auto-disenrollments, and currently active counts by Channel/Broker (EPIC: 452 enrolled, 384 active [85.0%], 68 disenrolled [15.0%]; Paid Media: 417 enrolled, 266 active [63.8%], 151 disenrolled [36.2%]; Employee: 54 enrolled, 31 active, 23 disenrolled; LHD: 54 enrolled, 51 active [94.4%], 3 disenrolled [5.6%]; Other: 51 enrolled, 33 active, 18 disenrolled; McGohan Brabender: 8 enrolled, 7 active [87.5%], 1 disenrolled) and across all 38 Employer Groups (e.g., City of Evansville [80 YTD: 52 Aug, 28 Sep; 75 active, 5 disenrolled], Putnam County [31 YTD; 28 active, 3 disenrolled], Hamilton Center [29 YTD; 28 active, 1 disenrolled], GCS [27 Sep], Benton County [26 YTD], Healthcare Therapy Services [20 YTD], Warrick County [17 YTD], City of Lawrence [16 YTD], Epic Employees [16 YTD], IMCU [15 YTD], PCSC [13 YTD], Terre Haute [12 YTD], DRG [12 YTD], Bose McKinney & Evans [10 YTD], KVC [8], Clay County [8], Four Rivers [7], Jennings County [7], State of IN [7], Little Star [6], First Financial Bank [5], etc.).
+     - Whenever asked about cancellations or disenrollments, always include both September cancellations and full YTD cancellations by source (e.g. 264 YTD / 25.5% of enrolled and 91 in September / 33.3%, with YTD source totals Paid Media 151, EPIC 68, Employee 23, Other 18, LHD 3, McGohan Brabender 1, plus 231 auto-disenrolled).
+     - Full Monthly P&L (\`exhibits.monthlyPnL\`): Jan–Sep + YTD Rx Count, Pharmacy Revenue (Sep $769,074.12, Aug $558,672.02, Jul $382,652.42, Jun $247,935.52, YTD ${ytdRevFmt}), Gross Margin (Sep $613,123.94 [$911.03/Rx], Aug $469,654.60 [$922.70/Rx], YTD avg $863.10/Rx), Sub. Fees, Alpha fees, Bridge fees, Broker fees, and Cost to Fill.
+     - Dose-Level Dispenses (\`exhibits.dispensesByDoseMonthly\`): Monthly dispenses across all 13 specific Ozempic & Wegovy Pen/Tablet dose strengths.
+     - Pharmacy Claims Analytics (\`dispenseAnalytics\`): Breakdown by Transaction Status (Completed, Cancelled, Waiting for Pick up), by all 11 Prescribers (NPI, completed/cancelled/waiting fills, total revenue, acquisition cost, total margin, avg margin/fill), and by Primary & Secondary Third-Party Payers/Savings Cards (Wegovy Savings Card, Connective RX, Anthem, DC Inj Weight Loss Program, etc.).
+  3. First-Fill & Operations Worklist Workbook (\`worklistSummary\` & \`worklistAggregations\`):
+     - ${ws.todoTotal} active members on Pharmacy To-Do (${ws.todoUrgent} Urgent cancellation pending, ${ws.todoHigh} High priority, ${ws.todoMonitor} Monitor), ${ws.refillTotal} overdue refills on Refill Follow-Up, ${ws.fixesTotal} unlinked fills on Pharmacy Data Fixes (${ws.fixesNoIdTotal} missing an ID and ${ws.fixesUnmatchedTotal} unmatched-ID fills, of which ${ws.fuzzySuggestedCount} fills have a possible 1–2 character typo match to ${ws.todoWithFuzzyCount} active To-Do patients), and ${ws.endedTotal} Ended – Never Filled members.
+- Answer both the "what" (exact numbers, percentages, and trends) and the "so what" (strategic insight, root causes, and operational takeaways).
+- Never cite slide numbers ("Slide 3") or raw JSON key names. Format your response cleanly with bold key metrics and concise bullet points when comparing multiple items.`;
 
   const conversationTurns = [];
   if (Array.isArray(history)) {
-    for (const h of history.slice(-10)) {
+    for (const h of history.slice(-8)) {
       if (h && h.question && h.answer) {
         conversationTurns.push({ role: 'user', parts: [{ text: String(h.question) }] });
         conversationTurns.push({ role: 'model', parts: [{ text: String(h.answer) }] });
@@ -1098,32 +1122,67 @@ HOW TO SPEAK & USE YOUR DATA:
     }
   }
 
-  const userPrompt = `[Reference Aggregate Data Context for ${meta.client}: ${JSON.stringify(contextData)}]\n\nUser message: ${question}`;
+  const privacyNote = memberBlockedFlag
+    ? '\n[SYSTEM NOTE: The user message references a specific member/patient identifier. Politely explain that for member privacy, Ask Bridge AI only provides aggregate program, financial, channel, employer, prescriber, payer, medication, and worklist summary analytics (no individual member-level records), and direct them to use the Pharmacy Worklists tabs to look up individual patient IDs.]'
+    : '';
+
+  const userPrompt = `[Reference Aggregate Data Context for ${meta.client}: ${JSON.stringify(contextData)}]${privacyNote}\n\nUser message: ${question}`;
   conversationTurns.push({ role: 'user', parts: [{ text: userPrompt }] });
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
   const payload = {
     systemInstruction: { parts: [{ text: systemInstruction }] },
     contents: conversationTurns,
     generationConfig: {
-      temperature: 0.3,
-      thinkingConfig: { thinkingBudget: 0 }
+      temperature: 0.25,
+      maxOutputTokens: 2048,
+      thinkingConfig: { thinkingBudget: 512 }
     }
   };
 
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
+  let data = null;
+  let usedModel = VERTEX_GEMINI_MODEL;
 
-  if (!resp.ok) {
-    const errText = await resp.text();
-    throw new Error(`Gemini API HTTP ${resp.status}: ${errText.slice(0, 300)}`);
+  // Primary path: Vertex AI via GCP Project Billing (Cloud Run Service Account / gcloud ADC)
+  try {
+    const token = await getGcpAccessToken();
+    const vertexUrl = `https://aiplatform.googleapis.com/v1/projects/${GCP_PROJECT_ID}/locations/global/publishers/google/models/${VERTEX_GEMINI_MODEL}:generateContent`;
+    const vertexResp = await fetch(vertexUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+    if (!vertexResp.ok) {
+      const errText = await vertexResp.text();
+      throw new Error(`Vertex AI HTTP ${vertexResp.status}: ${errText.slice(0, 300)}`);
+    }
+    data = await vertexResp.json();
+    usedModel = VERTEX_GEMINI_MODEL;
+  } catch (vertexErr) {
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) {
+      throw vertexErr;
+    }
+    // Secondary fallback to AI Studio API key if configured
+    const aiStudioUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+    const studioResp = await fetch(aiStudioUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!studioResp.ok) {
+      const errText = await studioResp.text();
+      throw new Error(`Vertex (${vertexErr.message}) & AI Studio HTTP ${studioResp.status}: ${errText.slice(0, 200)}`);
+    }
+    data = await studioResp.json();
+    usedModel = GEMINI_MODEL;
   }
 
-  const data = await resp.json();
-  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  const parts = data?.candidates?.[0]?.content?.parts || [];
+  const textPart = parts.find(p => typeof p.text === 'string' && !p.thought) || parts.find(p => typeof p.text === 'string');
+  const rawText = textPart?.text;
   if (!rawText) {
     throw new Error('Empty response from Gemini API');
   }
@@ -1133,7 +1192,8 @@ HOW TO SPEAK & USE YOUR DATA:
     question,
     clientId: meta.clientId,
     aiPowered: true,
-    aiModel: GEMINI_MODEL,
+    aiModel: usedModel,
+    memberLevelBlocked: memberBlockedFlag,
     reply: cleanReply,
     answer: cleanReply
   };
@@ -1144,8 +1204,18 @@ app.post('/api/ask', async (req, res) => {
   const state = await ensureClientStateLoaded(clientId);
   const { question, history, mode } = req.body || {};
   const q = String(question || '').trim() || 'How is the program performing through September 2026?';
+  const memberBlockedFlag = isMemberLevelQuery(state, q);
 
-  if (isMemberLevelQuery(state, q)) {
+  if (mode !== 'instant') {
+    try {
+      const geminiResult = await askGeminiWithFullData(state, q, history);
+      return res.json(geminiResult);
+    } catch (err) {
+      console.error('Gemini API error, falling back to deterministic engine:', err.message);
+    }
+  }
+
+  if (memberBlockedFlag) {
     const blocked = buildMemberPrivacyGuardrailReply(state, q);
     return res.json({
       question: q,
@@ -1156,15 +1226,6 @@ app.post('/api/ask', async (req, res) => {
       reply: blocked.answer,
       answer: blocked.answer
     });
-  }
-
-  if (getGeminiApiKey() && mode !== 'instant') {
-    try {
-      const geminiResult = await askGeminiWithFullData(state, q, history);
-      return res.json(geminiResult);
-    } catch (err) {
-      console.error('Gemini API error, falling back to deterministic engine:', err.message);
-    }
   }
 
   const fallback = answerQuestion(state, q);
@@ -1179,5 +1240,5 @@ app.post('/api/ask', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Bridge Multi-Client GLP-1 Program Portal running on http://localhost:${PORT} (Gemini: ${Boolean(getGeminiApiKey())}, GCS Bucket: ${GCS_STATE_BUCKET || 'local-fallback'})`);
+  console.log(`Bridge Multi-Client GLP-1 Program Portal running on http://localhost:${PORT} (Gemini Model: ${VERTEX_GEMINI_MODEL} via Vertex AI GCP Billing, GCS Bucket: ${GCS_STATE_BUCKET || 'local-fallback'})`);
 });

@@ -162,6 +162,8 @@ function renderAllViews() {
   renderSummaryView();
   renderFinancialsView();
   renderSourcesView();
+  populateEnrollmentReportingFilters();
+  renderEnrollmentReportingView();
   renderPaidMediaView();
   renderFunnelView();
   renderRefillAndRetentionView();
@@ -175,6 +177,7 @@ const VIEW_TITLES = {
   summary: 'Executive Overview',
   financials: 'Program Financials & P&L',
   sources: 'Patient Sources & Channel Economics',
+  enrollment: 'Enrollment, Disenrollment & Active Reporting',
   paidmedia: 'Paid Media ROI & Cohort Performance',
   funnel: 'First-Fill Conversion Funnel',
   refill: 'Refills & Cohort Retention',
@@ -549,6 +552,456 @@ function renderSourcesChart() {
       }
     }
   });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   3B. ENROLLMENT REPORTING (TIMEFRAMES, BROKERS/CHANNELS & EMPLOYERS)
+   ═══════════════════════════════════════════════════════════════════════════ */
+function getEnrollmentReportingData() {
+  return PORTAL_DATA?.enrollmentReporting || PORTAL_DATA?.analysisWorkbook?.enrollmentReporting || null;
+}
+
+function getTimeframeMonths(tf) {
+  const all = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'];
+  if (!tf || tf === 'YTD') return all;
+  if (tf === 'Q1') return ['Jan', 'Feb', 'Mar'];
+  if (tf === 'Q2') return ['Apr', 'May', 'Jun'];
+  if (tf === 'Q3') return ['Jul', 'Aug', 'Sep'];
+  if (all.includes(tf)) return [tf];
+  return all;
+}
+
+function sumByMonths(monthMap, monthsList) {
+  if (!monthMap) return 0;
+  return monthsList.reduce((acc, m) => acc + (Number(monthMap[m]) || 0), 0);
+}
+
+function populateEnrollmentReportingFilters() {
+  const er = getEnrollmentReportingData();
+  if (!er) return;
+
+  const chSel = document.getElementById('enrollChannelFilter');
+  if (chSel) {
+    const prevCh = chSel.value || 'ALL';
+    const channels = er.channels || [];
+    const brokerChannels = channels.filter(c => c.isBroker);
+    const brokerYtd = brokerChannels.reduce((acc, c) => acc + (c.totalEnrolled || 0), 0);
+    const totalYtd = channels.reduce((acc, c) => acc + (c.totalEnrolled || 0), 0);
+
+    chSel.innerHTML = `
+      <option value="ALL">All Channels (${totalYtd.toLocaleString()} YTD)</option>
+      <option value="BROKERS_ONLY">All Broker Partners Combined (${brokerYtd.toLocaleString()} YTD)</option>
+      ${channels.map(c => `<option value="${escapeAttr(c.channel)}">${c.channel}${c.isBroker ? ' (Broker)' : ''} (${c.totalEnrolled.toLocaleString()} YTD)</option>`).join('')}
+    `;
+    if ([...chSel.options].some(o => o.value === prevCh)) {
+      chSel.value = prevCh;
+    }
+  }
+
+  const empSel = document.getElementById('enrollEmployerFilter');
+  if (empSel) {
+    const prevEmp = empSel.value || 'ALL';
+    const employers = (er.employers || []).filter(e => !e.isDirectNoEmployer);
+    empSel.innerHTML = `
+      <option value="ALL">All Employer Groups (${employers.length} employers)</option>
+      <option value="EMPLOYERS_ONLY">Named Employer Groups Only (Excl. Direct/Paid Media)</option>
+      ${employers.map(e => `<option value="${escapeAttr(e.employerGroup)}">${e.employerGroup} — ${e.partnerSource} (${e.totalEnrolled})</option>`).join('')}
+    `;
+    if ([...empSel.options].some(o => o.value === prevEmp)) {
+      empSel.value = prevEmp;
+    }
+  }
+}
+
+function resetEnrollmentFilters() {
+  const tfEl = document.getElementById('enrollTimeframeFilter');
+  const chEl = document.getElementById('enrollChannelFilter');
+  const empEl = document.getElementById('enrollEmployerFilter');
+  const qEl = document.getElementById('enrollEmployerSearch');
+  if (tfEl) tfEl.value = 'YTD';
+  if (chEl) chEl.value = 'ALL';
+  if (empEl) empEl.value = 'ALL';
+  if (qEl) qEl.value = '';
+  renderEnrollmentReportingView();
+}
+
+function setEnrollmentFilter(opts = {}) {
+  if (opts.timeframe) {
+    const tfEl = document.getElementById('enrollTimeframeFilter');
+    if (tfEl) tfEl.value = opts.timeframe;
+  }
+  if (opts.channel !== undefined) {
+    const chEl = document.getElementById('enrollChannelFilter');
+    if (chEl) chEl.value = opts.channel;
+  }
+  if (opts.employer !== undefined) {
+    const empEl = document.getElementById('enrollEmployerFilter');
+    if (empEl) empEl.value = opts.employer;
+  }
+  renderEnrollmentReportingView();
+}
+
+function renderEnrollmentReportingView() {
+  const er = getEnrollmentReportingData();
+  if (!er) return;
+
+  const tf = document.getElementById('enrollTimeframeFilter')?.value || 'YTD';
+  const chFilter = document.getElementById('enrollChannelFilter')?.value || 'ALL';
+  const empFilter = document.getElementById('enrollEmployerFilter')?.value || 'ALL';
+  const searchQ = (document.getElementById('enrollEmployerSearch')?.value || '').toLowerCase().trim();
+
+  const tfMonths = getTimeframeMonths(tf);
+  const allMonths = er.months || ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'];
+  const endMonth = tfMonths[tfMonths.length - 1] || 'Sep';
+
+  // Filter channels
+  const allChannels = er.channels || [];
+  const matchingChannels = allChannels.filter(c => {
+    if (chFilter === 'ALL') return true;
+    if (chFilter === 'BROKERS_ONLY') return c.isBroker;
+    return c.channel === chFilter;
+  });
+
+  // Filter employers
+  const allEmployers = er.employers || [];
+  const matchingEmployers = allEmployers.filter(e => {
+    if (chFilter === 'BROKERS_ONLY' && !e.isBrokerChannel) return false;
+    if (chFilter !== 'ALL' && chFilter !== 'BROKERS_ONLY' && e.partnerSource !== chFilter) return false;
+    if (empFilter === 'EMPLOYERS_ONLY' && e.isDirectNoEmployer) return false;
+    if (empFilter !== 'ALL' && empFilter !== 'EMPLOYERS_ONLY' && e.employerGroup !== empFilter) return false;
+    if (searchQ) {
+      const hay = `${e.employerGroup} ${e.partnerSource} ${(e.refCodes || []).join(' ')}`.toLowerCase();
+      if (!hay.includes(searchQ)) return false;
+    }
+    return true;
+  });
+
+  // Determine whether an employer-specific filter is active
+  const isEmployerFiltered = (empFilter !== 'ALL') || Boolean(searchQ);
+  const sourceRecords = isEmployerFiltered ? matchingEmployers : matchingChannels;
+
+  let enrolledCount = 0;
+  let disenrolledCount = 0;
+  let activeCohortCount = 0;
+  let autoDisenrolledCount = 0;
+  let visitCount = 0;
+  let rxCount = 0;
+
+  for (const item of sourceRecords) {
+    enrolledCount += (tf === 'YTD' && item.totalEnrolled !== undefined) ? Number(item.totalEnrolled) : sumByMonths(item.byMonth, tfMonths);
+    disenrolledCount += (tf === 'YTD' && item.cancelledMembers !== undefined) ? Number(item.cancelledMembers) : sumByMonths(item.cancelledByMonth, tfMonths);
+    activeCohortCount += (tf === 'YTD' && item.activeMembers !== undefined) ? Number(item.activeMembers) : sumByMonths(item.activeByMonth, tfMonths);
+    autoDisenrolledCount += (tf === 'YTD' && item.autoDisenrolled !== undefined) ? Number(item.autoDisenrolled) : sumByMonths(item.autoDisenrolledByMonth, tfMonths);
+    visitCount += (tf === 'YTD' && item.withProviderVisit !== undefined) ? Number(item.withProviderVisit) : sumByMonths(item.visitByMonth, tfMonths);
+    rxCount += (tf === 'YTD' && item.withPrescription !== undefined) ? Number(item.withPrescription) : sumByMonths(item.rxByMonth, tfMonths);
+  }
+
+  // Overall all-channel totals for the selected timeframe (to compute broker share)
+  const totalEnrolledAllChannelsTf = allChannels.reduce((acc, c) => acc + ((tf === 'YTD' && c.totalEnrolled !== undefined) ? Number(c.totalEnrolled) : sumByMonths(c.byMonth, tfMonths)), 0);
+  const brokerEnrolledTf = allChannels.filter(c => c.isBroker).reduce((acc, c) => acc + ((tf === 'YTD' && c.totalEnrolled !== undefined) ? Number(c.totalEnrolled) : sumByMonths(c.byMonth, tfMonths)), 0);
+  const brokerShareTfPct = totalEnrolledAllChannelsTf > 0 ? ((brokerEnrolledTf / totalEnrolledAllChannelsTf) * 100).toFixed(1) : '0.0';
+
+  const disenrollRatePct = enrolledCount > 0 ? ((disenrolledCount / enrolledCount) * 100).toFixed(1) : '0.0';
+  const activeRetPct = enrolledCount > 0 ? ((activeCohortCount / enrolledCount) * 100).toFixed(1) : '0.0';
+
+  // Month-end active tracker & net additions from Damien Exhibits (when unfiltered) or cohort active (when filtered)
+  const isUnfilteredScope = (chFilter === 'ALL') && !isEmployerFiltered;
+  const monthEndActiveVal = isUnfilteredScope
+    ? (er.activePatientTrackerMonthly?.[endMonth] ?? activeCohortCount)
+    : activeCohortCount;
+
+  const netAdditionsVal = isUnfilteredScope
+    ? tfMonths.reduce((acc, m) => acc + (Number(er.monthlyNetAdditions?.[m]) || 0), 0)
+    : (enrolledCount - disenrolledCount);
+
+  const tfLabelMap = {
+    YTD: 'YTD (Jan – Sep)',
+    Q3: 'Q3 (Jul – Sep)',
+    Q2: 'Q2 (Apr – Jun)',
+    Q1: 'Q1 (Jan – Mar)'
+  };
+  const tfDisplay = tfLabelMap[tf] || `${tf} 2026`;
+
+  const kpiRow = document.getElementById('enrollmentKpiRow');
+  if (kpiRow) {
+    kpiRow.innerHTML = `
+      <div class="kpi" data-testid="enroll-kpi-enrolled">
+        <div class="kpi-label">Enrollments (${tfDisplay})</div>
+        <div class="kpi-val">${enrolledCount.toLocaleString()}</div>
+        <div class="kpi-sub">${visitCount.toLocaleString()} saw provider · ${rxCount.toLocaleString()} prescribed</div>
+      </div>
+      <div class="kpi" data-testid="enroll-kpi-disenrolled">
+        <div class="kpi-label">Disenrolled / Cancelled</div>
+        <div class="kpi-val">${disenrolledCount.toLocaleString()}</div>
+        <div class="kpi-sub">${disenrollRatePct}% disenrollment rate · ${autoDisenrolledCount.toLocaleString()} auto-disenrolled</div>
+      </div>
+      <div class="kpi" data-testid="enroll-kpi-active">
+        <div class="kpi-label">Currently Active (${endMonth})</div>
+        <div class="kpi-val">${monthEndActiveVal.toLocaleString()}</div>
+        <div class="kpi-sub">${activeCohortCount.toLocaleString()} active in cohort (${activeRetPct}% retained)</div>
+      </div>
+      <div class="kpi" data-testid="enroll-kpi-net">
+        <div class="kpi-label">Net Additions (${tfDisplay})</div>
+        <div class="kpi-val">${netAdditionsVal >= 0 ? '+' : ''}${netAdditionsVal.toLocaleString()}</div>
+        <div class="kpi-sub">${isUnfilteredScope ? `Month-end active tracker through ${endMonth}` : 'Enrolled minus disenrolled in selection'}</div>
+      </div>
+      <div class="kpi" data-testid="enroll-kpi-broker">
+        <div class="kpi-label">Broker Channel Share (${tfDisplay})</div>
+        <div class="kpi-val">${brokerShareTfPct}%</div>
+        <div class="kpi-sub">${brokerEnrolledTf.toLocaleString()} of ${totalEnrolledAllChannelsTf.toLocaleString()} sign-ups via brokers</div>
+      </div>
+    `;
+  }
+
+  // Update badges
+  const trendBadge = document.getElementById('enrollTrendBadge');
+  if (trendBadge) trendBadge.textContent = chFilter === 'ALL' && !isEmployerFiltered ? 'All Channels (Jan – Sep)' : `${chFilter !== 'ALL' ? chFilter : 'Filtered'} (${tfDisplay})`;
+  const chBadge = document.getElementById('enrollChannelBadge');
+  if (chBadge) chBadge.textContent = tfDisplay;
+  const chTblBadge = document.getElementById('enrollChannelTableBadge');
+  if (chTblBadge) chTblBadge.textContent = `${tfDisplay} · ${matchingChannels.length} Channels`;
+
+  // Render Chart 1: Monthly Enrollment, Disenrollment & Currently Active Trend (Jan - Sep)
+  const monthlyEnrolledSeries = allMonths.map(m =>
+    sourceRecords.reduce((acc, r) => acc + (Number(r.byMonth?.[m]) || 0), 0)
+  );
+  const monthlyDisenrolledSeries = allMonths.map(m =>
+    sourceRecords.reduce((acc, r) => acc + (Number(r.cancelledByMonth?.[m]) || 0), 0)
+  );
+  let runningActive = 0;
+  const monthlyActiveSeries = allMonths.map(m => {
+    if (isUnfilteredScope && er.activePatientTrackerMonthly?.[m] !== undefined) {
+      return Number(er.activePatientTrackerMonthly[m]) || 0;
+    }
+    runningActive += sourceRecords.reduce((acc, r) => acc + (Number(r.activeByMonth?.[m]) || 0), 0);
+    return runningActive;
+  });
+
+  destroyChart('enrollmentTrend');
+  const trendCanvas = document.getElementById('chartEnrollmentTrend');
+  if (trendCanvas) {
+    CHARTS.enrollmentTrend = new Chart(trendCanvas.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: allMonths,
+        datasets: [
+          {
+            type: 'bar',
+            label: 'New Enrollments',
+            data: monthlyEnrolledSeries,
+            backgroundColor: '#26abe4',
+            borderRadius: 4,
+            order: 2
+          },
+          {
+            type: 'bar',
+            label: 'Disenrollments / Cancellations',
+            data: monthlyDisenrolledSeries,
+            backgroundColor: '#e97132',
+            borderRadius: 4,
+            order: 3
+          },
+          {
+            type: 'line',
+            label: isUnfilteredScope ? 'Month-End Active Members' : 'Cumulative Active Members',
+            data: monthlyActiveSeries,
+            borderColor: '#0e2841',
+            backgroundColor: 'rgba(14, 40, 65, 0.1)',
+            borderWidth: 2.5,
+            pointRadius: 4,
+            pointBackgroundColor: '#0e2841',
+            tension: 0.25,
+            order: 1
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top' }
+        },
+        scales: {
+          x: { grid: { display: false } },
+          y: { beginAtZero: true, grid: { color: 'rgba(15, 23, 42, 0.05)' } }
+        }
+      }
+    });
+  }
+
+  // Render Chart 2: Channel / Broker Enrollment vs Currently Active vs Disenrolled (for selected timeframe)
+  const channelRowsForChart = matchingChannels.map(c => ({
+    channel: c.channel,
+    isBroker: c.isBroker,
+    category: c.category,
+    enrolled: (tf === 'YTD' && c.totalEnrolled !== undefined) ? Number(c.totalEnrolled) : sumByMonths(c.byMonth, tfMonths),
+    disenrolled: (tf === 'YTD' && c.cancelledMembers !== undefined) ? Number(c.cancelledMembers) : sumByMonths(c.cancelledByMonth, tfMonths),
+    active: (tf === 'YTD' && c.activeMembers !== undefined) ? Number(c.activeMembers) : sumByMonths(c.activeByMonth, tfMonths),
+    visit: (tf === 'YTD' && c.withProviderVisit !== undefined) ? Number(c.withProviderVisit) : sumByMonths(c.visitByMonth, tfMonths),
+    rx: (tf === 'YTD' && c.withPrescription !== undefined) ? Number(c.withPrescription) : sumByMonths(c.rxByMonth, tfMonths),
+    jun: Number(c.byMonth?.Jun || 0),
+    jul: Number(c.byMonth?.Jul || 0),
+    aug: Number(c.byMonth?.Aug || 0),
+    sep: Number(c.byMonth?.Sep || 0)
+  }));
+
+  destroyChart('enrollmentByChannel');
+  const chCanvas = document.getElementById('chartEnrollmentByChannel');
+  if (chCanvas) {
+    CHARTS.enrollmentByChannel = new Chart(chCanvas.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: channelRowsForChart.map(c => c.channel),
+        datasets: [
+          {
+            label: 'Enrolled',
+            data: channelRowsForChart.map(c => c.enrolled),
+            backgroundColor: '#154672',
+            borderRadius: 4
+          },
+          {
+            label: 'Currently Active',
+            data: channelRowsForChart.map(c => c.active),
+            backgroundColor: '#1baf7a',
+            borderRadius: 4
+          },
+          {
+            label: 'Disenrolled',
+            data: channelRowsForChart.map(c => c.disenrolled),
+            backgroundColor: '#e97132',
+            borderRadius: 4
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top' }
+        },
+        scales: {
+          x: { grid: { display: false } },
+          y: { beginAtZero: true, grid: { color: 'rgba(15, 23, 42, 0.05)' } }
+        }
+      }
+    });
+  }
+
+  // Render Table 1: Channel / Broker Breakdown Table
+  const tbodyCh = document.getElementById('tbodyEnrollmentChannels');
+  if (tbodyCh) {
+    const totEnr = channelRowsForChart.reduce((a, r) => a + r.enrolled, 0);
+    const totDis = channelRowsForChart.reduce((a, r) => a + r.disenrolled, 0);
+    const totAct = channelRowsForChart.reduce((a, r) => a + r.active, 0);
+    const totVis = channelRowsForChart.reduce((a, r) => a + r.visit, 0);
+    const totRx = channelRowsForChart.reduce((a, r) => a + r.rx, 0);
+    const totJun = channelRowsForChart.reduce((a, r) => a + r.jun, 0);
+    const totJul = channelRowsForChart.reduce((a, r) => a + r.jul, 0);
+    const totAug = channelRowsForChart.reduce((a, r) => a + r.aug, 0);
+    const totSep = channelRowsForChart.reduce((a, r) => a + r.sep, 0);
+
+    tbodyCh.innerHTML = channelRowsForChart.map(r => {
+      const disPct = r.enrolled > 0 ? ((r.disenrolled / r.enrolled) * 100).toFixed(1) + '%' : '0.0%';
+      const actPct = r.enrolled > 0 ? ((r.active / r.enrolled) * 100).toFixed(1) + '%' : '0.0%';
+      const catBadge = r.isBroker
+        ? `<span class="know-badge">Broker Partner</span>`
+        : `<span class="low-sample-badge">${r.category}</span>`;
+      return `
+        <tr style="cursor:pointer" onclick="setEnrollmentFilter({channel:'${escapeAttr(r.channel)}'})" title="Click to filter by ${escapeAttr(r.channel)}">
+          <td><strong>${r.channel}</strong></td>
+          <td>${catBadge}</td>
+          <td class="num"><strong>${r.enrolled.toLocaleString()}</strong></td>
+          <td class="num">${r.disenrolled.toLocaleString()}</td>
+          <td class="num">${disPct}</td>
+          <td class="num"><strong>${r.active.toLocaleString()}</strong></td>
+          <td class="num"><strong style="color:#0f766e">${actPct}</strong></td>
+          <td class="num">${r.visit.toLocaleString()}</td>
+          <td class="num">${r.rx.toLocaleString()}</td>
+          <td class="num">${r.jun}</td>
+          <td class="num">${r.jul}</td>
+          <td class="num">${r.aug}</td>
+          <td class="num"><strong>${r.sep}</strong></td>
+        </tr>
+      `;
+    }).join('') + `
+      <tr class="total-row">
+        <td><strong>Total (${tfDisplay})</strong></td>
+        <td>—</td>
+        <td class="num"><strong>${totEnr.toLocaleString()}</strong></td>
+        <td class="num"><strong>${totDis.toLocaleString()}</strong></td>
+        <td class="num"><strong>${totEnr > 0 ? ((totDis / totEnr) * 100).toFixed(1) + '%' : '0.0%'}</strong></td>
+        <td class="num"><strong>${totAct.toLocaleString()}</strong></td>
+        <td class="num"><strong>${totEnr > 0 ? ((totAct / totEnr) * 100).toFixed(1) + '%' : '0.0%'}</strong></td>
+        <td class="num"><strong>${totVis.toLocaleString()}</strong></td>
+        <td class="num"><strong>${totRx.toLocaleString()}</strong></td>
+        <td class="num"><strong>${totJun}</strong></td>
+        <td class="num"><strong>${totJul}</strong></td>
+        <td class="num"><strong>${totAug}</strong></td>
+        <td class="num"><strong>${totSep}</strong></td>
+      </tr>
+    `;
+  }
+
+  // Render Table 2: Employer Group Enrollment, Disenrollment & Active Roster
+  const tbodyEmp = document.getElementById('tbodyEnrollmentEmployers');
+  const empBadge = document.getElementById('enrollEmployerCountBadge');
+  if (tbodyEmp) {
+    const empRows = matchingEmployers
+      .map(e => ({
+        employerGroup: e.employerGroup,
+        isDirectNoEmployer: e.isDirectNoEmployer,
+        partnerSource: e.partnerSource,
+        isBrokerChannel: e.isBrokerChannel,
+        refCodes: (e.refCodes || []).join(', ') || '—',
+        enrolled: (tf === 'YTD' && e.totalEnrolled !== undefined) ? Number(e.totalEnrolled) : sumByMonths(e.byMonth, tfMonths),
+        disenrolled: (tf === 'YTD' && e.cancelledMembers !== undefined) ? Number(e.cancelledMembers) : sumByMonths(e.cancelledByMonth, tfMonths),
+        active: (tf === 'YTD' && e.activeMembers !== undefined) ? Number(e.activeMembers) : sumByMonths(e.activeByMonth, tfMonths),
+        visit: (tf === 'YTD' && e.withProviderVisit !== undefined) ? Number(e.withProviderVisit) : sumByMonths(e.visitByMonth, tfMonths),
+        rx: (tf === 'YTD' && e.withPrescription !== undefined) ? Number(e.withPrescription) : sumByMonths(e.rxByMonth, tfMonths),
+        jun: Number(e.byMonth?.Jun || 0),
+        jul: Number(e.byMonth?.Jul || 0),
+        aug: Number(e.byMonth?.Aug || 0),
+        sep: Number(e.byMonth?.Sep || 0),
+        ytd: Number(e.totalEnrolled || 0)
+      }))
+      .filter(r => r.enrolled > 0 || tf === 'YTD')
+      .sort((a, b) => {
+        if (a.isDirectNoEmployer !== b.isDirectNoEmployer) {
+          return a.isDirectNoEmployer ? 1 : -1;
+        }
+        return (b.enrolled - a.enrolled) || (b.ytd - a.ytd) || a.employerGroup.localeCompare(b.employerGroup);
+      });
+
+    const namedCount = empRows.filter(r => !r.isDirectNoEmployer).length;
+    if (empBadge) {
+      empBadge.textContent = `${namedCount} Employer Group${namedCount === 1 ? '' : 's'} (${tfDisplay})`;
+    }
+
+    tbodyEmp.innerHTML = empRows.map(r => {
+      const actPct = r.enrolled > 0 ? ((r.active / r.enrolled) * 100).toFixed(1) + '%' : '0.0%';
+      const partnerBadge = r.isBrokerChannel
+        ? `<span class="know-badge">${r.partnerSource}</span>`
+        : `<span class="low-sample-badge">${r.partnerSource}</span>`;
+      return `
+        <tr>
+          <td><strong>${r.employerGroup}</strong></td>
+          <td>${partnerBadge}</td>
+          <td style="font-size:0.75rem;color:var(--muted)">${r.refCodes}</td>
+          <td class="num"><strong>${r.enrolled.toLocaleString()}</strong></td>
+          <td class="num">${r.disenrolled.toLocaleString()}</td>
+          <td class="num"><strong>${r.active.toLocaleString()}</strong></td>
+          <td class="num"><strong style="color:#0f766e">${actPct}</strong></td>
+          <td class="num">${r.visit.toLocaleString()}</td>
+          <td class="num">${r.rx.toLocaleString()}</td>
+          <td class="num">${r.jun}</td>
+          <td class="num">${r.jul}</td>
+          <td class="num">${r.aug}</td>
+          <td class="num"><strong>${r.sep}</strong></td>
+          <td class="num"><strong>${r.ytd.toLocaleString()}</strong></td>
+        </tr>
+      `;
+    }).join('');
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1351,12 +1804,81 @@ async function executeAskQuestion(questionText) {
 }
 
 function formatMarkdownText(raw) {
-  return String(raw || '')
+  const escaped = String(raw || '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/`([^`]+)`/g, '<code style="background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:0.86em">$1</code>');
+    .replace(/>/g, '&gt;');
+
+  const formatInline = (str) =>
+    str
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
+      .replace(/`([^`]+)`/g, '<code style="background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:0.86em">$1</code>');
+
+  const lines = escaped.split(/\r?\n/);
+  const out = [];
+  let inUl = false;
+  let inOl = false;
+
+  const closeLists = () => {
+    if (inUl) {
+      out.push('</ul>');
+      inUl = false;
+    }
+    if (inOl) {
+      out.push('</ol>');
+      inOl = false;
+    }
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      closeLists();
+      continue;
+    }
+
+    const headingMatch = line.match(/^(#{1,4})\s+(.+)$/);
+    if (headingMatch) {
+      closeLists();
+      out.push(`<div style="font-weight:700;color:#0e2841;margin:8px 0 4px">${formatInline(headingMatch[2])}</div>`);
+      continue;
+    }
+
+    const ulMatch = line.match(/^[-*•]\s+(.+)$/);
+    if (ulMatch) {
+      if (inOl) {
+        out.push('</ol>');
+        inOl = false;
+      }
+      if (!inUl) {
+        out.push('<ul style="margin:6px 0 8px 18px;padding:0;display:flex;flex-direction:column;gap:4px">');
+        inUl = true;
+      }
+      out.push(`<li>${formatInline(ulMatch[1])}</li>`);
+      continue;
+    }
+
+    const olMatch = line.match(/^\d+\.\s+(.+)$/);
+    if (olMatch) {
+      if (inUl) {
+        out.push('</ul>');
+        inUl = false;
+      }
+      if (!inOl) {
+        out.push('<ol style="margin:6px 0 8px 18px;padding:0;display:flex;flex-direction:column;gap:4px">');
+        inOl = true;
+      }
+      out.push(`<li>${formatInline(olMatch[1])}</li>`);
+      continue;
+    }
+
+    closeLists();
+    out.push(`<div style="margin-bottom:6px">${formatInline(line)}</div>`);
+  }
+
+  closeLists();
+  return out.join('');
 }
 
 function renderChatThread(pendingUserQuestion = null) {

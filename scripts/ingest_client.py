@@ -346,8 +346,27 @@ def parse_damien_analysis_workbook(analysis_xlsx_path):
         "withProviderVisit": 0,
         "withPrescription": 0,
         "byMonth": collections.Counter(),
+        "cancelledByStartMonth": collections.Counter(),
+        "activeByStartMonth": collections.Counter(),
+        "autoDisenrolledByStartMonth": collections.Counter(),
+        "visitByStartMonth": collections.Counter(),
+        "rxByStartMonth": collections.Counter(),
         "partnerSource": "",
         "refCodes": set(),
+    })
+    channel_stats = collections.defaultdict(lambda: {
+        "totalEnrolled": 0,
+        "activeMembers": 0,
+        "cancelledMembers": 0,
+        "autoDisenrolled": 0,
+        "withProviderVisit": 0,
+        "withPrescription": 0,
+        "byMonth": collections.Counter(),
+        "cancelledByStartMonth": collections.Counter(),
+        "activeByStartMonth": collections.Counter(),
+        "autoDisenrolledByStartMonth": collections.Counter(),
+        "visitByStartMonth": collections.Counter(),
+        "rxByStartMonth": collections.Counter(),
     })
     coupon_counts = collections.Counter()
     ref_code_counts = collections.Counter()
@@ -372,12 +391,17 @@ def parse_damien_analysis_workbook(analysis_xlsx_path):
         else:
             non_test_damien_rows += 1
 
-        emp_group = str(row.get("Reference Code Group") or "No Employer Group / Direct").strip()
-        p_source = str(row.get("Patient Source") or "Unknown").strip()
+        raw_emp = row.get("Reference Code Group")
+        emp_group = str(raw_emp).strip() if (raw_emp is not None and str(raw_emp).strip() not in ("", "None")) else "Direct / Paid Media (No Employer Code)"
+        p_source = str(row.get("Patient Source") or "Other").strip()
+        if p_source in ("", "None"):
+            p_source = "Other"
         rc = str(row.get("ref_code") or "").strip()
         cc = str(row.get("coupon_code_used") or "").strip()
         start_dt = row.get("subscription_start_time")
         start_month = start_dt.strftime("%b") if isinstance(start_dt, (datetime.datetime, datetime.date)) else str(row.get("Start Month") or "")
+        if start_month == "Sept":
+            start_month = "Sep"
         is_cancelled = row.get("subscription_cancellation_time") is not None
         is_auto_dis = str(row.get("auto-disenrolled") or "").strip().lower() in ("1", "true", "yes")
 
@@ -418,25 +442,63 @@ def parse_damien_analysis_workbook(analysis_xlsx_path):
         st["totalEnrolled"] += 1
         if is_cancelled:
             st["cancelledMembers"] += 1
+            if start_month:
+                st["cancelledByStartMonth"][start_month] += 1
         else:
             st["activeMembers"] += 1
+            if start_month:
+                st["activeByStartMonth"][start_month] += 1
         if is_auto_dis:
             st["autoDisenrolled"] += 1
+            if start_month:
+                st["autoDisenrolledByStartMonth"][start_month] += 1
         if has_visit:
             st["withProviderVisit"] += 1
+            if start_month:
+                st["visitByStartMonth"][start_month] += 1
         if has_rx:
             st["withPrescription"] += 1
+            if start_month:
+                st["rxByStartMonth"][start_month] += 1
         if start_month:
             st["byMonth"][start_month] += 1
         st["partnerSource"] = p_source
         if rc and rc.lower() != "none":
             st["refCodes"].add(rc)
 
+        cst = channel_stats[p_source]
+        cst["totalEnrolled"] += 1
+        if is_cancelled:
+            cst["cancelledMembers"] += 1
+            if start_month:
+                cst["cancelledByStartMonth"][start_month] += 1
+        else:
+            cst["activeMembers"] += 1
+            if start_month:
+                cst["activeByStartMonth"][start_month] += 1
+        if is_auto_dis:
+            cst["autoDisenrolled"] += 1
+            if start_month:
+                cst["autoDisenrolledByStartMonth"][start_month] += 1
+        if has_visit:
+            cst["withProviderVisit"] += 1
+            if start_month:
+                cst["visitByStartMonth"][start_month] += 1
+        if has_rx:
+            cst["withPrescription"] += 1
+            if start_month:
+                cst["rxByStartMonth"][start_month] += 1
+        if start_month:
+            cst["byMonth"][start_month] += 1
+
     all_employer_groups_summary = []
     for emp_name, st in sorted(employer_stats.items(), key=lambda kv: (-kv[1]["totalEnrolled"], kv[0])):
+        is_direct = emp_name.startswith("Direct / Paid Media")
         all_employer_groups_summary.append({
             "employerGroup": emp_name,
+            "isDirectNoEmployer": is_direct,
             "partnerSource": st["partnerSource"],
+            "isBrokerChannel": st["partnerSource"] in ("EPIC", "LHD", "McGohan Brabender"),
             "refCodes": sorted(list(st["refCodes"])),
             "totalEnrolled": st["totalEnrolled"],
             "activeMembers": st["activeMembers"],
@@ -444,8 +506,64 @@ def parse_damien_analysis_workbook(analysis_xlsx_path):
             "autoDisenrolled": st["autoDisenrolled"],
             "withProviderVisit": st["withProviderVisit"],
             "withPrescription": st["withPrescription"],
-            "byMonth": dict(st["byMonth"]),
+            "activeRetentionPct": round((st["activeMembers"] / st["totalEnrolled"]) * 100, 1) if st["totalEnrolled"] else 0.0,
+            "disenrollmentPct": round((st["cancelledMembers"] / st["totalEnrolled"]) * 100, 1) if st["totalEnrolled"] else 0.0,
+            "byMonth": {m: int(st["byMonth"].get(m, 0)) for m in months},
+            "cancelledByMonth": {m: int(st["cancelledByStartMonth"].get(m, 0)) for m in months},
+            "activeByMonth": {m: int(st["activeByStartMonth"].get(m, 0)) for m in months},
+            "autoDisenrolledByMonth": {m: int(st["autoDisenrolledByStartMonth"].get(m, 0)) for m in months},
+            "visitByMonth": {m: int(st["visitByStartMonth"].get(m, 0)) for m in months},
+            "rxByMonth": {m: int(st["rxByStartMonth"].get(m, 0)) for m in months},
         })
+
+    channel_order = ["EPIC", "Paid Media", "Employee", "LHD", "McGohan Brabender", "Other"]
+    ex_enr_by_source = {r["source"]: r for r in enrollments_by_source}
+    ex_canc_by_source = {r["source"]: r for r in cancellations_by_source}
+    all_channels_summary = []
+    for ch_name in channel_order:
+        cst = channel_stats.get(ch_name)
+        ex_enr = ex_enr_by_source.get(ch_name, {})
+        ex_canc = ex_canc_by_source.get(ch_name, {})
+        if not cst and not ex_enr:
+            continue
+        is_broker = ch_name in ("EPIC", "LHD", "McGohan Brabender")
+        cat = "Broker Partner" if is_broker else ("Paid Acquisition" if ch_name == "Paid Media" else "Internal / Direct")
+        by_month_map = {m: int(ex_enr.get(m, cst["byMonth"].get(m, 0) if cst else 0)) for m in months}
+        canc_by_month_map = {m: int(ex_canc.get(m, cst["cancelledByStartMonth"].get(m, 0) if cst else 0)) for m in months}
+        active_by_month_map = {m: max(0, by_month_map[m] - canc_by_month_map[m]) for m in months}
+        tot_e = int(ex_enr.get("YTD", sum(by_month_map.values())))
+        tot_c = int(ex_canc.get("YTD", sum(canc_by_month_map.values())))
+        tot_a = max(0, tot_e - tot_c)
+        all_channels_summary.append({
+            "channel": ch_name,
+            "category": cat,
+            "isBroker": is_broker,
+            "totalEnrolled": tot_e,
+            "activeMembers": tot_a,
+            "cancelledMembers": tot_c,
+            "autoDisenrolled": cst["autoDisenrolled"] if cst else tot_c,
+            "withProviderVisit": cst["withProviderVisit"] if cst else 0,
+            "withPrescription": cst["withPrescription"] if cst else 0,
+            "activeRetentionPct": round((tot_a / tot_e) * 100, 1) if tot_e else 0.0,
+            "disenrollmentPct": round((tot_c / tot_e) * 100, 1) if tot_e else 0.0,
+            "byMonth": by_month_map,
+            "cancelledByMonth": canc_by_month_map,
+            "activeByMonth": active_by_month_map,
+            "autoDisenrolledByMonth": {m: int(cst["autoDisenrolledByStartMonth"].get(m, 0)) if cst else 0 for m in months},
+            "visitByMonth": {m: int(cst["visitByStartMonth"].get(m, 0)) if cst else 0 for m in months},
+            "rxByMonth": {m: int(cst["rxByStartMonth"].get(m, 0)) if cst else 0 for m in months},
+        })
+
+    enrollment_reporting = {
+        "months": months,
+        "activePatientTrackerMonthly": active_tracker,
+        "monthlyNetAdditions": net_additions,
+        "brokerSharePctMonthly": broker_share_monthly,
+        "cancellationPctOfTotalEnrolledMonthly": cancellation_pct_of_enrolled,
+        "channels": all_channels_summary,
+        "employers": all_employer_groups_summary,
+        "notableEmployersExhibits": notable_employers_monthly,
+    }
 
     # A8: Damien Dispense Data (strictly aggregate-only across 2,247 dispense transactions)
     ws_disp = wb["Damien Dispense Data"]
@@ -676,6 +794,7 @@ def parse_damien_analysis_workbook(analysis_xlsx_path):
             "bySecondaryThirdPartyPayer": secondary_payers_list,
             "byMedicationAndNdc": medications_list,
         },
+        "enrollmentReporting": enrollment_reporting,
     }
 
 
@@ -684,10 +803,149 @@ def build_metro_analysis_workbook():
     Builds a tenant-scoped, aggregate-only analysisWorkbook for 'metro' ('Metro Health Center')
     so Ask Bridge AI has full schema parity and zero Damien strings when logged in as 'metro'.
     """
+    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep"]
+    metro_channels = [
+        {
+            "channel": "Regional Brokers",
+            "category": "Broker Partner",
+            "isBroker": True,
+            "totalEnrolled": 317,
+            "activeMembers": 275,
+            "cancelledMembers": 42,
+            "autoDisenrolled": 34,
+            "withProviderVisit": 295,
+            "withPrescription": 268,
+            "activeRetentionPct": 86.8,
+            "disenrollmentPct": 13.2,
+            "byMonth": {"Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 18, "Jun": 52, "Jul": 64, "Aug": 95, "Sep": 88},
+            "cancelledByMonth": {"Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 2, "Jun": 6, "Jul": 9, "Aug": 12, "Sep": 13},
+            "activeByMonth": {"Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 16, "Jun": 46, "Jul": 55, "Aug": 83, "Sep": 75},
+            "autoDisenrolledByMonth": {"Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 2, "Jun": 5, "Jul": 7, "Aug": 10, "Sep": 10},
+            "visitByMonth": {"Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 17, "Jun": 49, "Jul": 60, "Aug": 89, "Sep": 80},
+            "rxByMonth": {"Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 16, "Jun": 45, "Jul": 55, "Aug": 80, "Sep": 72},
+        },
+        {
+            "channel": "Paid Media",
+            "category": "Paid Acquisition",
+            "isBroker": False,
+            "totalEnrolled": 290,
+            "activeMembers": 220,
+            "cancelledMembers": 70,
+            "autoDisenrolled": 60,
+            "withProviderVisit": 258,
+            "withPrescription": 225,
+            "activeRetentionPct": 75.9,
+            "disenrollmentPct": 24.1,
+            "byMonth": {"Jan": 8, "Feb": 12, "Mar": 19, "Apr": 25, "May": 32, "Jun": 44, "Jul": 38, "Aug": 54, "Sep": 58},
+            "cancelledByMonth": {"Jan": 1, "Feb": 2, "Mar": 4, "Apr": 5, "May": 6, "Jun": 11, "Jul": 11, "Aug": 15, "Sep": 15},
+            "activeByMonth": {"Jan": 7, "Feb": 10, "Mar": 15, "Apr": 20, "May": 26, "Jun": 33, "Jul": 27, "Aug": 39, "Sep": 43},
+            "autoDisenrolledByMonth": {"Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 9, "Jul": 10, "Aug": 13, "Sep": 13},
+            "visitByMonth": {"Jan": 7, "Feb": 11, "Mar": 17, "Apr": 22, "May": 28, "Jun": 39, "Jul": 34, "Aug": 48, "Sep": 52},
+            "rxByMonth": {"Jan": 6, "Feb": 9, "Mar": 15, "Apr": 19, "May": 25, "Jun": 34, "Jul": 30, "Aug": 42, "Sep": 45},
+        },
+        {
+            "channel": "Metro Employee",
+            "category": "Internal / Direct",
+            "isBroker": False,
+            "totalEnrolled": 52,
+            "activeMembers": 45,
+            "cancelledMembers": 7,
+            "autoDisenrolled": 5,
+            "withProviderVisit": 49,
+            "withPrescription": 46,
+            "activeRetentionPct": 86.5,
+            "disenrollmentPct": 13.5,
+            "byMonth": {"Jan": 7, "Feb": 5, "Mar": 4, "Apr": 4, "May": 5, "Jun": 6, "Jul": 6, "Aug": 8, "Sep": 7},
+            "cancelledByMonth": {"Jan": 1, "Feb": 1, "Mar": 1, "Apr": 1, "May": 1, "Jun": 1, "Jul": 0, "Aug": 0, "Sep": 1},
+            "activeByMonth": {"Jan": 6, "Feb": 4, "Mar": 3, "Apr": 3, "May": 4, "Jun": 5, "Jul": 6, "Aug": 8, "Sep": 6},
+            "autoDisenrolledByMonth": {"Jan": 1, "Feb": 1, "Mar": 1, "Apr": 0, "May": 1, "Jun": 1, "Jul": 0, "Aug": 0, "Sep": 0},
+            "visitByMonth": {"Jan": 7, "Feb": 5, "Mar": 4, "Apr": 4, "May": 5, "Jun": 5, "Jul": 6, "Aug": 7, "Sep": 6},
+            "rxByMonth": {"Jan": 6, "Feb": 5, "Mar": 4, "Apr": 4, "May": 4, "Jun": 5, "Jul": 6, "Aug": 6, "Sep": 6},
+        },
+    ]
+    metro_employers = [
+        {
+            "employerGroup": "Metro Transit Authority",
+            "isDirectNoEmployer": False,
+            "partnerSource": "Regional Brokers",
+            "isBrokerChannel": True,
+            "refCodes": ["MTA2026"],
+            "totalEnrolled": 112,
+            "activeMembers": 98,
+            "cancelledMembers": 14,
+            "autoDisenrolled": 11,
+            "withProviderVisit": 106,
+            "withPrescription": 96,
+            "activeRetentionPct": 87.5,
+            "disenrollmentPct": 12.5,
+            "byMonth": {"Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 8, "Jun": 18, "Jul": 22, "Aug": 34, "Sep": 30},
+            "cancelledByMonth": {"Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 1, "Jun": 2, "Jul": 3, "Aug": 4, "Sep": 4},
+            "activeByMonth": {"Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 7, "Jun": 16, "Jul": 19, "Aug": 30, "Sep": 26},
+            "autoDisenrolledByMonth": {"Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 1, "Jun": 2, "Jul": 2, "Aug": 3, "Sep": 3},
+            "visitByMonth": {"Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 8, "Jun": 17, "Jul": 21, "Aug": 32, "Sep": 28},
+            "rxByMonth": {"Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 7, "Jun": 16, "Jul": 19, "Aug": 29, "Sep": 25},
+        },
+        {
+            "employerGroup": "Lakeside School District",
+            "isDirectNoEmployer": False,
+            "partnerSource": "Regional Brokers",
+            "isBrokerChannel": True,
+            "refCodes": ["LSD2026"],
+            "totalEnrolled": 85,
+            "activeMembers": 74,
+            "cancelledMembers": 11,
+            "autoDisenrolled": 9,
+            "withProviderVisit": 80,
+            "withPrescription": 72,
+            "activeRetentionPct": 87.1,
+            "disenrollmentPct": 12.9,
+            "byMonth": {"Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 5, "Jun": 14, "Jul": 19, "Aug": 25, "Sep": 22},
+            "cancelledByMonth": {"Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 1, "Jun": 2, "Jul": 2, "Aug": 3, "Sep": 3},
+            "activeByMonth": {"Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 4, "Jun": 12, "Jul": 17, "Aug": 22, "Sep": 19},
+            "autoDisenrolledByMonth": {"Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 1, "Jun": 1, "Jul": 2, "Aug": 3, "Sep": 2},
+            "visitByMonth": {"Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 5, "Jun": 13, "Jul": 18, "Aug": 24, "Sep": 20},
+            "rxByMonth": {"Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 4, "Jun": 12, "Jul": 16, "Aug": 22, "Sep": 18},
+        },
+        {
+            "employerGroup": "Metro Health Patient",
+            "isDirectNoEmployer": False,
+            "partnerSource": "Metro Employee",
+            "isBrokerChannel": False,
+            "refCodes": ["METROEMP"],
+            "totalEnrolled": 52,
+            "activeMembers": 45,
+            "cancelledMembers": 7,
+            "autoDisenrolled": 5,
+            "withProviderVisit": 49,
+            "withPrescription": 46,
+            "activeRetentionPct": 86.5,
+            "disenrollmentPct": 13.5,
+            "byMonth": {"Jan": 7, "Feb": 5, "Mar": 4, "Apr": 4, "May": 5, "Jun": 6, "Jul": 6, "Aug": 8, "Sep": 7},
+            "cancelledByMonth": {"Jan": 1, "Feb": 1, "Mar": 1, "Apr": 1, "May": 1, "Jun": 1, "Jul": 0, "Aug": 0, "Sep": 1},
+            "activeByMonth": {"Jan": 6, "Feb": 4, "Mar": 3, "Apr": 3, "May": 4, "Jun": 5, "Jul": 6, "Aug": 8, "Sep": 6},
+            "autoDisenrolledByMonth": {"Jan": 1, "Feb": 1, "Mar": 1, "Apr": 0, "May": 1, "Jun": 1, "Jul": 0, "Aug": 0, "Sep": 0},
+            "visitByMonth": {"Jan": 7, "Feb": 5, "Mar": 4, "Apr": 4, "May": 5, "Jun": 5, "Jul": 6, "Aug": 7, "Sep": 6},
+            "rxByMonth": {"Jan": 6, "Feb": 5, "Mar": 4, "Apr": 4, "May": 4, "Jun": 5, "Jul": 6, "Aug": 6, "Sep": 6},
+        },
+    ]
     return {
         "privacyPolicy": "AGGREGATE_ONLY_NO_MEMBER_LEVEL_DATA",
         "sourceWorkbook": "Metro_Health_Sep2026_Analysis.xlsx",
         "clientScope": "metro",
+        "enrollmentReporting": {
+            "months": months,
+            "activePatientTrackerMonthly": {"Jan": 15, "Feb": 28, "Mar": 49, "Apr": 78, "May": 115, "Jun": 210, "Jul": 295, "Aug": 420, "Sep": 540},
+            "monthlyNetAdditions": {"Jan": 15, "Feb": 13, "Mar": 21, "Apr": 29, "May": 37, "Jun": 95, "Jul": 85, "Aug": 125, "Sep": 120},
+            "brokerSharePctMonthly": {"Jan": "0.0%", "Feb": "0.0%", "Mar": "0.0%", "Apr": "0.0%", "May": "32.7%", "Jun": "51.0%", "Jul": "59.3%", "Aug": "60.5%", "Sep": "65.0%", "YTD": "48.1%"},
+            "cancellationPctOfTotalEnrolledMonthly": {"Jan": "13.3%", "Feb": "17.6%", "Mar": "21.7%", "Apr": "20.7%", "May": "16.4%", "Jun": "17.6%", "Jul": "19.4%", "Aug": "16.6%", "Sep": "19.0%", "YTD": "18.1%"},
+            "channels": metro_channels,
+            "employers": metro_employers,
+            "notableEmployersExhibits": [
+                {"employerGroup": "Metro Transit Authority", "Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 8, "Jun": 18, "Jul": 22, "Aug": 34, "Sep": 30, "YTD": 112},
+                {"employerGroup": "Lakeside School District", "Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 5, "Jun": 14, "Jul": 19, "Aug": 25, "Sep": 22, "YTD": 85},
+                {"employerGroup": "Metro Health Patient", "Jan": 7, "Feb": 5, "Mar": 4, "Apr": 4, "May": 5, "Jun": 6, "Jul": 6, "Aug": 8, "Sep": 7, "YTD": 52},
+            ],
+        },
         "exhibits": {
             "enrollmentsBySourceMonthly": [
                 {"source": "Regional Brokers", "Jan": 0, "Feb": 0, "Mar": 0, "Apr": 0, "May": 18, "Jun": 52, "Jul": 64, "Aug": 95, "Sep": 88, "YTD": 317},
@@ -1014,6 +1272,7 @@ def build_damien_portal_data(xlsx_path, analysis_xlsx_path=DEFAULT_ANALYSIS_XLSX
             },
         },
         "analysisWorkbook": analysis_workbook,
+        "enrollmentReporting": analysis_workbook.get("enrollmentReporting") if analysis_workbook else None,
     }
     return dashboard_data
 
@@ -1142,6 +1401,7 @@ def build_metro_portal_data(damien_data):
     metro["worklists"]["pharmacyDataFixes"]["unmatchedRows"] = unmatched_sub
     metro["worklists"]["endedNeverFilled"]["rows"] = ended_sub
     metro["analysisWorkbook"] = build_metro_analysis_workbook()
+    metro["enrollmentReporting"] = metro["analysisWorkbook"].get("enrollmentReporting")
 
     return metro
 

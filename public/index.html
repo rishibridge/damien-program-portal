@@ -42,6 +42,13 @@
         </span>
       </button>
 
+      <button class="nav-btn" data-view="enrollment" onclick="switchView('enrollment')">
+        <span class="nav-btn-left">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+          Enrollment Reporting
+        </span>
+      </button>
+
       <button class="nav-btn" data-view="paidmedia" onclick="switchView('paidmedia')">
         <span class="nav-btn-left">
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
@@ -308,6 +315,166 @@
             </table>
           </div>
           <div class="footnote-box" id="sourcesFootnote"></div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════════════════
+           VIEW 3B: ENROLLMENT REPORTING (TIMEFRAMES, BROKERS/CHANNELS & EMPLOYERS)
+           ═══════════════════════════════════════════════════════════════════ -->
+      <section id="view-enrollment" class="view">
+        <div class="slide-header">
+          <div class="slide-eyebrow">Enrollment Reporting</div>
+          <h1 class="slide-headline" id="enrollmentHeadline">Enrollment, disenrollment, and currently active member trends by timeframe, channel &amp; employer</h1>
+        </div>
+
+        <!-- Interactive Filter Bar -->
+        <div class="card" style="padding:14px 18px;margin-bottom:16px">
+          <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end">
+            <div style="flex:1;min-width:190px">
+              <label style="display:block;font-size:0.72rem;font-weight:600;color:#475569;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px" for="enrollTimeframeFilter">Timeframe</label>
+              <select id="enrollTimeframeFilter" class="filter-select" style="width:100%" onchange="renderEnrollmentReportingView()">
+                <option value="YTD">All YTD (Jan – Sep 2026)</option>
+                <option value="Q3">Q3 2026 (Jul – Sep)</option>
+                <option value="Q2">Q2 2026 (Apr – Jun)</option>
+                <option value="Q1">Q1 2026 (Jan – Mar)</option>
+                <option value="Sep">September 2026</option>
+                <option value="Aug">August 2026</option>
+                <option value="Jul">July 2026</option>
+                <option value="Jun">June 2026</option>
+                <option value="May">May 2026</option>
+                <option value="Apr">April 2026</option>
+                <option value="Mar">March 2026</option>
+                <option value="Feb">February 2026</option>
+                <option value="Jan">January 2026</option>
+              </select>
+            </div>
+
+            <div style="flex:1;min-width:210px">
+              <label style="display:block;font-size:0.72rem;font-weight:600;color:#475569;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px" for="enrollChannelFilter">Channel / Broker</label>
+              <select id="enrollChannelFilter" class="filter-select" style="width:100%" onchange="renderEnrollmentReportingView()">
+                <option value="ALL">All Channels</option>
+                <option value="BROKERS_ONLY">All Broker Partners Combined</option>
+              </select>
+            </div>
+
+            <div style="flex:1;min-width:220px">
+              <label style="display:block;font-size:0.72rem;font-weight:600;color:#475569;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px" for="enrollEmployerFilter">Employer Group</label>
+              <select id="enrollEmployerFilter" class="filter-select" style="width:100%" onchange="renderEnrollmentReportingView()">
+                <option value="ALL">All Employer Groups</option>
+              </select>
+            </div>
+
+            <div style="flex:1;min-width:200px">
+              <label style="display:block;font-size:0.72rem;font-weight:600;color:#475569;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px" for="enrollEmployerSearch">Search Employer / Ref Code</label>
+              <input type="text" id="enrollEmployerSearch" class="filter-input" style="width:100%" placeholder="e.g., Evansville, Putnam, Hamilton..." oninput="renderEnrollmentReportingView()" />
+            </div>
+
+            <div>
+              <button type="button" class="btn-bridge-outline" onclick="resetEnrollmentFilters()">Reset Filters</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5 Dynamic KPI Cards -->
+        <div class="kpi-row" id="enrollmentKpiRow"></div>
+
+        <!-- 2 Interactive Charts -->
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-hd">
+              <div>
+                <span id="enrollTrendChartTitle">Enrollment, Disenrollment &amp; Active Member Trend</span>
+                <br /><small id="enrollTrendChartSub">Monthly sign-ups, cancellations, and active member counts (Jan – Sep 2026)</small>
+              </div>
+              <span class="know-badge" id="enrollTrendBadge">Jan – Sep</span>
+            </div>
+            <div class="chart-box">
+              <canvas id="chartEnrollmentTrend"></canvas>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-hd">
+              <div>
+                <span id="enrollChannelChartTitle">Enrollment vs. Active &amp; Disenrolled by Channel / Broker</span>
+                <br /><small id="enrollChannelChartSub">Comparison across acquisition channels and broker partners</small>
+              </div>
+              <span class="know-badge" id="enrollChannelBadge">YTD</span>
+            </div>
+            <div class="chart-box">
+              <canvas id="chartEnrollmentByChannel"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Table 1: Channel / Broker Summary -->
+        <div class="card">
+          <div class="card-hd">
+            <div>
+              <span>Enrollment, Disenrollment &amp; Active Retention by Channel / Broker</span>
+              <br /><small id="enrollChannelTableSub">Breakdown by broker partners, paid media, and employee channels for selected timeframe</small>
+            </div>
+            <span class="know-badge" id="enrollChannelTableBadge">All Channels</span>
+          </div>
+          <div class="tbl-wrap">
+            <table id="tableEnrollmentChannels">
+              <thead>
+                <tr>
+                  <th>Channel / Broker</th>
+                  <th>Category</th>
+                  <th class="num">Enrolled</th>
+                  <th class="num">Disenrolled</th>
+                  <th class="num">Disenrollment Rate</th>
+                  <th class="num">Currently Active</th>
+                  <th class="num">Active Retention %</th>
+                  <th class="num">Saw Provider</th>
+                  <th class="num">Prescribed GLP-1</th>
+                  <th class="num">Jun</th>
+                  <th class="num">Jul</th>
+                  <th class="num">Aug</th>
+                  <th class="num">Sep</th>
+                </tr>
+              </thead>
+              <tbody id="tbodyEnrollmentChannels"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Table 2: Employer Group Enrollment, Disenrollment & Active Roster -->
+        <div class="card">
+          <div class="card-hd">
+            <div>
+              <span>Employer Group Enrollment, Disenrollment &amp; Currently Active Counts</span>
+              <br /><small id="enrollEmployerTableSub">All employer groups and referral codes — enrollments, cancellations, active retention, and monthly sign-up trend</small>
+            </div>
+            <span class="know-badge" id="enrollEmployerCountBadge">38 Employer Groups</span>
+          </div>
+          <div class="tbl-wrap">
+            <table id="tableEnrollmentEmployers">
+              <thead>
+                <tr>
+                  <th>Employer Group</th>
+                  <th>Channel / Broker</th>
+                  <th>Ref Code(s)</th>
+                  <th class="num">Enrolled</th>
+                  <th class="num">Disenrolled</th>
+                  <th class="num">Currently Active</th>
+                  <th class="num">Active Retention %</th>
+                  <th class="num">Saw Provider</th>
+                  <th class="num">Prescribed GLP-1</th>
+                  <th class="num">Jun</th>
+                  <th class="num">Jul</th>
+                  <th class="num">Aug</th>
+                  <th class="num">Sep</th>
+                  <th class="num">YTD</th>
+                </tr>
+              </thead>
+              <tbody id="tbodyEnrollmentEmployers"></tbody>
+            </table>
+          </div>
+          <div class="footnote-box" id="enrollmentFootnote">
+            Source: Alpha membership file and Monthly Exhibits through September 30, 2026. Month-end Active Patient Tracker reached 862 in September (+207 net additions vs. August); across all 1,036 YTD enrollments, 772 remain currently active (74.5% active retention) and 264 have cancelled/disenrolled (25.5% YTD disenrollment rate).
+          </div>
         </div>
       </section>
 
