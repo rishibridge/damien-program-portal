@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const QRCode = require('qrcode');
 
 // Load local .env if present
 const ENV_FILE_PATH = path.join(__dirname, '.env');
@@ -95,11 +96,13 @@ function validatePasswordComplexity(newPassword, username = '') {
   return { valid: true };
 }
 
-// Base32 & RFC 6238 TOTP Implementation (Zero External Dependencies)
+// Base32 & RFC 6238 TOTP Implementation + Scannable QR Code Generator
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
-function generateTotpSecret(byteLen = 20) {
-  const bytes = crypto.randomBytes(byteLen);
+function generateTotpSecret(seedUsername = null) {
+  const bytes = seedUsername
+    ? crypto.createHmac('sha256', 'bridge-totp-seed-v1-2026').update(String(seedUsername).toLowerCase()).digest().subarray(0, 20)
+    : crypto.randomBytes(20);
   let bits = '';
   for (const b of bytes) bits += b.toString(2).padStart(8, '0');
   let out = '';
@@ -107,6 +110,21 @@ function generateTotpSecret(byteLen = 20) {
     out += BASE32_ALPHABET[parseInt(bits.slice(i, i + 5), 2)];
   }
   return out;
+}
+
+function buildOtpAuthUri(username, secretBase32) {
+  const issuer = 'Bridge Health Hub';
+  const label = encodeURIComponent(`${issuer}:${username}`);
+  return `otpauth://totp/${label}?secret=${encodeURIComponent(secretBase32)}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
+}
+
+async function buildTotpQrDataUrl(username, secretBase32) {
+  const uri = buildOtpAuthUri(username, secretBase32);
+  return await QRCode.toDataURL(uri, {
+    width: 180,
+    margin: 1,
+    color: { dark: '#0e2841', light: '#ffffff' }
+  });
 }
 
 function decodeBase32(str) {
@@ -263,7 +281,7 @@ function buildDefaultUsers() {
       role: 'client_user',
       mfaEnabled: true,
       mfaMethod: 'email',
-      totpSecret: generateTotpSecret(),
+      totpSecret: generateTotpSecret(primaryUser),
       passwordUpdatedAt: '2026-11-01T00:00:00.000Z',
       passwordMaxAgeDays: 0,
       passwordHistory: []
@@ -277,7 +295,7 @@ function buildDefaultUsers() {
       role: 'client_user',
       mfaEnabled: true,
       mfaMethod: 'email',
-      totpSecret: generateTotpSecret(),
+      totpSecret: generateTotpSecret(metroUser),
       passwordUpdatedAt: '2026-11-01T00:00:00.000Z',
       passwordMaxAgeDays: 0,
       passwordHistory: []
@@ -291,7 +309,7 @@ function buildDefaultUsers() {
       role: 'bridge_admin',
       mfaEnabled: true,
       mfaMethod: 'email',
-      totpSecret: generateTotpSecret(),
+      totpSecret: generateTotpSecret('rishi.damien'),
       passwordUpdatedAt: '2026-11-01T00:00:00.000Z',
       passwordMaxAgeDays: 0,
       passwordHistory: []
@@ -305,7 +323,7 @@ function buildDefaultUsers() {
       role: 'bridge_admin',
       mfaEnabled: true,
       mfaMethod: 'email',
-      totpSecret: generateTotpSecret(),
+      totpSecret: generateTotpSecret('brady.admin'),
       passwordUpdatedAt: '2026-11-01T00:00:00.000Z',
       passwordMaxAgeDays: 0,
       passwordHistory: []
@@ -319,7 +337,7 @@ function buildDefaultUsers() {
       role: 'bridge_admin',
       mfaEnabled: true,
       mfaMethod: 'email',
-      totpSecret: generateTotpSecret(),
+      totpSecret: generateTotpSecret('rishi.metro'),
       passwordUpdatedAt: '2026-11-01T00:00:00.000Z',
       passwordMaxAgeDays: 0,
       passwordHistory: []
@@ -333,7 +351,7 @@ function buildDefaultUsers() {
       role: 'pharmacist',
       mfaEnabled: true,
       mfaMethod: 'email',
-      totpSecret: generateTotpSecret(),
+      totpSecret: generateTotpSecret('pharmacist.damien'),
       passwordUpdatedAt: '2026-11-01T00:00:00.000Z',
       passwordMaxAgeDays: 0,
       passwordHistory: []
@@ -655,7 +673,7 @@ function issueSessionCookiesAndRespond(req, res, userRecord, trustBrowser30d = f
 }
 
 // Web Login API (sets HMAC-signed HttpOnly session cookie — with 5-attempt Brute-Force Lockout & Optional MFA)
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   setNoCacheHeaders(res);
   const ip = getClientIp(req);
   const { username, password, operatorName } = req.body || {};
@@ -719,8 +737,10 @@ app.post('/api/auth/login', (req, res) => {
   const isBrowserTrusted = verifyMfaTrustCookie(cookies[MFA_TRUST_COOKIE_NAME], matched.username, matched.clientId);
 
   if (!isBrowserTrusted) {
+    if (!matched.totpSecret) matched.totpSecret = generateTotpSecret(matched.username);
     const challengeToken = crypto.randomBytes(24).toString('hex');
     const emailCode = String(crypto.randomInt(100000, 999999));
+    const totpQrDataUrl = await buildTotpQrDataUrl(matched.username, matched.totpSecret);
     pendingMfaChallenges.set(challengeToken, {
       username: matched.username,
       clientId: matched.clientId,
@@ -740,6 +760,8 @@ app.post('/api/auth/login', (req, res) => {
       challengeToken,
       mfaMethod: matched.mfaMethod || 'email',
       maskedEmail,
+      totpQrDataUrl,
+      totpSecret: matched.totpSecret,
       // Expose preview code when no external SMTP server is configured so testers can verify Email MFA immediately
       emailCodePreview: process.env.SMTP_HOST ? undefined : emailCode
     });
@@ -883,21 +905,28 @@ function isCallerBridgeAdmin(req) {
   return role === 'bridge_admin';
 }
 
-app.get('/api/security/overview', (req, res) => {
+app.get('/api/security/overview', async (req, res) => {
   const clientId = req.clientId || 'damien';
   const isAdmin = isCallerBridgeAdmin(req);
   const allTenantUsers = loadUsersDirectory().filter(u => u.clientId === clientId);
-  const visibleUsers = (isAdmin ? allTenantUsers : allTenantUsers.filter(u => u.username.toLowerCase() === String(req.authenticatedUser || '').toLowerCase()))
-    .map(u => ({
-      username: u.username,
-      displayName: u.displayName,
-      email: u.email,
-      role: u.role,
-      mfaEnabled: true,
-      mfaMethod: u.mfaMethod || 'email',
-      totpSecret: (isAdmin || u.username.toLowerCase() === String(req.authenticatedUser || '').toLowerCase()) ? u.totpSecret : undefined,
-      passwordUpdatedAt: u.passwordUpdatedAt
-    }));
+  const visibleUsers = await Promise.all(
+    (isAdmin ? allTenantUsers : allTenantUsers.filter(u => u.username.toLowerCase() === String(req.authenticatedUser || '').toLowerCase()))
+      .map(async u => {
+        const canSeeSecret = isAdmin || u.username.toLowerCase() === String(req.authenticatedUser || '').toLowerCase();
+        const qrUrl = canSeeSecret ? await buildTotpQrDataUrl(u.username, u.totpSecret || generateTotpSecret(u.username)) : undefined;
+        return {
+          username: u.username,
+          displayName: u.displayName,
+          email: u.email,
+          role: u.role,
+          mfaEnabled: true,
+          mfaMethod: u.mfaMethod || 'email',
+          totpSecret: canSeeSecret ? u.totpSecret : undefined,
+          totpQrDataUrl: qrUrl,
+          passwordUpdatedAt: u.passwordUpdatedAt
+        };
+      })
+  );
   const allAuditEvents = loadClientAuditLog(clientId);
   const auditEvents = (isAdmin
     ? allAuditEvents

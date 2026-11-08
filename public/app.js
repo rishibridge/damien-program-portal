@@ -2473,6 +2473,7 @@ async function refreshSecurityModalData() {
     const mfaEmail = document.getElementById('secMyMfaEmail');
     const secretBox = document.getElementById('secMyTotpSecretBox');
     const secretCode = document.getElementById('secMyTotpSecretCode');
+    const secretQrImg = document.getElementById('secMyTotpQrImg');
     if (meUserRec) {
       if (mfaSel) mfaSel.value = meUserRec.mfaMethod || 'email';
       if (mfaEmail) {
@@ -2483,6 +2484,9 @@ async function refreshSecurityModalData() {
       if (secretBox && secretCode && meUserRec.totpSecret) {
         secretBox.style.display = 'block';
         secretCode.textContent = meUserRec.totpSecret;
+        if (secretQrImg && meUserRec.totpQrDataUrl) {
+          secretQrImg.src = meUserRec.totpQrDataUrl;
+        }
       }
     }
 

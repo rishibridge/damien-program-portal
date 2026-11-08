@@ -10,6 +10,7 @@
     "test:e2e": "python tests/run_playwright_e2e.py"
   },
   "dependencies": {
-    "express": "^4.21.1"
+    "express": "^4.21.1",
+    "qrcode": "^1.5.4"
   }
 }

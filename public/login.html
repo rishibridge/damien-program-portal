@@ -222,6 +222,8 @@
     let currentMfaChallengeToken = null;
     let currentMaskedEmail = 'your email';
     let currentEmailCodePreview = '';
+    let currentTotpQrDataUrl = '';
+    let currentTotpSecret = '';
     let selectedMfaMethod = 'email';
 
     function selectMfaLoginMethod(method) {
@@ -241,7 +243,13 @@
         tabEmail.style.color = '#475569';
         resendBtn.style.visibility = 'hidden';
         lblEl.textContent = '6-Digit Authenticator App Code';
-        infoEl.innerHTML = '<strong>Authenticator App Verification</strong><br/>Open your Authenticator App (Google/Microsoft Authenticator or Apple Passwords) and enter the current 6-digit code.';
+        const qrBlock = currentTotpQrDataUrl
+          ? '<div style="display:flex;flex-direction:column;align-items:center;margin:10px 0 6px 0;background:#ffffff;padding:10px;border-radius:8px;border:1px solid #cbd5e1;">' +
+              '<img id="mfaTotpQrImg" src="' + currentTotpQrDataUrl + '" alt="Scan QR Code with Authenticator App" style="width:168px;height:168px;display:block;" />' +
+              '<div style="margin-top:6px;font-size:0.72rem;color:#475569;text-align:center;">Manual Key: <code id="mfaTotpSecretText" style="background:#f1f5f9;padding:1px 5px;border-radius:4px;font-weight:700;color:#0e2841;">' + currentTotpSecret + '</code></div>' +
+            '</div>'
+          : '';
+        infoEl.innerHTML = '<strong>Scan with Authenticator App</strong><br/>Scan this QR code with Google Authenticator, Microsoft Authenticator, or your phone camera, then enter the 6-digit code below:' + qrBlock;
       } else {
         tabEmail.style.border = '2px solid #154672';
         tabEmail.style.background = '#eff6ff';
@@ -282,6 +290,8 @@
             currentMfaChallengeToken = data.challengeToken;
             currentMaskedEmail = data.maskedEmail || 'your email';
             currentEmailCodePreview = data.emailCodePreview || '';
+            currentTotpQrDataUrl = data.totpQrDataUrl || '';
+            currentTotpSecret = data.totpSecret || '';
             document.getElementById('loginForm').style.display = 'none';
             document.getElementById('mfaForm').style.display = 'block';
             const infoEl = document.getElementById('mfaInfoBanner');
