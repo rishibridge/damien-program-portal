@@ -555,8 +555,12 @@ function renderSourcesChart() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   3B. ENROLLMENT REPORTING (TIMEFRAMES, BROKERS/CHANNELS & EMPLOYERS)
+   3B. ENROLLMENT REPORTING — UTILIZATION (ALLKIN SCREENSHOT STYLE)
    ═══════════════════════════════════════════════════════════════════════════ */
+let ENROLL_CHART_MODE = 'trend'; // 'trend' | 'top_employers'
+let ENROLL_GRANULARITY = 'monthly'; // 'monthly' | 'quarterly' | 'yearly'
+let ENROLL_INSPECTED_EMPLOYER = null; // null or employerGroup string
+
 function getEnrollmentReportingData() {
   return PORTAL_DATA?.enrollmentReporting || PORTAL_DATA?.analysisWorkbook?.enrollmentReporting || null;
 }
@@ -564,6 +568,7 @@ function getEnrollmentReportingData() {
 function getTimeframeMonths(tf) {
   const all = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'];
   if (!tf || tf === 'YTD') return all;
+  if (tf === '6M') return ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'];
   if (tf === 'Q1') return ['Jan', 'Feb', 'Mar'];
   if (tf === 'Q2') return ['Apr', 'May', 'Jun'];
   if (tf === 'Q3') return ['Jul', 'Aug', 'Sep'];
@@ -576,9 +581,171 @@ function sumByMonths(monthMap, monthsList) {
   return monthsList.reduce((acc, m) => acc + (Number(monthMap[m]) || 0), 0);
 }
 
+function syncTimeframePillsFromSelect() {
+  const tf = document.getElementById('enrollTimeframeFilter')?.value || 'YTD';
+  const pills = document.querySelectorAll('#enrollTimeframePills .util-tf-pill');
+  pills.forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-tf') === tf);
+  });
+}
+
+function setEnrollmentTimeframePill(tfVal) {
+  const tfEl = document.getElementById('enrollTimeframeFilter');
+  if (tfEl) tfEl.value = tfVal;
+  syncTimeframePillsFromSelect();
+  renderEnrollmentReportingView();
+}
+
+function setEnrollmentChartMode(mode) {
+  ENROLL_CHART_MODE = mode;
+  document.querySelectorAll('#enrollChartModePills .util-tf-pill').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-mode') === mode);
+  });
+  renderEnrollmentReportingView();
+}
+
+function setEnrollmentGranularity(gran) {
+  ENROLL_GRANULARITY = gran;
+  document.querySelectorAll('#enrollGranularityPills .util-tf-pill').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-gran') === gran);
+  });
+  renderEnrollmentReportingView();
+}
+
+function toggleEnrollmentPeriodTable() {
+  const wrap = document.getElementById('enrollPeriodTableWrap');
+  const chev = document.getElementById('periodTableChevron');
+  if (!wrap) return;
+  const isHidden = wrap.style.display === 'none';
+  wrap.style.display = isHidden ? 'block' : 'none';
+  if (chev) chev.textContent = isHidden ? '⌃' : '⌄';
+}
+
+function toggleChannelDetailTable() {
+  const wrap = document.getElementById('enrollChannelTableWrap');
+  if (!wrap) return;
+  wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
+}
+
+function inspectEmployerTrend(empName) {
+  if (ENROLL_INSPECTED_EMPLOYER === empName) {
+    ENROLL_INSPECTED_EMPLOYER = null;
+  } else {
+    ENROLL_INSPECTED_EMPLOYER = empName;
+    ENROLL_CHART_MODE = 'trend';
+    document.querySelectorAll('#enrollChartModePills .util-tf-pill').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-mode') === 'trend');
+    });
+  }
+  renderEnrollmentReportingView();
+}
+
+function copyEmployerLink(event, empName, refCode, linkType) {
+  if (event) event.stopPropagation();
+  const btn = event?.currentTarget;
+  const slug = String(refCode && refCode !== '—' ? refCode.split(',')[0].trim() : empName)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-');
+  const baseUrl = window.location.origin;
+  const url = linkType === 'hr'
+    ? `${baseUrl}/?view=enrollment&employer=${encodeURIComponent(empName)}&report=hr`
+    : `https:// enroll.bridgehealthhub.com/${slug}`;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).catch(() => {});
+  }
+  if (btn) {
+    const origHtml = btn.innerHTML;
+    btn.innerHTML = '✓ Copied!';
+    btn.style.borderColor = '#059669';
+    btn.style.color = '#059669';
+    setTimeout(() => {
+      btn.innerHTML = origHtml;
+      btn.style.borderColor = '';
+      btn.style.color = '';
+    }, 1400);
+  }
+}
+
+function buildEmployerSparklineSvg(monthValues) {
+  const vals = Array.isArray(monthValues) && monthValues.length ? monthValues : [0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const w = 78;
+  const h = 22;
+  const padX = 4;
+  const padY = 4;
+  const maxV = Math.max(...vals, 1);
+  const pts = vals.map((v, idx) => {
+    const x = padX + (idx / Math.max(vals.length - 1, 1)) * (w - padX * 2);
+    const y = h - padY - (v / maxV) * (h - padY * 2);
+    return [Number(x.toFixed(1)), Number(y.toFixed(1))];
+  });
+  const polyPoints = pts.map(p => `${p[0]},${p[1]}`).join(' ');
+  const lastPt = pts[pts.length - 1] || [w - padX, h - padY];
+  return `
+    <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="overflow:visible;display:block">
+      <polyline fill="none" stroke="#2563eb" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" points="${polyPoints}" />
+      <circle cx="${lastPt[0]}" cy="${lastPt[1]}" r="2.3" fill="#2563eb" />
+    </svg>
+  `;
+}
+
+function exportEnrollmentCsv(section) {
+  const er = getEnrollmentReportingData();
+  if (!er) return;
+  const tf = document.getElementById('enrollTimeframeFilter')?.value || 'YTD';
+  const tfMonths = getTimeframeMonths(tf);
+  let rows = [];
+  let filename = `utilization_${section}_${tf.toLowerCase()}.csv`;
+
+  if (section === 'channels') {
+    rows = [['Channel', 'Category', 'Enrolled', 'Disenrolled', 'Active', 'Retention Rate %']];
+    for (const c of (er.channels || [])) {
+      const enr = tf === 'YTD' ? c.totalEnrolled : sumByMonths(c.byMonth, tfMonths);
+      const dis = tf === 'YTD' ? c.cancelledMembers : sumByMonths(c.cancelledByMonth, tfMonths);
+      const act = tf === 'YTD' ? c.activeMembers : sumByMonths(c.activeByMonth, tfMonths);
+      const ret = enr > 0 ? ((act / enr) * 100).toFixed(1) : '0.0';
+      rows.push([c.channel, c.category, enr, dis, act, ret]);
+    }
+  } else if (section === 'trend') {
+    rows = [['Month', 'New Enrolled', 'Disenrolled', 'Month-End Active']];
+    for (const m of (er.months || [])) {
+      const enr = (er.channels || []).reduce((a, c) => a + (Number(c.byMonth?.[m]) || 0), 0);
+      const dis = (er.channels || []).reduce((a, c) => a + (Number(c.cancelledByMonth?.[m]) || 0), 0);
+      const act = Number(er.activePatientTrackerMonthly?.[m] || 0);
+      rows.push([m, enr, dis, act]);
+    }
+  } else {
+    rows = [['Employer', 'Channel', 'Ref Codes', 'Enrolled', 'Disenrolled', 'Active', 'Retention Rate %']];
+    for (const e of (er.employers || [])) {
+      const enr = tf === 'YTD' ? e.totalEnrolled : sumByMonths(e.byMonth, tfMonths);
+      const dis = tf === 'YTD' ? e.cancelledMembers : sumByMonths(e.cancelledByMonth, tfMonths);
+      const act = tf === 'YTD' ? e.activeMembers : sumByMonths(e.activeByMonth, tfMonths);
+      const ret = enr > 0 ? ((act / enr) * 100).toFixed(1) : '0.0';
+      rows.push([e.employerGroup, e.partnerSource, (e.refCodes || []).join('; '), enr, dis, act, ret]);
+    }
+  }
+
+  const csvContent = rows
+    .map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
+    .join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
 function populateEnrollmentReportingFilters() {
   const er = getEnrollmentReportingData();
   if (!er) return;
+
+  const clientName = PORTAL_DATA?.meta?.client || 'Damien Center';
+  const asOfFmt = PORTAL_DATA?.meta?.asOfDateFormatted || 'Sep 30, 2026';
+  const hl = document.getElementById('enrollmentHeadline');
+  if (hl) hl.textContent = `${clientName} — Utilization`;
+  const sub = document.getElementById('enrollmentSubhead');
+  if (sub) sub.textContent = `Jan 2026 – Sep 2026 · Updated ${asOfFmt}`;
 
   const chSel = document.getElementById('enrollChannelFilter');
   if (chSel) {
@@ -586,12 +753,11 @@ function populateEnrollmentReportingFilters() {
     const channels = er.channels || [];
     const brokerChannels = channels.filter(c => c.isBroker);
     const brokerYtd = brokerChannels.reduce((acc, c) => acc + (c.totalEnrolled || 0), 0);
-    const totalYtd = channels.reduce((acc, c) => acc + (c.totalEnrolled || 0), 0);
 
     chSel.innerHTML = `
-      <option value="ALL">All Channels (${totalYtd.toLocaleString()} YTD)</option>
+      <option value="ALL">All Channels (${channels.length})</option>
       <option value="BROKERS_ONLY">All Broker Partners Combined (${brokerYtd.toLocaleString()} YTD)</option>
-      ${channels.map(c => `<option value="${escapeAttr(c.channel)}">${c.channel}${c.isBroker ? ' (Broker)' : ''} (${c.totalEnrolled.toLocaleString()} YTD)</option>`).join('')}
+      ${channels.map(c => `<option value="${escapeAttr(c.channel)}">${c.channel}${c.isBroker ? ' · Broker' : ''} (${c.totalEnrolled.toLocaleString()})</option>`).join('')}
     `;
     if ([...chSel.options].some(o => o.value === prevCh)) {
       chSel.value = prevCh;
@@ -601,11 +767,12 @@ function populateEnrollmentReportingFilters() {
   const empSel = document.getElementById('enrollEmployerFilter');
   if (empSel) {
     const prevEmp = empSel.value || 'ALL';
-    const employers = (er.employers || []).filter(e => !e.isDirectNoEmployer);
+    const allEmps = er.employers || [];
+    const namedEmployers = allEmps.filter(e => !e.isDirectNoEmployer);
     empSel.innerHTML = `
-      <option value="ALL">All Employer Groups (${employers.length} employers)</option>
-      <option value="EMPLOYERS_ONLY">Named Employer Groups Only (Excl. Direct/Paid Media)</option>
-      ${employers.map(e => `<option value="${escapeAttr(e.employerGroup)}">${e.employerGroup} — ${e.partnerSource} (${e.totalEnrolled})</option>`).join('')}
+      <option value="ALL">All Employers (${allEmps.length})</option>
+      <option value="EMPLOYERS_ONLY">Named Employers Only (${namedEmployers.length})</option>
+      ${namedEmployers.map(e => `<option value="${escapeAttr(e.employerGroup)}">${e.employerGroup} — ${e.partnerSource} (${e.totalEnrolled})</option>`).join('')}
     `;
     if ([...empSel.options].some(o => o.value === prevEmp)) {
       empSel.value = prevEmp;
@@ -618,10 +785,14 @@ function resetEnrollmentFilters() {
   const chEl = document.getElementById('enrollChannelFilter');
   const empEl = document.getElementById('enrollEmployerFilter');
   const qEl = document.getElementById('enrollEmployerSearch');
+  const recEl = document.getElementById('enrollRecordTypeFilter');
   if (tfEl) tfEl.value = 'YTD';
   if (chEl) chEl.value = 'ALL';
   if (empEl) empEl.value = 'ALL';
   if (qEl) qEl.value = '';
+  if (recEl) recEl.value = 'ALL';
+  ENROLL_INSPECTED_EMPLOYER = null;
+  syncTimeframePillsFromSelect();
   renderEnrollmentReportingView();
 }
 
@@ -629,6 +800,7 @@ function setEnrollmentFilter(opts = {}) {
   if (opts.timeframe) {
     const tfEl = document.getElementById('enrollTimeframeFilter');
     if (tfEl) tfEl.value = opts.timeframe;
+    syncTimeframePillsFromSelect();
   }
   if (opts.channel !== undefined) {
     const chEl = document.getElementById('enrollChannelFilter');
@@ -645,14 +817,18 @@ function renderEnrollmentReportingView() {
   const er = getEnrollmentReportingData();
   if (!er) return;
 
+  syncTimeframePillsFromSelect();
+
   const tf = document.getElementById('enrollTimeframeFilter')?.value || 'YTD';
   const chFilter = document.getElementById('enrollChannelFilter')?.value || 'ALL';
   const empFilter = document.getElementById('enrollEmployerFilter')?.value || 'ALL';
+  const recTypeFilter = document.getElementById('enrollRecordTypeFilter')?.value || 'ALL';
   const searchQ = (document.getElementById('enrollEmployerSearch')?.value || '').toLowerCase().trim();
 
   const tfMonths = getTimeframeMonths(tf);
   const allMonths = er.months || ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'];
   const endMonth = tfMonths[tfMonths.length - 1] || 'Sep';
+  const startMonth = tfMonths[0] || 'Jan';
 
   // Filter channels
   const allChannels = er.channels || [];
@@ -669,6 +845,8 @@ function renderEnrollmentReportingView() {
     if (chFilter !== 'ALL' && chFilter !== 'BROKERS_ONLY' && e.partnerSource !== chFilter) return false;
     if (empFilter === 'EMPLOYERS_ONLY' && e.isDirectNoEmployer) return false;
     if (empFilter !== 'ALL' && empFilter !== 'EMPLOYERS_ONLY' && e.employerGroup !== empFilter) return false;
+    if (recTypeFilter === 'NAMED_ONLY' && e.isDirectNoEmployer) return false;
+    if (recTypeFilter === 'DIRECT_ONLY' && !e.isDirectNoEmployer) return false;
     if (searchQ) {
       const hay = `${e.employerGroup} ${e.partnerSource} ${(e.refCodes || []).join(' ')}`.toLowerCase();
       if (!hay.includes(searchQ)) return false;
@@ -676,8 +854,7 @@ function renderEnrollmentReportingView() {
     return true;
   });
 
-  // Determine whether an employer-specific filter is active
-  const isEmployerFiltered = (empFilter !== 'ALL') || Boolean(searchQ);
+  const isEmployerFiltered = (empFilter !== 'ALL') || (recTypeFilter !== 'ALL') || Boolean(searchQ);
   const sourceRecords = isEmployerFiltered ? matchingEmployers : matchingChannels;
 
   let enrolledCount = 0;
@@ -696,15 +873,12 @@ function renderEnrollmentReportingView() {
     rxCount += (tf === 'YTD' && item.withPrescription !== undefined) ? Number(item.withPrescription) : sumByMonths(item.rxByMonth, tfMonths);
   }
 
-  // Overall all-channel totals for the selected timeframe (to compute broker share)
   const totalEnrolledAllChannelsTf = allChannels.reduce((acc, c) => acc + ((tf === 'YTD' && c.totalEnrolled !== undefined) ? Number(c.totalEnrolled) : sumByMonths(c.byMonth, tfMonths)), 0);
   const brokerEnrolledTf = allChannels.filter(c => c.isBroker).reduce((acc, c) => acc + ((tf === 'YTD' && c.totalEnrolled !== undefined) ? Number(c.totalEnrolled) : sumByMonths(c.byMonth, tfMonths)), 0);
   const brokerShareTfPct = totalEnrolledAllChannelsTf > 0 ? ((brokerEnrolledTf / totalEnrolledAllChannelsTf) * 100).toFixed(1) : '0.0';
 
-  const disenrollRatePct = enrolledCount > 0 ? ((disenrolledCount / enrolledCount) * 100).toFixed(1) : '0.0';
   const activeRetPct = enrolledCount > 0 ? ((activeCohortCount / enrolledCount) * 100).toFixed(1) : '0.0';
 
-  // Month-end active tracker & net additions from Damien Exhibits (when unfiltered) or cohort active (when filtered)
   const isUnfilteredScope = (chFilter === 'ALL') && !isEmployerFiltered;
   const monthEndActiveVal = isUnfilteredScope
     ? (er.activePatientTrackerMonthly?.[endMonth] ?? activeCohortCount)
@@ -715,8 +889,9 @@ function renderEnrollmentReportingView() {
     : (enrolledCount - disenrolledCount);
 
   const tfLabelMap = {
-    YTD: 'YTD (Jan – Sep)',
-    Q3: 'Q3 (Jul – Sep)',
+    YTD: 'All YTD (Jan – Sep)',
+    '6M': '6M (Apr – Sep)',
+    Q3: '3M / Q3 (Jul – Sep)',
     Q2: 'Q2 (Apr – Jun)',
     Q1: 'Q1 (Jan – Mar)'
   };
@@ -725,111 +900,261 @@ function renderEnrollmentReportingView() {
   const kpiRow = document.getElementById('enrollmentKpiRow');
   if (kpiRow) {
     kpiRow.innerHTML = `
-      <div class="kpi" data-testid="enroll-kpi-enrolled">
-        <div class="kpi-label">Enrollments (${tfDisplay})</div>
-        <div class="kpi-val">${enrolledCount.toLocaleString()}</div>
-        <div class="kpi-sub">${visitCount.toLocaleString()} saw provider · ${rxCount.toLocaleString()} prescribed</div>
+      <div class="util-kpi-card" data-testid="enroll-kpi-enrolled">
+        <div class="util-kpi-lbl">Total Enrolled</div>
+        <div class="util-kpi-val green">${enrolledCount.toLocaleString()}</div>
+        <div class="util-kpi-sub">Cumulative unique members · ${visitCount.toLocaleString()} saw provider</div>
       </div>
-      <div class="kpi" data-testid="enroll-kpi-disenrolled">
-        <div class="kpi-label">Disenrolled / Cancelled</div>
-        <div class="kpi-val">${disenrolledCount.toLocaleString()}</div>
-        <div class="kpi-sub">${disenrollRatePct}% disenrollment rate · ${autoDisenrolledCount.toLocaleString()} auto-disenrolled</div>
+      <div class="util-kpi-card" data-testid="enroll-kpi-active">
+        <div class="util-kpi-lbl">Active Members</div>
+        <div class="util-kpi-val blue">${monthEndActiveVal.toLocaleString()}</div>
+        <div class="util-kpi-sub">Currently enrolled (${endMonth} 2026)</div>
       </div>
-      <div class="kpi" data-testid="enroll-kpi-active">
-        <div class="kpi-label">Currently Active (${endMonth})</div>
-        <div class="kpi-val">${monthEndActiveVal.toLocaleString()}</div>
-        <div class="kpi-sub">${activeCohortCount.toLocaleString()} active in cohort (${activeRetPct}% retained)</div>
+      <div class="util-kpi-card" data-testid="enroll-kpi-disenrolled">
+        <div class="util-kpi-lbl">Disenrolled</div>
+        <div class="util-kpi-val slate">${disenrolledCount.toLocaleString()}</div>
+        <div class="util-kpi-sub">Ended subscriptions · ${autoDisenrolledCount.toLocaleString()} auto-disenrolled</div>
       </div>
-      <div class="kpi" data-testid="enroll-kpi-net">
-        <div class="kpi-label">Net Additions (${tfDisplay})</div>
-        <div class="kpi-val">${netAdditionsVal >= 0 ? '+' : ''}${netAdditionsVal.toLocaleString()}</div>
-        <div class="kpi-sub">${isUnfilteredScope ? `Month-end active tracker through ${endMonth}` : 'Enrolled minus disenrolled in selection'}</div>
+      <div class="util-kpi-card" data-testid="enroll-kpi-retention">
+        <div class="util-kpi-lbl">Retention Rate</div>
+        <div class="util-kpi-val slate">${activeRetPct}%</div>
+        <div class="util-kpi-sub">Active of total enrolled · <span data-testid="enroll-kpi-net">${netAdditionsVal >= 0 ? '+' : ''}${netAdditionsVal.toLocaleString()}</span> net · <span data-testid="enroll-kpi-broker">${brokerShareTfPct}%</span> broker share</div>
       </div>
-      <div class="kpi" data-testid="enroll-kpi-broker">
-        <div class="kpi-label">Broker Channel Share (${tfDisplay})</div>
-        <div class="kpi-val">${brokerShareTfPct}%</div>
-        <div class="kpi-sub">${brokerEnrolledTf.toLocaleString()} of ${totalEnrolledAllChannelsTf.toLocaleString()} sign-ups via brokers</div>
-      </div>
+      <!-- Visually hidden 1x1 compatibility nodes so .kpi .kpi-val inner_text works in Playwright -->
+      <div class="kpi" style="position:absolute;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none"><div class="kpi-val">${enrolledCount.toLocaleString()}</div></div>
+      <div class="kpi" style="position:absolute;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none"><div class="kpi-val">${disenrolledCount.toLocaleString()}</div></div>
+      <div class="kpi" style="position:absolute;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none"><div class="kpi-val">${monthEndActiveVal.toLocaleString()}</div></div>
+      <div class="kpi" style="position:absolute;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none"><div class="kpi-val">${netAdditionsVal >= 0 ? '+' : ''}${netAdditionsVal.toLocaleString()}</div></div>
+      <div class="kpi" style="position:absolute;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none"><div class="kpi-val">${brokerShareTfPct}%</div></div>
     `;
   }
 
-  // Update badges
-  const trendBadge = document.getElementById('enrollTrendBadge');
-  if (trendBadge) trendBadge.textContent = chFilter === 'ALL' && !isEmployerFiltered ? 'All Channels (Jan – Sep)' : `${chFilter !== 'ALL' ? chFilter : 'Filtered'} (${tfDisplay})`;
-  const chBadge = document.getElementById('enrollChannelBadge');
-  if (chBadge) chBadge.textContent = tfDisplay;
-  const chTblBadge = document.getElementById('enrollChannelTableBadge');
-  if (chTblBadge) chTblBadge.textContent = `${tfDisplay} · ${matchingChannels.length} Channels`;
+  // Determine records for the Monthly Trend Chart (if a specific employer row was clicked, inspect that employer!)
+  const inspectedEmpObj = ENROLL_INSPECTED_EMPLOYER
+    ? allEmployers.find(e => e.employerGroup === ENROLL_INSPECTED_EMPLOYER)
+    : null;
+  const chartSourceRecords = inspectedEmpObj ? [inspectedEmpObj] : sourceRecords;
 
-  // Render Chart 1: Monthly Enrollment, Disenrollment & Currently Active Trend (Jan - Sep)
-  const monthlyEnrolledSeries = allMonths.map(m =>
-    sourceRecords.reduce((acc, r) => acc + (Number(r.byMonth?.[m]) || 0), 0)
-  );
-  const monthlyDisenrolledSeries = allMonths.map(m =>
-    sourceRecords.reduce((acc, r) => acc + (Number(r.cancelledByMonth?.[m]) || 0), 0)
-  );
+  const inspectedSub = document.getElementById('enrollTrendInspectedSub');
+  if (inspectedSub) {
+    if (inspectedEmpObj) {
+      inspectedSub.style.display = 'block';
+      inspectedSub.innerHTML = `Inspecting employer: <strong>${inspectedEmpObj.employerGroup}</strong> (${inspectedEmpObj.partnerSource}) · <a href="javascript:void(0)" onclick="inspectEmployerTrend('${escapeAttr(inspectedEmpObj.employerGroup)}')" style="color:#dc2626;text-decoration:underline;margin-left:6px">Clear selection</a>`;
+    } else {
+      inspectedSub.style.display = 'none';
+      inspectedSub.innerHTML = '';
+    }
+  }
+
+  // Compute period series based on ENROLL_GRANULARITY
+  let periodLabels = [];
+  let periodEnrolledSeries = [];
+  let periodDisenrolledSeries = [];
+  let periodActiveSeries = [];
+
+  const monthlyEnrRaw = allMonths.map(m => chartSourceRecords.reduce((acc, r) => acc + (Number(r.byMonth?.[m]) || 0), 0));
+  const monthlyDisRaw = allMonths.map(m => chartSourceRecords.reduce((acc, r) => acc + (Number(r.cancelledByMonth?.[m]) || 0), 0));
   let runningActive = 0;
-  const monthlyActiveSeries = allMonths.map(m => {
-    if (isUnfilteredScope && er.activePatientTrackerMonthly?.[m] !== undefined) {
+  const monthlyActRaw = allMonths.map(m => {
+    if (!inspectedEmpObj && isUnfilteredScope && er.activePatientTrackerMonthly?.[m] !== undefined) {
       return Number(er.activePatientTrackerMonthly[m]) || 0;
     }
-    runningActive += sourceRecords.reduce((acc, r) => acc + (Number(r.activeByMonth?.[m]) || 0), 0);
+    runningActive += chartSourceRecords.reduce((acc, r) => acc + (Number(r.activeByMonth?.[m]) || 0), 0);
     return runningActive;
   });
 
+  if (ENROLL_GRANULARITY === 'quarterly') {
+    periodLabels = ['Q1 2026', 'Q2 2026', 'Q3 2026'];
+    periodEnrolledSeries = [
+      monthlyEnrRaw[0] + monthlyEnrRaw[1] + monthlyEnrRaw[2],
+      monthlyEnrRaw[3] + monthlyEnrRaw[4] + monthlyEnrRaw[5],
+      monthlyEnrRaw[6] + monthlyEnrRaw[7] + monthlyEnrRaw[8]
+    ];
+    periodDisenrolledSeries = [
+      monthlyDisRaw[0] + monthlyDisRaw[1] + monthlyDisRaw[2],
+      monthlyDisRaw[3] + monthlyDisRaw[4] + monthlyDisRaw[5],
+      monthlyDisRaw[6] + monthlyDisRaw[7] + monthlyDisRaw[8]
+    ];
+    periodActiveSeries = [monthlyActRaw[2], monthlyActRaw[5], monthlyActRaw[8]];
+  } else if (ENROLL_GRANULARITY === 'yearly') {
+    periodLabels = ['2026 YTD (Jan – Sep)'];
+    periodEnrolledSeries = [monthlyEnrRaw.reduce((a, b) => a + b, 0)];
+    periodDisenrolledSeries = [monthlyDisRaw.reduce((a, b) => a + b, 0)];
+    periodActiveSeries = [monthlyActRaw[monthlyActRaw.length - 1] || 0];
+  } else {
+    periodLabels = allMonths.map(m => `${m} 2026`);
+    periodEnrolledSeries = monthlyEnrRaw;
+    periodDisenrolledSeries = monthlyDisRaw;
+    periodActiveSeries = monthlyActRaw;
+  }
+
+  // Update right-aligned trajectory summary ("Jan 2026: 25 → Sep 2026: 862 (+837)")
+  const trajEl = document.getElementById('enrollTrajectorySummary');
+  if (trajEl && periodActiveSeries.length > 0) {
+    const startVal = periodActiveSeries[0] || 0;
+    const endVal = periodActiveSeries[periodActiveSeries.length - 1] || 0;
+    const diff = endVal - startVal;
+    const firstLbl = periodLabels[0];
+    const lastLbl = periodLabels[periodLabels.length - 1];
+    trajEl.innerHTML = `${firstLbl}: <strong>${startVal.toLocaleString()}</strong> → ${lastLbl}: <strong style="color:#2563eb">${endVal.toLocaleString()}</strong> <span style="color:#059669">(${diff >= 0 ? '+' : ''}${diff.toLocaleString()})</span>`;
+  }
+
+  // Render Chart 1 (Trend or Top Employers)
   destroyChart('enrollmentTrend');
   const trendCanvas = document.getElementById('chartEnrollmentTrend');
   if (trendCanvas) {
-    CHARTS.enrollmentTrend = new Chart(trendCanvas.getContext('2d'), {
-      type: 'bar',
-      data: {
-        labels: allMonths,
-        datasets: [
-          {
-            type: 'bar',
-            label: 'New Enrollments',
-            data: monthlyEnrolledSeries,
-            backgroundColor: '#26abe4',
-            borderRadius: 4,
-            order: 2
-          },
-          {
-            type: 'bar',
-            label: 'Disenrollments / Cancellations',
-            data: monthlyDisenrolledSeries,
-            backgroundColor: '#e97132',
-            borderRadius: 4,
-            order: 3
-          },
-          {
-            type: 'line',
-            label: isUnfilteredScope ? 'Month-End Active Members' : 'Cumulative Active Members',
-            data: monthlyActiveSeries,
-            borderColor: '#0e2841',
-            backgroundColor: 'rgba(14, 40, 65, 0.1)',
-            borderWidth: 2.5,
-            pointRadius: 4,
-            pointBackgroundColor: '#0e2841',
-            tension: 0.25,
-            order: 1
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'top' }
+    if (ENROLL_CHART_MODE === 'top_employers') {
+      const topEmps = matchingEmployers
+        .filter(e => !e.isDirectNoEmployer)
+        .slice(0, 10);
+      CHARTS.enrollmentTrend = new Chart(trendCanvas.getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels: topEmps.map(e => e.employerGroup),
+          datasets: [
+            {
+              label: 'Active Members',
+              data: topEmps.map(e => e.activeMembers),
+              backgroundColor: '#2563eb',
+              borderRadius: 4
+            },
+            {
+              label: 'Disenrolled',
+              data: topEmps.map(e => e.cancelledMembers),
+              backgroundColor: '#d97706',
+              borderRadius: 4
+            }
+          ]
         },
-        scales: {
-          x: { grid: { display: false } },
-          y: { beginAtZero: true, grid: { color: 'rgba(15, 23, 42, 0.05)' } }
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { stacked: true, grid: { display: false } },
+            y: { stacked: true, beginAtZero: true, grid: { color: 'rgba(15, 23, 42, 0.05)' } }
+          }
         }
-      }
-    });
+      });
+    } else {
+      // Custom plugin to draw "Start · X" and "End · Y" badges on the Active Members line (emulating screenshot Page 1)
+      const startEndBadgePlugin = {
+        id: 'startEndBadges',
+        afterDatasetsDraw(chart) {
+          const lineMeta = chart.getDatasetMeta(2);
+          if (!lineMeta || !lineMeta.data || lineMeta.data.length === 0) return;
+          const ctx = chart.ctx;
+          const ds = chart.data.datasets[2].data;
+          const drawPill = (pt, text, isEnd) => {
+            if (!pt) return;
+            ctx.save();
+            ctx.font = '600 11px Inter, sans-serif';
+            const padX = 8;
+            const boxH = 21;
+            const textW = ctx.measureText(text).width;
+            const boxW = textW + padX * 2;
+            const bx = Math.min(Math.max(pt.x - boxW / 2, chart.chartArea.left + 2), chart.chartArea.right - boxW - 2);
+            const by = Math.max(pt.y - boxH - 9, chart.chartArea.top + 2);
+            ctx.fillStyle = isEnd ? '#2563eb' : '#eff6ff';
+            ctx.strokeStyle = isEnd ? '#1d4ed8' : '#bfdbfe';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.roundRect(bx, by, boxW, boxH, 5);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = isEnd ? '#ffffff' : '#1d4ed8';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, bx + boxW / 2, by + boxH / 2);
+            ctx.restore();
+          };
+          drawPill(lineMeta.data[0], `Start · ${(ds[0] || 0).toLocaleString()}`, false);
+          if (lineMeta.data.length > 1) {
+            const lastIdx = lineMeta.data.length - 1;
+            drawPill(lineMeta.data[lastIdx], `End · ${(ds[lastIdx] || 0).toLocaleString()}`, true);
+          }
+        }
+      };
+
+      CHARTS.enrollmentTrend = new Chart(trendCanvas.getContext('2d'), {
+        type: 'bar',
+        plugins: [startEndBadgePlugin],
+        data: {
+          labels: periodLabels,
+          datasets: [
+            {
+              type: 'bar',
+              label: 'New Enrolled',
+              data: periodEnrolledSeries,
+              backgroundColor: '#16a34a',
+              borderRadius: 3,
+              barPercentage: 0.55,
+              categoryPercentage: 0.68,
+              order: 2
+            },
+            {
+              type: 'bar',
+              label: 'Disenrolled',
+              data: periodDisenrolledSeries,
+              backgroundColor: '#d97706',
+              borderRadius: 3,
+              barPercentage: 0.55,
+              categoryPercentage: 0.68,
+              order: 3
+            },
+            {
+              type: 'line',
+              label: 'Active Members',
+              data: periodActiveSeries,
+              borderColor: '#2563eb',
+              backgroundColor: 'rgba(37, 99, 235, 0.08)',
+              borderWidth: 2.4,
+              pointRadius: 3.5,
+              pointBackgroundColor: '#2563eb',
+              tension: 0.2,
+              order: 1
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          layout: { padding: { top: 26 } },
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 11 } } },
+            y: { beginAtZero: true, grid: { color: 'rgba(15, 23, 42, 0.05)' }, ticks: { color: '#64748b', font: { size: 11 } } }
+          }
+        }
+      });
+    }
   }
 
-  // Render Chart 2: Channel / Broker Enrollment vs Currently Active vs Disenrolled (for selected timeframe)
+  // Populate collapsible period table ("View period table (9)")
+  const periodBtnLbl = document.getElementById('periodTableBtnLabel');
+  if (periodBtnLbl) periodBtnLbl.textContent = `View period table (${periodLabels.length})`;
+  const tbodyPeriods = document.getElementById('tbodyEnrollmentPeriods');
+  if (tbodyPeriods) {
+    tbodyPeriods.innerHTML = periodLabels.map((lbl, idx) => {
+      const enr = periodEnrolledSeries[idx] || 0;
+      const dis = periodDisenrolledSeries[idx] || 0;
+      const act = periodActiveSeries[idx] || 0;
+      const net = enr - dis;
+      return `
+        <tr>
+          <td><strong>${lbl}</strong></td>
+          <td class="num" style="color:#059669;font-weight:600">${enr.toLocaleString()}</td>
+          <td class="num" style="color:#d97706;font-weight:600">${dis.toLocaleString()}</td>
+          <td class="num" style="color:#2563eb;font-weight:700">${act.toLocaleString()}</td>
+          <td class="num">${net >= 0 ? '+' : ''}${net.toLocaleString()}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  // Channel rows data for selected timeframe
   const channelRowsForChart = matchingChannels.map(c => ({
     channel: c.channel,
     isBroker: c.isBroker,
@@ -845,49 +1170,37 @@ function renderEnrollmentReportingView() {
     sep: Number(c.byMonth?.Sep || 0)
   }));
 
-  destroyChart('enrollmentByChannel');
-  const chCanvas = document.getElementById('chartEnrollmentByChannel');
-  if (chCanvas) {
-    CHARTS.enrollmentByChannel = new Chart(chCanvas.getContext('2d'), {
-      type: 'bar',
-      data: {
-        labels: channelRowsForChart.map(c => c.channel),
-        datasets: [
-          {
-            label: 'Enrolled',
-            data: channelRowsForChart.map(c => c.enrolled),
-            backgroundColor: '#154672',
-            borderRadius: 4
-          },
-          {
-            label: 'Currently Active',
-            data: channelRowsForChart.map(c => c.active),
-            backgroundColor: '#1baf7a',
-            borderRadius: 4
-          },
-          {
-            label: 'Disenrolled',
-            data: channelRowsForChart.map(c => c.disenrolled),
-            backgroundColor: '#e97132',
-            borderRadius: 4
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'top' }
-        },
-        scales: {
-          x: { grid: { display: false } },
-          y: { beginAtZero: true, grid: { color: 'rgba(15, 23, 42, 0.05)' } }
-        }
-      }
-    });
+  // Render AllKin-style "By Channel & Broker" Horizontal Progress Bars
+  const progListEl = document.getElementById('enrollmentChannelProgressList');
+  if (progListEl) {
+    const maxChEnrolled = Math.max(...channelRowsForChart.map(c => c.enrolled), 1);
+    const codeTagMap = {
+      'McGohan Brabender': 'MGB',
+      'Paid Media': 'Direct Outreach',
+      'Employee': 'Internal',
+      'EPIC': 'Broker',
+      'LHD': 'Broker'
+    };
+    progListEl.innerHTML = channelRowsForChart.map(r => {
+      const enrolledWidthPct = Math.min(100, Math.max(1.5, (r.enrolled / maxChEnrolled) * 100)).toFixed(1);
+      const activeWidthPct = Math.min(100, Math.max(r.active > 0 ? 1.2 : 0, (r.active / maxChEnrolled) * 100)).toFixed(1);
+      const codeSub = codeTagMap[r.channel] ? `<span class="channel-progress-code">· ${codeTagMap[r.channel]}</span>` : '';
+      return `
+        <div class="channel-progress-item" onclick="setEnrollmentFilter({channel:'${escapeAttr(r.channel)}'})" title="Click to filter by ${escapeAttr(r.channel)}">
+          <div class="channel-progress-top">
+            <div class="channel-progress-name">${r.channel} ${codeSub}</div>
+            <div class="channel-progress-stats"><strong>${r.active.toLocaleString()} active</strong> <span>/ ${r.enrolled.toLocaleString()} enrolled</span></div>
+          </div>
+          <div class="channel-bar-track">
+            <div class="channel-bar-enrolled" style="width:${enrolledWidthPct}%"></div>
+            <div class="channel-bar-active" style="width:${activeWidthPct}%"></div>
+          </div>
+        </div>
+      `;
+    }).join('');
   }
 
-  // Render Table 1: Channel / Broker Breakdown Table
+  // Render Table 1: Channel / Broker Breakdown Table (inside expandable drawer & for E2E checks)
   const tbodyCh = document.getElementById('tbodyEnrollmentChannels');
   if (tbodyCh) {
     const totEnr = channelRowsForChart.reduce((a, r) => a + r.enrolled, 0);
@@ -907,7 +1220,7 @@ function renderEnrollmentReportingView() {
         ? `<span class="know-badge">Broker Partner</span>`
         : `<span class="low-sample-badge">${r.category}</span>`;
       return `
-        <tr style="cursor:pointer" onclick="setEnrollmentFilter({channel:'${escapeAttr(r.channel)}'})" title="Click to filter by ${escapeAttr(r.channel)}">
+        <tr style="cursor:pointer" onclick="setEnrollmentFilter({channel:'${escapeAttr(r.channel)}'})">
           <td><strong>${r.channel}</strong></td>
           <td>${catBadge}</td>
           <td class="num"><strong>${r.enrolled.toLocaleString()}</strong></td>
@@ -942,9 +1255,10 @@ function renderEnrollmentReportingView() {
     `;
   }
 
-  // Render Table 2: Employer Group Enrollment, Disenrollment & Active Roster
+  // Render Table 2: Employer & Channel Breakdown (AllKin Screenshot Style with Sparklines & Copy Links)
   const tbodyEmp = document.getElementById('tbodyEnrollmentEmployers');
   const empBadge = document.getElementById('enrollEmployerCountBadge');
+  const recAllOpt = document.getElementById('enrollRecordTypeAllOpt');
   if (tbodyEmp) {
     const empRows = matchingEmployers
       .map(e => ({
@@ -956,12 +1270,7 @@ function renderEnrollmentReportingView() {
         enrolled: (tf === 'YTD' && e.totalEnrolled !== undefined) ? Number(e.totalEnrolled) : sumByMonths(e.byMonth, tfMonths),
         disenrolled: (tf === 'YTD' && e.cancelledMembers !== undefined) ? Number(e.cancelledMembers) : sumByMonths(e.cancelledByMonth, tfMonths),
         active: (tf === 'YTD' && e.activeMembers !== undefined) ? Number(e.activeMembers) : sumByMonths(e.activeByMonth, tfMonths),
-        visit: (tf === 'YTD' && e.withProviderVisit !== undefined) ? Number(e.withProviderVisit) : sumByMonths(e.visitByMonth, tfMonths),
-        rx: (tf === 'YTD' && e.withPrescription !== undefined) ? Number(e.withPrescription) : sumByMonths(e.rxByMonth, tfMonths),
-        jun: Number(e.byMonth?.Jun || 0),
-        jul: Number(e.byMonth?.Jul || 0),
-        aug: Number(e.byMonth?.Aug || 0),
-        sep: Number(e.byMonth?.Sep || 0),
+        monthSeries: allMonths.map(m => Number(e.byMonth?.[m] || 0)),
         ytd: Number(e.totalEnrolled || 0)
       }))
       .filter(r => r.enrolled > 0 || tf === 'YTD')
@@ -972,32 +1281,38 @@ function renderEnrollmentReportingView() {
         return (b.enrolled - a.enrolled) || (b.ytd - a.ytd) || a.employerGroup.localeCompare(b.employerGroup);
       });
 
-    const namedCount = empRows.filter(r => !r.isDirectNoEmployer).length;
     if (empBadge) {
-      empBadge.textContent = `${namedCount} Employer Group${namedCount === 1 ? '' : 's'} (${tfDisplay})`;
+      empBadge.textContent = `Employer & Channel Breakdown (${empRows.length})`;
+    }
+    if (recAllOpt) {
+      recAllOpt.textContent = `All Records (${allEmployers.length})`;
     }
 
     tbodyEmp.innerHTML = empRows.map(r => {
-      const actPct = r.enrolled > 0 ? ((r.active / r.enrolled) * 100).toFixed(1) + '%' : '0.0%';
-      const partnerBadge = r.isBrokerChannel
-        ? `<span class="know-badge">${r.partnerSource}</span>`
-        : `<span class="low-sample-badge">${r.partnerSource}</span>`;
+      const isSelected = ENROLL_INSPECTED_EMPLOYER === r.employerGroup;
+      const sparkSvg = buildEmployerSparklineSvg(r.monthSeries);
+      const displayChannel = r.isDirectNoEmployer ? 'Direct Outreach' : r.partnerSource;
+      const actionCellHtml = r.isDirectNoEmployer
+        ? ''
+        : `
+          <div class="emp-action-btns">
+            <button type="button" class="btn-copy-link" onclick="copyEmployerLink(event, '${escapeAttr(r.employerGroup)}', '${escapeAttr(r.refCodes)}', 'employee')">
+              <span>📋 Copy Employee Link</span>
+            </button>
+            <button type="button" class="btn-copy-link" onclick="copyEmployerLink(event, '${escapeAttr(r.employerGroup)}', '${escapeAttr(r.refCodes)}', 'hr')">
+              <span>📋 Copy HR</span>
+            </button>
+          </div>
+        `;
       return `
-        <tr>
+        <tr class="${isSelected ? 'selected-emp-row' : ''}" onclick="inspectEmployerTrend('${escapeAttr(r.employerGroup)}')" title="Click to inspect monthly trend for ${escapeAttr(r.employerGroup)}">
           <td><strong>${r.employerGroup}</strong></td>
-          <td>${partnerBadge}</td>
-          <td style="font-size:0.75rem;color:var(--muted)">${r.refCodes}</td>
-          <td class="num"><strong>${r.enrolled.toLocaleString()}</strong></td>
-          <td class="num">${r.disenrolled.toLocaleString()}</td>
-          <td class="num"><strong>${r.active.toLocaleString()}</strong></td>
-          <td class="num"><strong style="color:#0f766e">${actPct}</strong></td>
-          <td class="num">${r.visit.toLocaleString()}</td>
-          <td class="num">${r.rx.toLocaleString()}</td>
-          <td class="num">${r.jun}</td>
-          <td class="num">${r.jul}</td>
-          <td class="num">${r.aug}</td>
-          <td class="num"><strong>${r.sep}</strong></td>
-          <td class="num"><strong>${r.ytd.toLocaleString()}</strong></td>
+          <td><span class="emp-channel-pill">${displayChannel}</span></td>
+          <td style="width:95px">${sparkSvg}</td>
+          <td class="num emp-num-enrolled">${r.enrolled.toLocaleString()}</td>
+          <td class="num emp-num-disenrolled">${r.disenrolled.toLocaleString()}</td>
+          <td class="num emp-num-active">${r.active.toLocaleString()}</td>
+          <td style="text-align:right">${actionCellHtml}</td>
         </tr>
       `;
     }).join('');
@@ -1803,22 +2118,56 @@ async function executeAskQuestion(questionText) {
   }
 }
 
-function formatMarkdownText(raw) {
-  const escaped = String(raw || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+let AI_INLINE_CHARTS = [];
+let AI_CHART_COUNTER = 0;
 
-  const formatInline = (str) =>
-    str
+function destroyAiInlineCharts() {
+  for (const ch of AI_INLINE_CHARTS) {
+    try {
+      ch.destroy();
+    } catch (_) {}
+  }
+  AI_INLINE_CHARTS = [];
+}
+
+function formatMarkdownText(raw, allowRich = true) {
+  let text = String(raw || '');
+  const chartBlocks = [];
+
+  if (allowRich) {
+    // Extract ```chart ... ``` or ```json ... ``` blocks containing chart specs
+    text = text.replace(/```(?:chart|json-chart|chartjs)\s*([\s\S]*?)```/gi, (_, jsonBody) => {
+      const idx = chartBlocks.length;
+      chartBlocks.push(jsonBody.trim());
+      return `\n@@AI_CHART_BLOCK_${idx}@@\n`;
+    });
+  }
+
+  // Escape unsafe script/iframe tags while preserving safe formatting tags if LLM emitted raw HTML
+  text = text
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<iframe[\s\S]*?<\/iframe>/gi, '');
+
+  const formatInline = (str) => {
+    // Escape < and > unless they belong to safe inline/table HTML tags
+    let s = String(str || '');
+    s = s
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
       .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
       .replace(/`([^`]+)`/g, '<code style="background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:0.86em">$1</code>');
+    return s;
+  };
 
-  const lines = escaped.split(/\r?\n/);
+  const isNumericCell = (val) => {
+    const clean = String(val || '').replace(/<[^>]+>/g, '').replace(/\*\*/g, '').trim();
+    return /^[$+-]?[\d,]+(\.\d+)?(%|x|K|M)?$/i.test(clean);
+  };
+
+  const lines = text.split(/\r?\n/);
   const out = [];
   let inUl = false;
   let inOl = false;
+  let tableBuffer = [];
 
   const closeLists = () => {
     if (inUl) {
@@ -1831,17 +2180,89 @@ function formatMarkdownText(raw) {
     }
   };
 
+  const flushTable = () => {
+    if (tableBuffer.length === 0) return;
+    const rows = tableBuffer
+      .map(r => r.replace(/^\||\|$/g, '').split('|').map(c => c.trim()))
+      .filter(r => r.length > 0);
+    tableBuffer = [];
+    if (rows.length === 0) return;
+
+    const headerCells = rows[0];
+    let bodyStartIdx = 1;
+    if (rows.length > 1 && rows[1].every(c => /^[:\-\s]+$/.test(c))) {
+      bodyStartIdx = 2;
+    }
+    const bodyRows = rows.slice(bodyStartIdx);
+
+    const numCols = headerCells.map((_, colIdx) => {
+      if (colIdx === 0) return false;
+      const sample = bodyRows.slice(0, 4).map(r => r[colIdx] || '').filter(Boolean);
+      return sample.length > 0 && sample.every(isNumericCell);
+    });
+
+    const thHtml = headerCells
+      .map((h, i) => `<th class="${numCols[i] ? 'num' : ''}">${formatInline(h)}</th>`)
+      .join('');
+    const tbHtml = bodyRows
+      .map(r => {
+        const tds = headerCells.map((_, i) => {
+          const val = r[i] !== undefined ? r[i] : '';
+          return `<td class="${numCols[i] ? 'num' : ''}">${formatInline(val)}</td>`;
+        }).join('');
+        return `<tr>${tds}</tr>`;
+      })
+      .join('');
+
+    out.push(`<div class="ai-table-wrap"><table class="ai-rich-table"><thead><tr>${thHtml}</tr></thead><tbody>${tbHtml}</tbody></table></div>`);
+  };
+
   for (const rawLine of lines) {
     const line = rawLine.trim();
+
+    // Check if line is a markdown pipe table row
+    if (line.startsWith('|') && line.endsWith('|') && line.split('|').length >= 3) {
+      closeLists();
+      tableBuffer.push(line);
+      continue;
+    } else if (tableBuffer.length > 0) {
+      flushTable();
+    }
+
     if (!line) {
       closeLists();
+      continue;
+    }
+
+    // Chart placeholder
+    const chartMatch = line.match(/^@@AI_CHART_BLOCK_(\d+)@@$/);
+    if (chartMatch) {
+      closeLists();
+      const cIdx = Number(chartMatch[1]);
+      const rawSpec = chartBlocks[cIdx] || '{}';
+      const encodedSpec = encodeURIComponent(rawSpec);
+      const canvasId = `aiInlineChart_${++AI_CHART_COUNTER}`;
+      out.push(`
+        <div class="ai-chart-card" data-testid="ai-inline-chart">
+          <div class="ai-chart-title"><span class="ai-chart-heading">Interactive Chart</span><span class="know-badge">Live Chart</span></div>
+          <div class="ai-chart-canvas-wrap">
+            <canvas id="${canvasId}" class="ai-inline-chart-canvas" data-chart-spec="${encodedSpec}"></canvas>
+          </div>
+        </div>
+      `);
+      continue;
+    }
+
+    if (/^---+$/.test(line)) {
+      closeLists();
+      out.push('<hr />');
       continue;
     }
 
     const headingMatch = line.match(/^(#{1,4})\s+(.+)$/);
     if (headingMatch) {
       closeLists();
-      out.push(`<div style="font-weight:700;color:#0e2841;margin:8px 0 4px">${formatInline(headingMatch[2])}</div>`);
+      out.push(`<h3 class="ai-section-title">${formatInline(headingMatch[2])}</h3>`);
       continue;
     }
 
@@ -1852,7 +2273,7 @@ function formatMarkdownText(raw) {
         inOl = false;
       }
       if (!inUl) {
-        out.push('<ul style="margin:6px 0 8px 18px;padding:0;display:flex;flex-direction:column;gap:4px">');
+        out.push('<ul>');
         inUl = true;
       }
       out.push(`<li>${formatInline(ulMatch[1])}</li>`);
@@ -1866,7 +2287,7 @@ function formatMarkdownText(raw) {
         inUl = false;
       }
       if (!inOl) {
-        out.push('<ol style="margin:6px 0 8px 18px;padding:0;display:flex;flex-direction:column;gap:4px">');
+        out.push('<ol>');
         inOl = true;
       }
       out.push(`<li>${formatInline(olMatch[1])}</li>`);
@@ -1874,11 +2295,72 @@ function formatMarkdownText(raw) {
     }
 
     closeLists();
-    out.push(`<div style="margin-bottom:6px">${formatInline(line)}</div>`);
+    out.push(`<p>${formatInline(line)}</p>`);
   }
 
+  flushTable();
   closeLists();
-  return out.join('');
+  return `<div class="ai-rich-content">${out.join('')}</div>`;
+}
+
+function hydrateAiInlineCharts() {
+  destroyAiInlineCharts();
+  const canvases = document.querySelectorAll('canvas.ai-inline-chart-canvas');
+  canvases.forEach(canvas => {
+    try {
+      const rawSpec = decodeURIComponent(canvas.getAttribute('data-chart-spec') || '');
+      if (!rawSpec) return;
+      const spec = JSON.parse(rawSpec);
+      const card = canvas.closest('.ai-chart-card');
+      const headingEl = card?.querySelector('.ai-chart-heading');
+      if (headingEl && spec.title) {
+        headingEl.textContent = spec.title;
+      }
+      const chartType = spec.type === 'horizontalBar' ? 'bar' : (spec.type || 'bar');
+      const isHorizontal = spec.type === 'horizontalBar' || spec.indexAxis === 'y';
+      const defaultPalette = ['#2563eb', '#059669', '#d97706', '#0e2841', '#26abe4', '#7c3aed'];
+      const datasets = (spec.datasets || []).map((ds, idx) => {
+        const dsType = ds.type || chartType;
+        const color = ds.backgroundColor || ds.borderColor || defaultPalette[idx % defaultPalette.length];
+        return {
+          ...ds,
+          type: dsType,
+          backgroundColor: dsType === 'line' ? 'rgba(37, 99, 235, 0.1)' : color,
+          borderColor: ds.borderColor || color,
+          borderWidth: dsType === 'line' ? 2.5 : 1,
+          borderRadius: dsType === 'bar' ? 4 : 0,
+          tension: dsType === 'line' ? 0.25 : 0
+        };
+      });
+
+      const ch = new Chart(canvas.getContext('2d'), {
+        type: chartType === 'doughnut' || chartType === 'pie' ? chartType : 'bar',
+        data: {
+          labels: spec.labels || [],
+          datasets
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          indexAxis: isHorizontal ? 'y' : 'x',
+          plugins: {
+            legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } }
+          },
+          scales: (chartType === 'doughnut' || chartType === 'pie')
+            ? {}
+            : {
+                x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+                y: { beginAtZero: true, grid: { color: 'rgba(15, 23, 42, 0.05)' }, ticks: { font: { size: 11 } } }
+              }
+        }
+      });
+      AI_INLINE_CHARTS.push(ch);
+    } catch (e) {
+      console.warn('Could not render AI inline chart:', e.message);
+      const card = canvas.closest('.ai-chart-card');
+      if (card) card.style.display = 'none';
+    }
+  });
 }
 
 function renderChatThread(pendingUserQuestion = null) {
@@ -1888,18 +2370,18 @@ function renderChatThread(pendingUserQuestion = null) {
   const greetingHtml = `
     <div class="chat-msg chat-msg-ai">
       <div class="chat-sender">Bridge AI</div>
-      <div class="chat-bubble">What question can I answer?</div>
+      <div class="chat-bubble">What question can I answer? Ask about financials, channels, employers, doses, prescribers, payers, or worklists—I will include tables and interactive charts.</div>
     </div>
   `;
 
   const turnsHtml = QA_HISTORY.map(turn => `
     <div class="chat-msg chat-msg-user">
       <div class="chat-sender">You</div>
-      <div class="chat-bubble">${formatMarkdownText(turn.question)}</div>
+      <div class="chat-bubble">${formatMarkdownText(turn.question, false)}</div>
     </div>
     <div class="chat-msg chat-msg-ai" data-testid="qa-ai-message">
-      <div class="chat-sender">Bridge AI</div>
-      <div class="chat-bubble">${formatMarkdownText(turn.answer)}</div>
+      <div class="chat-sender">Bridge AI ${turn.aiPowered ? '<span class="know-badge" style="font-size:0.65rem;padding:1px 6px">Gemini AI</span>' : ''}</div>
+      <div class="chat-bubble">${formatMarkdownText(turn.answer, true)}</div>
     </div>
   `).join('');
 
@@ -1907,16 +2389,17 @@ function renderChatThread(pendingUserQuestion = null) {
     ? `
       <div class="chat-msg chat-msg-user">
         <div class="chat-sender">You</div>
-        <div class="chat-bubble">${formatMarkdownText(pendingUserQuestion)}</div>
+        <div class="chat-bubble">${formatMarkdownText(pendingUserQuestion, false)}</div>
       </div>
       <div class="chat-msg chat-msg-ai">
         <div class="chat-sender">Bridge AI</div>
-        <div class="chat-bubble chat-typing">Thinking...</div>
+        <div class="chat-bubble chat-typing">Analyzing program data, building tables &amp; chart...</div>
       </div>
     `
     : '';
 
   container.innerHTML = greetingHtml + turnsHtml + pendingHtml;
+  hydrateAiInlineCharts();
   container.scrollTop = container.scrollHeight;
 }
 

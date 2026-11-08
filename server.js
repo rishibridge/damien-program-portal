@@ -777,10 +777,26 @@ function answerQuestion(state, rawQuestion) {
     return {
       question: q,
       answer:
-        `**EPIC Broker Channel vs. Paid Media (${meta.client} Through Sep 2026)**:\n` +
+        `### **EPIC Broker Channel vs. Paid Media (${meta.client} Through Sep 2026)**\n` +
         `• **EPIC (Broker Partner)**: **${epicCh.totalEnrolled} YTD enrollments** (120 in Sep, 165 in Aug), **${epicCh.activeMembers} currently active (${epicCh.activeRetentionPct}% active retention)**, **${epicCh.cancelledMembers} disenrolled (${epicCh.disenrollmentPct}% churn)**, **77% first-fill conversion**, and **93% refill rate** ($696,172 gross margin on 748 fills).\n` +
         `• **Paid Media**: **${pmCh.totalEnrolled} YTD enrollments** (93 in Sep, 89 in Aug), **${pmCh.activeMembers} currently active (${pmCh.activeRetentionPct}% active retention)**, **${pmCh.cancelledMembers} disenrolled (${pmCh.disenrollmentPct}% churn)**, **62% first-fill conversion**, and **92% refill rate** ($671,400 gross margin on 804 fills; 4.63x ROAS on $142,033 media spend).\n` +
-        (topEpicEmps ? `• **Top EPIC Employer Groups Driving Aug–Sep Growth**: ${topEpicEmps}.` : '')
+        (topEpicEmps ? `• **Top EPIC Employer Groups Driving Aug–Sep Growth**: ${topEpicEmps}.\n\n` : '\n') +
+        `| Channel | YTD Enrolled | Active Members | Disenrolled | Retention Rate | 1st-Fill Rate |\n` +
+        `| --- | --- | --- | --- | --- | --- |\n` +
+        `| **EPIC (Broker)** | **${epicCh.totalEnrolled}** | **${epicCh.activeMembers}** | ${epicCh.cancelledMembers} | **${epicCh.activeRetentionPct}%** | **77%** |\n` +
+        `| **Paid Media** | **${pmCh.totalEnrolled}** | **${pmCh.activeMembers}** | ${pmCh.cancelledMembers} | **${pmCh.activeRetentionPct}%** | **62%** |\n\n` +
+        `\`\`\`chart\n` +
+        JSON.stringify({
+          type: 'bar',
+          title: 'EPIC Broker vs. Paid Media: Enrolled, Active & Disenrolled',
+          labels: ['EPIC (Broker)', 'Paid Media'],
+          datasets: [
+            { label: 'Total Enrolled', data: [epicCh.totalEnrolled, pmCh.totalEnrolled], backgroundColor: '#154672' },
+            { label: 'Active Members', data: [epicCh.activeMembers, pmCh.activeMembers], backgroundColor: '#059669' },
+            { label: 'Disenrolled', data: [epicCh.cancelledMembers, pmCh.cancelledMembers], backgroundColor: '#d97706' }
+          ]
+        }) +
+        `\n\`\`\``
     };
   }
 
@@ -978,11 +994,27 @@ function answerQuestion(state, rawQuestion) {
     return {
       question: q,
       answer:
-        `**${meta.client} Financial Performance & Monthly P&L Through ${meta.asOfDateFormatted || 'September 30, 2026'}**:\n` +
+        `### **${meta.client} Financial Performance & Monthly P&L Through ${meta.asOfDateFormatted || 'September 30, 2026'}**\n` +
         `• **Pharmacy Revenue**: **${revRow ? revRow.formatted : '$2,336,983'}** YTD across **${s3.totalFillsInPnl.toLocaleString()}** GLP-1 fills (Monthly: Jun **$${Number(mRev.Jun || 0).toLocaleString()}**, Jul **$${Number(mRev.Jul || 0).toLocaleString()}**, Aug **$${Number(mRev.Aug || 0).toLocaleString()}**, Sep **$${Number(mRev.Sep || 0).toLocaleString()}**)\n` +
         `• **Pharmacy Gross Margin**: **${gmRow ? gmRow.formatted : '$1,758,625'}** YTD deck headline / **$${Number(mGm.YTD || 0).toLocaleString()}** pre-adjustment worksheet (Sep: **$${Number(mGm.Sep || 0).toLocaleString()}** or **$${mPerRx.Sep || s3.septemberGrossMarginPerFill}/Rx**; Aug: **$${Number(mGm.Aug || 0).toLocaleString()}** or **$${mPerRx.Aug || 922.70}/Rx**; YTD avg: **$${mPerRx.YTD || 863.10}/Rx**)\n` +
         `• **Membership Fees Collected**: **+${feesRow ? feesRow.formatted : '$44,164'}** YTD (Sep: **$${Number(mSub.Sep || 0).toLocaleString()}**, Aug: **$${Number(mSub.Aug || 0).toLocaleString()}**)\n` +
-        `• **Net Program Proceeds (After Ad Spend & Fees)**: **$${sepProceeds.toLocaleString()}** in September (on **${mRx.Sep || 673}** fills) and **${procRow ? procRow.formatted : '$961,691'}** YTD.`
+        `• **Net Program Proceeds (After Ad Spend & Fees)**: **$${sepProceeds.toLocaleString()}** in September (on **${mRx.Sep || 673}** fills) and **${procRow ? procRow.formatted : '$961,691'}** YTD.\n\n` +
+        `| Financial Line Item | Sep 2026 | YTD Through Sep 2026 |\n` +
+        `| --- | --- | --- |\n` +
+        `| **Pharmacy Revenue** | **$${Number(mRev.Sep || 0).toLocaleString()}** | **${revRow ? revRow.formatted : '$2,336,983'}** |\n` +
+        `| **Pharmacy Gross Margin** | **$${Number(mGm.Sep || 0).toLocaleString()}** | **${gmRow ? gmRow.formatted : '$1,758,625'}** |\n` +
+        `| **Membership Fees Collected** | **$${Number(mSub.Sep || 0).toLocaleString()}** | **${feesRow ? feesRow.formatted : '$44,164'}** |\n` +
+        `| **Net Program Proceeds** | **$${sepProceeds.toLocaleString()}** | **${procRow ? procRow.formatted : '$961,691'}** |\n\n` +
+        `\`\`\`chart\n` +
+        JSON.stringify({
+          type: 'bar',
+          title: 'Monthly Net Program Proceeds ($)',
+          labels: s3.monthlyProceeds.months || ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'],
+          datasets: [
+            { label: 'Net Program Proceeds ($)', data: s3.monthlyProceeds.values || [], backgroundColor: '#2563eb' }
+          ]
+        }) +
+        `\n\`\`\``
     };
   }
 
@@ -1110,7 +1142,17 @@ HOW TO REASON & COMMUNICATE INTELLIGENTLY ACROSS BOTH PPTX AND XLSX DATA:
   3. First-Fill & Operations Worklist Workbook (\`worklistSummary\` & \`worklistAggregations\`):
      - ${ws.todoTotal} active members on Pharmacy To-Do (${ws.todoUrgent} Urgent cancellation pending, ${ws.todoHigh} High priority, ${ws.todoMonitor} Monitor), ${ws.refillTotal} overdue refills on Refill Follow-Up, ${ws.fixesTotal} unlinked fills on Pharmacy Data Fixes (${ws.fixesNoIdTotal} missing an ID and ${ws.fixesUnmatchedTotal} unmatched-ID fills, of which ${ws.fuzzySuggestedCount} fills have a possible 1–2 character typo match to ${ws.todoWithFuzzyCount} active To-Do patients), and ${ws.endedTotal} Ended – Never Filled members.
 - Answer both the "what" (exact numbers, percentages, and trends) and the "so what" (strategic insight, root causes, and operational takeaways).
-- Never cite slide numbers ("Slide 3") or raw JSON key names. Format your response cleanly with bold key metrics and concise bullet points when comparing multiple items.`;
+- Never cite slide numbers ("Slide 3") or raw JSON key names.
+
+RICH VISUAL FORMATTING — ALWAYS INCLUDE MARKDOWN TABLES & INTERACTIVE CHARTS:
+- For any analytical question (financials, channels, employers, doses, prescribers, payers, cancellations, or worklists), structure your response with:
+  1. **Executive Headline Summary** (concise bullet points with bold metrics).
+  2. **Structured Markdown Pipe Table** (\`| Metric | ... |\`) comparing the relevant numbers, percentages, or time periods.
+  3. **Interactive Chart Block (\`\`\`chart ... \`\`\`)**: Include a valid JSON Chart.js specification inside a fenced \`\`\`chart code block so the UI renders a live interactive chart directly inside your reply! Use this exact JSON schema inside \`\`\`chart:
+\`\`\`chart
+{"type":"bar","title":"Chart Title Here","labels":["Label 1","Label 2"],"datasets":[{"label":"Series 1","data":[100,200],"backgroundColor":"#2563eb"},{"label":"Series 2","data":[80,150],"backgroundColor":"#059669"}]}
+\`\`\`
+  (Keep the JSON inside \`\`\`chart on a single line or clean valid JSON with numeric values only—no dollar signs or commas inside the \`data\` array numbers).`;
 
   const conversationTurns = [];
   if (Array.isArray(history)) {
