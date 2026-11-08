@@ -1359,6 +1359,174 @@ app.delete('/api/security/users/:username', (req, res) => {
   res.json({ ok: true, deletedUsername: removed.username });
 });
 
+// Export Security & Usage Audit Log as CSV (bridge_admin only)
+app.get('/api/security/export/audit-csv', async (req, res) => {
+  if (!isCallerBridgeAdmin(req)) {
+    return res.status(403).json({ ok: false, error: 'Forbidden: Only Bridge Super-Admins can export the full security audit log.' });
+  }
+  const clientId = req.clientId || 'damien';
+  await ensureSecurityLogsHydrated(clientId);
+  const events = loadClientAuditLog(clientId);
+  const esc = v => {
+    if (v === null || v === undefined) return '';
+    const s = String(v).replace(/"/g, '""');
+    return /[,"\n\r]/.test(s) ? `"${s}"` : s;
+  };
+  const headers = ['Timestamp (UTC)', 'Tenant', 'Username', 'Display Name', 'Role', 'Category', 'Event Type', 'Summary', 'IP Address', 'Country', 'Raw Details JSON'];
+  const lines = [headers.map(esc).join(',')];
+  for (const ev of events) {
+    lines.push([
+      ev.timestamp || '',
+      ev.clientId || clientId,
+      ev.user || '',
+      ev.displayName || '',
+      ev.role || '',
+      ev.category || classifyAuditCategory(ev.eventType),
+      ev.eventType || '',
+      ev.summary || formatAuditSummary(ev.eventType, ev.details),
+      ev.ip || '',
+      ev.country || 'US',
+      JSON.stringify(ev.details || {})
+    ].map(esc).join(','));
+  }
+  recordAuditEvent(req, 'CSV_EXPORT', { sheet: 'security_audit_log', filename: `${clientId}_security_audit_log.csv`, rowCount: events.length });
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${clientId}_security_audit_log.csv"`);
+  res.send(lines.join('\r\n'));
+});
+
+// Export Ask Bridge AI Q&A Transcript History as CSV (bridge_admin only)
+app.get('/api/security/export/qa-csv', async (req, res) => {
+  if (!isCallerBridgeAdmin(req)) {
+    return res.status(403).json({ ok: false, error: 'Forbidden: Only Bridge Super-Admins can export the tenant AI Q&A transcript history.' });
+  }
+  const clientId = req.clientId || 'damien';
+  await ensureSecurityLogsHydrated(clientId);
+  const qaList = loadClientQaLog(clientId);
+  const esc = v => {
+    if (v === null || v === undefined) return '';
+    const s = String(v).replace(/"/g, '""');
+    return /[,"\n\r]/.test(s) ? `"${s}"` : s;
+  };
+  const headers = ['Timestamp (UTC)', 'Tenant', 'Username', 'Display Name', 'Role', 'AI Model', 'Latency (ms)', 'Privacy Guardrail Triggered', 'Question Asked', 'AI Response'];
+  const lines = [headers.map(esc).join(',')];
+  for (const qa of qaList) {
+    lines.push([
+      qa.timestamp || '',
+      qa.clientId || clientId,
+      qa.user || '',
+      qa.displayName || '',
+      qa.role || '',
+      qa.aiModel || '',
+      qa.latencyMs || 0,
+      qa.memberLevelBlocked ? 'Yes' : 'No',
+      qa.question || '',
+      qa.answer || ''
+    ].map(esc).join(','));
+  }
+  recordAuditEvent(req, 'CSV_EXPORT', { sheet: 'ai_qa_history', filename: `${clientId}_ask_bridge_ai_qa_history.csv`, rowCount: qaList.length });
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${clientId}_ask_bridge_ai_qa_history.csv"`);
+  res.send(lines.join('\r\n'));
+});
+
+// Export PowerPoint Dashboard Tables as CSV (Slides 3, 4, 5, 6, 7, 8, 10)
+app.get('/api/export/csv/:tableKey', async (req, res) => {
+  const clientId = req.clientId || 'damien';
+  const state = await ensureClientStateLoaded(clientId);
+  const data = state.data || {};
+  const meta = data.meta || {};
+  const shortPrefix = String(meta.shortName || clientId).replace(/[^A-Za-z0-9_-]/g, '_');
+  const asOfSuffix = String(meta.asOfShort || 'Sep2026').replace(/[^A-Za-z0-9_-]/g, '');
+  const tableKey = String(req.params.tableKey || '').toLowerCase();
+
+  let headers = [];
+  let rows = [];
+  let filename = `${shortPrefix}_${tableKey}_${asOfSuffix}.csv`;
+
+  if (tableKey === 'financials') {
+    headers = ['Line Item', 'YTD Amount ($)'];
+    rows = (data.slide3_financials?.ytdTable || []).map(r => [r.item, r.amount]);
+    filename = `${shortPrefix}_YTD_Financials_${asOfSuffix}.csv`;
+  } else if (tableKey === 'sources') {
+    headers = ['Source', 'Enrolled in Sept', 'Enrolled YTD', 'Share (%)', 'Filled 1st Rx', '1st Rx Rate (%)', 'Refilled 1st -> 2nd', 'Refill Rate (%)', 'GLP-1 Fills', 'Gross Margin ($)'];
+    rows = (data.slide4_sources?.table || []).map(r => [
+      r.source,
+      r.enrolledSept,
+      r.enrolledYtd,
+      r.sharePct,
+      r.filled1stCount,
+      r.filled1stPct ?? '',
+      r.refilled1to2Count ?? '',
+      r.refilled1to2Pct ?? '',
+      r.glp1Fills,
+      r.grossMargin
+    ]);
+    filename = `${shortPrefix}_Patient_Sources_${asOfSuffix}.csv`;
+  } else if (tableKey === 'paidmedia') {
+    headers = ['Sign-up Month', 'Media Spend ($)', 'Sign-ups', 'Spend / Sign-up ($)', 'Started Therapy', 'Started (%)', 'Spend / Started ($)', 'Fills to Date', 'Gross Margin ($)', 'Return on Spend (x)'];
+    rows = (data.slide5_paidMedia?.cohorts || []).map(r => [
+      r.month,
+      r.mediaSpend,
+      r.signUps,
+      r.spendPerSignUp ?? '',
+      r.startedTherapyCount ?? '',
+      r.startedTherapyPct ?? '',
+      r.spendPerStarted ?? '',
+      r.fillsToDate ?? '',
+      r.grossMargin ?? '',
+      r.returnOnSpend ?? ''
+    ]);
+    filename = `${shortPrefix}_Paid_Media_Cohorts_${asOfSuffix}.csv`;
+  } else if (tableKey === 'funnel') {
+    headers = ['Funnel Stage', 'Patients', 'Share of Enrolled (%)'];
+    rows = (data.slide6_funnel?.stages || []).map(s => [s.stage, s.count, s.pct]);
+    filename = `${shortPrefix}_First_Fill_Funnel_${asOfSuffix}.csv`;
+  } else if (tableKey === 'refill-steps') {
+    headers = ['Refill Step', 'Continuation Rate (%)', 'Eligible Patients'];
+    rows = (data.slide7_refill?.stepTable || []).map(r => [r.step, r.cameBackPct, r.eligiblePts]);
+    filename = `${shortPrefix}_Refill_Steps_${asOfSuffix}.csv`;
+  } else if (tableKey === 'retention-matrix') {
+    const ret = data.slide10_retention || {};
+    headers = ['Sign-up Cohort', 'Enrolled', ...(ret.columns || [])];
+    rows = (ret.cohorts || []).map(c => [
+      c.cohort,
+      c.enrolled,
+      ...(ret.columns || []).map(col => (c[col] !== null && c[col] !== undefined) ? `${c[col]}%` : '')
+    ]);
+    filename = `${shortPrefix}_Cohort_Retention_Matrix_${asOfSuffix}.csv`;
+  } else if (tableKey === 'medmix') {
+    const m8 = data.slide8_medMix || {};
+    headers = ['Month', 'Wegovy Pen', 'Wegovy Pill', 'Ozempic', 'Total Dispenses', 'Wegovy Pill Share (%)'];
+    rows = (m8.months || []).map((mo, i) => [
+      mo,
+      m8.wegovyPen?.[i] ?? 0,
+      m8.wegovyPill?.[i] ?? 0,
+      m8.ozempic?.[i] ?? 0,
+      m8.totals?.[i] ?? 0,
+      m8.pillSharePct?.[i] ?? 0
+    ]);
+    filename = `${shortPrefix}_Medication_Mix_${asOfSuffix}.csv`;
+  } else {
+    return res.status(404).json({ ok: false, error: 'Unknown export table key.' });
+  }
+
+  const esc = v => {
+    if (v === null || v === undefined) return '';
+    const s = String(v).replace(/"/g, '""');
+    return /[,"\n\r]/.test(s) ? `"${s}"` : s;
+  };
+  const csvLines = [headers.map(esc).join(',')];
+  for (const r of rows) {
+    csvLines.push(r.map(esc).join(','));
+  }
+
+  recordAuditEvent(req, 'CSV_EXPORT', { sheet: tableKey, filename, rowCount: rows.length });
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(csvLines.join('\r\n'));
+});
+
 app.post('/api/security/change-password', (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
   const users = loadUsersDirectory();

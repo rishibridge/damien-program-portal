@@ -192,22 +192,28 @@ def run_suite():
                 'simOutProceeds',
                 'funnelWorklistNoteBox',
                 'btnRefillQueueLink',
-                'patientDetailModal',
+                'patientDetailModal'
+            ];
+            const requiredCsvIds = [
+                'btnExportFinancialsCsv',
+                'btnExportSourcesCsv',
+                'btnExportPaidMediaCsv',
+                'btnExportFunnelCsv',
+                'btnExportRefillStepsCsv',
+                'btnExportRetentionMatrixCsv',
+                'btnExportMedMixCsv',
                 'btnExportAuditCsv',
                 'btnExportQaCsv',
-                'secKpiPatientViews',
-                'secKpiEdits',
                 'secKpiExports'
             ];
-            const presentIds = removedIds.filter(id => Boolean(document.getElementById(id)));
-            const allButtonsText = Array.from(document.querySelectorAll('button')).map(b => b.innerText.trim());
-            const csvButtons = allButtonsText.filter(t => /export csv|download csv|excel/i.test(t));
-            return { presentIds, csvButtons };
+            const presentRemovedIds = removedIds.filter(id => Boolean(document.getElementById(id)));
+            const missingCsvIds = requiredCsvIds.filter(id => !document.getElementById(id));
+            return { presentRemovedIds, missingCsvIds };
         }""")
         record(
             "NO-EXCEL-02",
-            "DOM contains zero Worklist, Enrollment Reporting, Simulator, Patient Modal, or CSV/Excel Export elements",
-            len(dom_excel_check["presentIds"]) == 0 and len(dom_excel_check["csvButtons"]) == 0,
+            "DOM contains zero Worklist/Enrollment/Simulator/Modal elements while all 9 CSV Export buttons & KPI counter are present",
+            len(dom_excel_check["presentRemovedIds"]) == 0 and len(dom_excel_check["missingCsvIds"]) == 0,
             str(dom_excel_check),
         )
 
@@ -217,8 +223,14 @@ def run_suite():
             const rWlPatch = await fetch('/api/worklist/todo/todo-1', { method: 'PATCH' });
             const rWlReset = await fetch('/api/worklist/reset', { method: 'POST' });
             const rWlExport = await fetch('/api/worklist/export/todo');
-            const rAuditCsv = await fetch('/api/security/export/audit-csv');
-            const rQaCsv = await fetch('/api/security/export/qa-csv');
+            const rFinCsv = await fetch('/api/export/csv/financials');
+            const finCsvText = await rFinCsv.text();
+            const rSrcCsv = await fetch('/api/export/csv/sources');
+            const rPmCsv = await fetch('/api/export/csv/paidmedia');
+            const rFunCsv = await fetch('/api/export/csv/funnel');
+            const rRefCsv = await fetch('/api/export/csv/refill-steps');
+            const rRetCsv = await fetch('/api/export/csv/retention-matrix');
+            const rMedCsv = await fetch('/api/export/csv/medmix');
             return {
                 keys,
                 hasWorklists: 'worklists' in pData || 'worklistSummary' in pData,
@@ -226,8 +238,8 @@ def run_suite():
                 wlPatchStatus: rWlPatch.status,
                 wlResetStatus: rWlReset.status,
                 wlExportStatus: rWlExport.status,
-                auditCsvStatus: rAuditCsv.status,
-                qaCsvStatus: rQaCsv.status
+                csvStatuses: [rFinCsv.status, rSrcCsv.status, rPmCsv.status, rFunCsv.status, rRefCsv.status, rRetCsv.status, rMedCsv.status],
+                finCsvHasHeader: finCsvText.includes('Line Item,YTD Amount ($)')
             };
         }""")
         expected_keys = sorted([
@@ -252,12 +264,12 @@ def run_suite():
         )
         record(
             "NO-EXCEL-04",
-            "Removed Excel/Worklist & CSV Export API routes (/api/worklist/*, /api/security/export/*) return 404 Not Found",
+            "Removed Worklist routes (/api/worklist/*) return 404 while all 7 PowerPoint Table CSV Export routes (/api/export/csv/*) return 200 CSV",
             api_excel_check["wlPatchStatus"] == 404
             and api_excel_check["wlResetStatus"] == 404
             and api_excel_check["wlExportStatus"] == 404
-            and api_excel_check["auditCsvStatus"] == 404
-            and api_excel_check["qaCsvStatus"] == 404,
+            and api_excel_check["csvStatuses"] == [200, 200, 200, 200, 200, 200, 200]
+            and bool(api_excel_check["finCsvHasHeader"]),
             str(api_excel_check),
         )
 
@@ -1012,6 +1024,32 @@ def run_suite():
             and lifecycle_test["delProtectedStatus"] == 400
             and lifecycle_test["delCustomStatus"] == 200,
             str(lifecycle_test),
+        )
+
+        # SEC-18: Admin CSV Export Endpoints for Audit Log & Ask Bridge AI Q&A History + Export KPI counter
+        csv_export_test = page.evaluate("""async () => {
+            const rAudit = await fetch('/api/security/export/audit-csv');
+            const auditText = await rAudit.text();
+            const rQa = await fetch('/api/security/export/qa-csv');
+            const qaText = await rQa.text();
+            const ov = await fetch('/api/security/overview').then(r => r.json());
+            return {
+                auditStatus: rAudit.status,
+                auditHasHeader: auditText.includes('Timestamp (UTC),Tenant,Username') && auditText.includes('SECTION_VIEW'),
+                qaStatus: rQa.status,
+                qaHasHeader: qaText.includes('Question Asked,AI Response') && qaText.includes('September active membership'),
+                totalExports: ov.usageSummary?.totalExports || 0
+            };
+        }""")
+        record(
+            "SEC-18",
+            "Bridge Super-Admin exports both Security Audit Log CSV and Ask Bridge AI Q&A Transcript CSV with tracked export count",
+            csv_export_test["auditStatus"] == 200
+            and bool(csv_export_test["auditHasHeader"])
+            and csv_export_test["qaStatus"] == 200
+            and bool(csv_export_test["qaHasHeader"])
+            and csv_export_test["totalExports"] >= 2,
+            str(csv_export_test),
         )
 
         # SEC-12: Strict XSS HTML Escaping in formatMarkdownText() & Session Revocation on Logout

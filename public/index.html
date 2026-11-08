@@ -180,8 +180,11 @@
 
           <div class="card">
             <div class="card-hd">
-              <span>Year to date</span>
-              <small id="financialsTableSub">Program financials through September 30, 2026</small>
+              <div>
+                <span>Year to date</span>
+                <br /><small id="financialsTableSub">Program financials through September 30, 2026</small>
+              </div>
+              <button type="button" id="btnExportFinancialsCsv" class="btn-bridge-outline" onclick="exportPortalTableCsv('financials')">Export CSV</button>
             </div>
             <div class="tbl-wrap">
               <table id="tableYtdFinancials">
@@ -227,7 +230,10 @@
               Enrollment &amp; Fill Performance by Source
               <br /><small id="sourcesTableSub">Enrollment, conversion, and gross margin by channel</small>
             </div>
-            <span class="know-badge" id="sourcesMatchedBadge">Matched Member Fills</span>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <span class="know-badge" id="sourcesMatchedBadge">Matched Member Fills</span>
+              <button type="button" id="btnExportSourcesCsv" class="btn-bridge-outline" onclick="exportPortalTableCsv('sources')">Export CSV</button>
+            </div>
           </div>
           <div class="tbl-wrap">
             <table id="tableSources">
@@ -273,8 +279,11 @@
 
         <div class="card">
           <div class="card-hd">
-            <span>Cohort Performance</span>
-            <small>Sign-ups without referral or coupon codes</small>
+            <div>
+              <span>Cohort Performance</span>
+              <br /><small>Sign-ups without referral or coupon codes</small>
+            </div>
+            <button type="button" id="btnExportPaidMediaCsv" class="btn-bridge-outline" onclick="exportPortalTableCsv('paidmedia')">Export CSV</button>
           </div>
           <div class="tbl-wrap">
             <table id="tablePaidMedia">
@@ -311,8 +320,11 @@
           <div>
             <div class="card">
               <div class="card-hd">
-                <span id="funnelChartTitle">Members who enrolled before September (760 patients)</span>
-                <small>At least 30 days since enrollment</small>
+                <div>
+                  <span id="funnelChartTitle">Members who enrolled before September (760 patients)</span>
+                  <br /><small>At least 30 days since enrollment</small>
+                </div>
+                <button type="button" id="btnExportFunnelCsv" class="btn-bridge-outline" onclick="exportPortalTableCsv('funnel')">Export CSV</button>
               </div>
               <div class="chart-box">
                 <canvas id="chartFunnelBars"></canvas>
@@ -352,8 +364,11 @@
 
           <div class="card">
             <div class="card-hd">
-              <span>Refill Continuation by Step</span>
-              <small id="refillStepSub">Patients whose prior fill was at least 45 days before Sep 30, 2026</small>
+              <div>
+                <span>Refill Continuation by Step</span>
+                <br /><small id="refillStepSub">Patients whose prior fill was at least 45 days before Sep 30, 2026</small>
+              </div>
+              <button type="button" id="btnExportRefillStepsCsv" class="btn-bridge-outline" onclick="exportPortalTableCsv('refill-steps')">Export CSV</button>
             </div>
             <div class="tbl-wrap">
               <table id="tableRefillSteps">
@@ -377,7 +392,10 @@
               Member retention by month
               <br /><small>Share of members in each sign-up cohort still active at the end of each month after joining (M0 = joining month)</small>
             </div>
-            <span class="know-badge">Jan – Sep 2026 Cohorts</span>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <span class="know-badge">Jan – Sep 2026 Cohorts</span>
+              <button type="button" id="btnExportRetentionMatrixCsv" class="btn-bridge-outline" onclick="exportPortalTableCsv('retention-matrix')">Export CSV</button>
+            </div>
           </div>
           <div class="tbl-wrap">
             <table id="tableRetentionMatrix">
@@ -416,7 +434,10 @@
             <div id="medMixCalloutList" style="display:flex;flex-direction:column;gap:10px"></div>
             <div class="footnote-box" id="medMixNote"></div>
             <div style="margin-top:8px">
-              <div style="font-size:0.76rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px">Monthly Dispenses</div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                <div style="font-size:0.76rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em">Monthly Dispenses</div>
+                <button type="button" id="btnExportMedMixCsv" class="btn-bridge-outline" style="padding:4px 10px;font-size:0.74rem" onclick="exportPortalTableCsv('medmix')">Export CSV</button>
+              </div>
               <div class="tbl-wrap">
                 <table>
                   <thead>
@@ -496,7 +517,7 @@
       </div>
 
       <!-- Executive Usage & Activity KPI Summary Row -->
-      <div id="secUsageKpiRow" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
+      <div id="secUsageKpiRow" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
         <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px">
           <div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;color:#64748b">Sign-Ins</div>
           <div id="secKpiLogins" style="font-size:1.25rem;font-weight:800;color:#0f172a">0</div>
@@ -511,6 +532,11 @@
           <div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;color:#64748b">AI Questions</div>
           <div id="secKpiAiQueries" style="font-size:1.25rem;font-weight:800;color:#2563eb">0</div>
           <div style="font-size:0.7rem;color:#64748b">Full Q&amp;A logged</div>
+        </div>
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px">
+          <div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;color:#64748b">CSV &amp; Prints</div>
+          <div id="secKpiExports" style="font-size:1.25rem;font-weight:800;color:#0f172a">0</div>
+          <div style="font-size:0.7rem;color:#64748b">Exports tracked</div>
         </div>
       </div>
 
@@ -627,6 +653,10 @@
               Ask Bridge AI Q&amp;A History (<span id="secQaCountBadge">0 Questions</span>)
             </button>
           </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button type="button" id="btnExportAuditCsv" class="btn-bridge-outline" style="display:none;padding:5px 11px;font-size:0.74rem" onclick="exportSecurityAuditCsv()">Export Audit CSV</button>
+            <button type="button" id="btnExportQaCsv" class="btn-bridge-outline" style="display:none;padding:5px 11px;font-size:0.74rem" onclick="exportSecurityQaCsv()">Export Q&amp;A CSV</button>
+          </div>
         </div>
 
         <!-- TAB 1: ACTIVITY, SECURITY & "WHO VIEWED WHAT" AUDIT LOG -->
@@ -637,6 +667,7 @@
               <option value="view_access">Who Viewed What (Pages &amp; Definitions)</option>
               <option value="ai_qa">Ask Bridge AI Queries</option>
               <option value="security_auth">Sign-Ins, MFA, Lockouts &amp; User Admin</option>
+              <option value="export">CSV &amp; Briefing Exports</option>
             </select>
             <select id="secAuditUserFilter" onchange="renderSecurityAuditTable()" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.76rem">
               <option value="">All Users</option>

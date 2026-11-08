@@ -1115,11 +1115,18 @@ async function refreshSecurityModalData() {
     const elOnlineSub = document.getElementById('secKpiOnlineSub');
     const elViews = document.getElementById('secKpiViews');
     const elAiQueries = document.getElementById('secKpiAiQueries');
+    const elExports = document.getElementById('secKpiExports');
 
     if (elLogins) elLogins.textContent = String(us.totalLogins ?? 0);
     if (elOnlineSub) elOnlineSub.textContent = `${us.activeUsersOnline ?? 1} of ${us.totalNamedUsers ?? 1} active now`;
     if (elViews) elViews.textContent = String(us.totalPageAndPatientViews ?? 0);
     if (elAiQueries) elAiQueries.textContent = String(us.totalAiQuestions ?? 0);
+    if (elExports) elExports.textContent = String(us.totalExports ?? 0);
+
+    const btnExpAudit = document.getElementById('btnExportAuditCsv');
+    const btnExpQa = document.getElementById('btnExportQaCsv');
+    if (btnExpAudit) btnExpAudit.style.display = isBridgeAdmin ? 'inline-block' : 'none';
+    if (btnExpQa) btnExpQa.style.display = isBridgeAdmin ? 'inline-block' : 'none';
 
     const mfaSel = document.getElementById('secMyMfaMethod');
     const mfaEmail = document.getElementById('secMyMfaEmail');
@@ -1469,6 +1476,18 @@ async function handleCreateNamedUser(e) {
     msgEl.style.color = '#b91c1c';
     msgEl.textContent = 'Error creating user';
   }
+}
+
+function exportSecurityAuditCsv() {
+  window.location.href = '/api/security/export/audit-csv';
+}
+
+function exportSecurityQaCsv() {
+  window.location.href = '/api/security/export/qa-csv';
+}
+
+function exportPortalTableCsv(tableKey) {
+  window.location.href = `/api/export/csv/${encodeURIComponent(tableKey || 'financials')}`;
 }
 
 window.addEventListener('DOMContentLoaded', initPortal);
