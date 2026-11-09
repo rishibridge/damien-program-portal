@@ -2544,7 +2544,27 @@ PROPORTIONAL RESPONSE CALIBRATION — ANSWER EXACTLY WHAT WAS ASKED (ZERO WORD V
     throw new Error('Empty response from Gemini API');
   }
 
-  const cleanReply = rawText.trim();
+  let cleanReply = rawText.trim();
+  const explicitTableOrChart = /\b(table|chart|graph|visual|plot)\b/i.test(String(question || ''));
+  if (explicitTableOrChart) {
+    const hasTable = /\|[\s:-]+\|/.test(cleanReply);
+    const hasChart = /```(?:chart|json-chart|chartjs)/i.test(cleanReply);
+    if (!hasTable || !hasChart) {
+      const detFallback = answerQuestion(state, `${question} breakdown table chart`).answer || '';
+      if (!hasTable) {
+        const tblLines = detFallback.split('\n').filter(l => l.trim().startsWith('|') && l.trim().endsWith('|'));
+        if (tblLines.length >= 2) {
+          cleanReply += `\n\n${tblLines.join('\n')}`;
+        }
+      }
+      if (!hasChart) {
+        const chartMatch = detFallback.match(/```chart[\s\S]*?```/i);
+        if (chartMatch) {
+          cleanReply += `\n\n${chartMatch[0]}`;
+        }
+      }
+    }
+  }
   return {
     question,
     clientId: meta.clientId,

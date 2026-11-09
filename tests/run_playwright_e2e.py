@@ -593,6 +593,70 @@ def run_suite():
             f"llm1='{s1}' | llm2='{s2_ans}' | oz='{oz_ans}' | aug='{aug_ans}'",
         )
 
+        # DAMIEN-29: Explicitly ask in the browser UI for a well-formatted chart AND a table and verify both render in the DOM
+        prev_ai_count = page.locator("[data-testid='qa-ai-message']").count()
+        page.fill(
+            "#mainAskInput",
+            "Please give me a well-formatted chart and a table comparing our monthly Paid Media spend, sign-ups, started therapy, and pharmacy gross margin from January to September 2026.",
+        )
+        page.click("#mainAskSubmitBtn")
+        page.locator("[data-testid='qa-ai-message']").nth(prev_ai_count).wait_for(timeout=60000)
+        chart_table_dom = page.evaluate("""() => {
+            const bubbles = document.querySelectorAll("[data-testid='qa-ai-message'] .chat-bubble");
+            const last = bubbles[bubbles.length - 1];
+            if (!last) return { ok: false };
+            const tbl = last.querySelector('table.ai-rich-table');
+            const thCount = tbl ? tbl.querySelectorAll('thead th').length : 0;
+            const trCount = tbl ? tbl.querySelectorAll('tbody tr').length : 0;
+            const numCellCount = tbl ? tbl.querySelectorAll('td.num').length : 0;
+            const chartCard = last.querySelector('.ai-chart-card');
+            const chartTitle = chartCard ? (chartCard.querySelector('.ai-chart-heading')?.innerText || '').trim() : '';
+            const canvas = last.querySelector('canvas.ai-inline-chart-canvas');
+            const rect = canvas ? canvas.getBoundingClientRect() : { width: 0, height: 0 };
+            let specOk = false;
+            let labelCount = 0;
+            let datasetCount = 0;
+            if (canvas) {
+                try {
+                    const spec = JSON.parse(decodeURIComponent(canvas.getAttribute('data-chart-spec') || '{}'));
+                    labelCount = (spec.labels || []).length;
+                    datasetCount = (spec.datasets || []).length;
+                    specOk = labelCount >= 9 && datasetCount >= 1;
+                } catch (_) {}
+            }
+            const text = last.innerText || '';
+            return {
+                hasTable: Boolean(tbl),
+                thCount,
+                trCount,
+                numCellCount,
+                hasChartCard: Boolean(chartCard),
+                chartTitle,
+                hasCanvas: Boolean(canvas),
+                canvasWidth: Math.round(rect.width),
+                canvasHeight: Math.round(rect.height),
+                specOk,
+                labelCount,
+                datasetCount,
+                hasMetrics: text.includes('142,033') || (text.includes('24,348') && text.includes('27,784'))
+            };
+        }""")
+        record(
+            "DAMIEN-29",
+            "Explicit request for a well-formatted chart and table renders both a styled <table.ai-rich-table> (9+ rows, right-aligned .num cells) and a live Chart.js <canvas.ai-inline-chart-canvas> in the chat bubble",
+            chart_table_dom.get("hasTable")
+            and chart_table_dom.get("thCount", 0) >= 4
+            and chart_table_dom.get("trCount", 0) >= 9
+            and chart_table_dom.get("numCellCount", 0) >= 18
+            and chart_table_dom.get("hasChartCard")
+            and chart_table_dom.get("hasCanvas")
+            and chart_table_dom.get("canvasWidth", 0) > 200
+            and chart_table_dom.get("canvasHeight", 0) > 150
+            and chart_table_dom.get("specOk")
+            and chart_table_dom.get("hasMetrics"),
+            str(chart_table_dom),
+        )
+
         # ---------------------------------------------------------------------
         # SECTION 3: SIGN OUT FROM DAMIEN & SIGN IN AS METRO IN SAME BROWSER!
         # ---------------------------------------------------------------------
