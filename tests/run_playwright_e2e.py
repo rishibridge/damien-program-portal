@@ -545,6 +545,54 @@ def run_suite():
             f"aiPowered={qa_natural.get('aiPowered')}, model={qa_natural.get('aiModel')}, reply={reply_nat[:140].replace(chr(10), ' ')}",
         )
 
+        # Verify proportional, non-canned, non-word-vomit answers to simple/specific questions (both Live Gemini LLM and instant engine)
+        qa_concise = page.evaluate("""async () => {
+            const ask = (q, mode = 'llm') => fetch('/api/ask', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({question: q, mode})
+            }).then(r => r.json());
+
+            const [llmSimple1, llmSimple2, instOz, instPill, instAugProc, instMemFees, instLhd] = await Promise.all([
+                ask('How many active members were there in September?', 'llm'),
+                ask('What is the cost to fill per prescription?', 'llm'),
+                ask('How many Ozempic fills were in September?', 'instant'),
+                ask('How many Wegovy pill fills were in September?', 'instant'),
+                ask('What were the net program proceeds in August?', 'instant'),
+                ask('How much was collected in membership fees?', 'instant'),
+                ask('How many patients enrolled from LHD?', 'instant')
+            ]);
+
+            return {
+                llmSimple1: llmSimple1.reply || '',
+                llmSimple2: llmSimple2.reply || '',
+                instOz: instOz.reply || '',
+                instPill: instPill.reply || '',
+                instAugProc: instAugProc.reply || '',
+                instMemFees: instMemFees.reply || '',
+                instLhd: instLhd.reply || ''
+            };
+        }""")
+        s1 = qa_concise["llmSimple1"]
+        s2_ans = qa_concise["llmSimple2"]
+        oz_ans = qa_concise["instOz"]
+        pill_ans = qa_concise["instPill"]
+        aug_ans = qa_concise["instAugProc"]
+        fee_ans = qa_concise["instMemFees"]
+        lhd_ans = qa_concise["instLhd"]
+        record(
+            "DAMIEN-28",
+            "Proportional AI calibration: simple questions get concise 1-2 sentence answers (no table/chart word-vomit) and distinct tailored responses (zero canned slide dumps)",
+            ("862" in s1 and len(s1) < 350 and "```chart" not in s1 and "| --- |" not in s1)
+            and ("$40" in s2_ans and len(s2_ans) < 350 and "```chart" not in s2_ans and "| --- |" not in s2_ans)
+            and ("6" in oz_ans and "0.9%" in oz_ans and len(oz_ans) < 260)
+            and ("256" in pill_ans and "38.0%" in pill_ans and len(pill_ans) < 260 and oz_ans != pill_ans)
+            and ("257,058" in aug_ans and len(aug_ans) < 260)
+            and ("44,164" in fee_ans and len(fee_ans) < 260 and aug_ans != fee_ans)
+            and ("54" in lhd_ans and "43" in lhd_ans and len(lhd_ans) < 300),
+            f"llm1='{s1}' | llm2='{s2_ans}' | oz='{oz_ans}' | aug='{aug_ans}'",
+        )
+
         # ---------------------------------------------------------------------
         # SECTION 3: SIGN OUT FROM DAMIEN & SIGN IN AS METRO IN SAME BROWSER!
         # ---------------------------------------------------------------------

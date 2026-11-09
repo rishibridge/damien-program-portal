@@ -1862,6 +1862,11 @@ function answerQuestion(state, rawQuestion) {
     return buildMemberPrivacyGuardrailReply(state, q);
   }
 
+  // Detect whether the user is asking for a broad breakdown/comparison/table vs. a focused/simple question
+  const wantsFullBreakdown =
+    /\b(break\s*down|breakdown|compare|comparison|table|chart|graph|all\s+months|by\s+month|january\s+to\s+september|jan\s+to\s+sep|every\s+month|full|overview|summary|explain\s+our|reconcil|matrix|across\s+fill|across\s+wegovy)\b/i.test(ql) ||
+    (ql.includes('revenue') && ql.includes('proceeds'));
+
   // 1. Out-of-Deck Granular Queries (Prescribers, Individual Employers, Payers/Savings Cards, Dose Strengths, Worklists)
   if (
     ql.includes('prescriber') || ql.includes('doctor') || ql.includes('townsend') ||
@@ -1870,6 +1875,13 @@ function answerQuestion(state, rawQuestion) {
     ql.includes('worklist') || ql.includes('to-do') || ql.includes('todo') ||
     ql.includes('evansville') || ql.includes('employer group')
   ) {
+    if (!wantsFullBreakdown) {
+      return {
+        question: q,
+        answer:
+          `**Ask Bridge AI** is powered strictly by the **${meta.programTitle}** executive report deck (Slides 1–10 through ${meta.asOfDateFormatted || 'September 30, 2026'}), which tracks **aggregate** program metrics and does not include granular prescriber names, individual employer companies, third-party insurance/savings cards, milligram dose strengths, or patient worklist queues. You can ask for aggregate **Patient Sources & Channel Economics** (EPIC, Paid Media, Employee, LHD, McGohan Brabender, Other) or **Medication Mix** (Wegovy Pen, Wegovy Pill, Ozempic) at any time.`
+      };
+    }
     const srcRows = s4.table || [];
     const tableLines = srcRows.map(r =>
       `| **${r.source}** | ${r.enrolledSept} | **${r.enrolledYtd}** | ${r.share} | **${r.filled1stRx}** | ${r.refilled1to2} | ${r.glp1Fills.toLocaleString()} | **${r.grossMarginFmt}** |`
@@ -1895,6 +1907,172 @@ function answerQuestion(state, rawQuestion) {
         }) +
         `\n\`\`\``
     };
+  }
+
+  // 1B. Concise Direct Answers for Simple / Specific Single-Fact Questions (Zero Word Vomit)
+  if (!wantsFullBreakdown) {
+    const monthMap = [
+      { key: 'jan', full: 'January', idx: 0 },
+      { key: 'feb', full: 'February', idx: 1 },
+      { key: 'mar', full: 'March', idx: 2 },
+      { key: 'apr', full: 'April', idx: 3 },
+      { key: 'may', full: 'May', idx: 4 },
+      { key: 'jun', full: 'June', idx: 5 },
+      { key: 'jul', full: 'July', idx: 6 },
+      { key: 'aug', full: 'August', idx: 7 },
+      { key: 'sep', full: 'September', idx: 8 }
+    ];
+    const matchedMonths = monthMap.filter(m => new RegExp(`\\b(${m.key}|${m.full.toLowerCase()})\\b`, 'i').test(ql));
+
+    // Simple cost-to-fill question
+    if (ql.includes('cost to fill') || ql.includes('cost per fill') || ql.includes('$40')) {
+      const costRow = (s3.ytdTable || []).find(r => r.item.toLowerCase().includes('cost to fill'));
+      return {
+        question: q,
+        answer: `The assumed pharmacy cost to fill for **${meta.client}** is **$${s3.costPerFill || 40} per fill**, totaling **${costRow ? costRow.formatted : '−$81,360'}** across **${(s3.totalFillsInPnl || 2034).toLocaleString()}** YTD GLP-1 fills.`
+      };
+    }
+
+    // Simple specific fee line-item question (Alpha fees, Bridge fees, Broker commissions, Membership fees)
+    if (ql.includes('membership fee')) {
+      const feeRow = (s3.ytdTable || []).find(r => r.item === 'Membership fees collected');
+      return {
+        question: q,
+        answer: `YTD membership fees collected for **${meta.client}** totaled **${feeRow ? feeRow.formatted : '$44,164'}** through ${meta.asOfDateFormatted || 'September 30, 2026'}.`
+      };
+    }
+    if (ql.includes('alpha') && ql.includes('fee')) {
+      const alphaRow = (s3.ytdTable || []).find(r => r.item === 'Alpha platform fees');
+      return {
+        question: q,
+        answer: `YTD Hello Alpha platform fees for **${meta.client}** totaled **${alphaRow ? alphaRow.formatted : '−$411,745'}** through ${meta.asOfDateFormatted || 'September 30, 2026'}.`
+      };
+    }
+    if (ql.includes('bridge') && ql.includes('fee')) {
+      const bridgeRow = (s3.ytdTable || []).find(r => r.item === 'Bridge fees');
+      return {
+        question: q,
+        answer: `YTD Bridge fees for **${meta.client}** totaled **${bridgeRow ? bridgeRow.formatted : '−$195,900'}** through ${meta.asOfDateFormatted || 'September 30, 2026'}.`
+      };
+    }
+    if (ql.includes('broker') && ql.includes('commission')) {
+      const commRow = (s3.ytdTable || []).find(r => r.item === 'Broker commissions');
+      return {
+        question: q,
+        answer: `YTD broker commissions for **${meta.client}** totaled **${commRow ? commRow.formatted : '−$10,060'}** through ${meta.asOfDateFormatted || 'September 30, 2026'}.`
+      };
+    }
+
+    // Simple active members question (for a single month or current/September)
+    if (ql.includes('active member') || ql.includes('how many members')) {
+      const mObj = matchedMonths.length === 1 ? matchedMonths[0] : monthMap[8];
+      const val = s2.activeMembersByMonth?.values?.[mObj.idx];
+      const prevVal = mObj.idx > 0 ? s2.activeMembersByMonth?.values?.[mObj.idx - 1] : null;
+      const deltaTxt = (prevVal && val) ? ` (${val >= prevVal ? '+' : ''}${(((val - prevVal) / prevVal) * 100).toFixed(1)}% vs. ${prevVal} in ${monthMap[mObj.idx - 1].full})` : '';
+      return {
+        question: q,
+        answer: `**${meta.client}** had **${val ?? 862} active members** in **${mObj.full} 2026**${deltaTxt}.`
+      };
+    }
+
+    // Simple single-month proceeds question (e.g., "What were the proceeds in August?")
+    if (matchedMonths.length === 1 && (ql.includes('proceeds') || ql.includes('profit'))) {
+      const mObj = matchedMonths[0];
+      const val = s3.monthlyProceeds?.values?.[mObj.idx] || 0;
+      const ytdProc = (s3.ytdTable || []).find(r => r.item === 'Program proceeds')?.formatted || '$961,691';
+      return {
+        question: q,
+        answer: `Net program proceeds (after ad spend and fees) for **${meta.client}** in **${mObj.full} 2026** were **$${val.toLocaleString()}** (contributing to **${ytdProc}** YTD).`
+      };
+    }
+
+    // Simple Paid Media single-metric or single-month question
+    if (ql.includes('roas') || ql.includes('return on spend') || ql.includes('paid media') || ql.includes('ad spend') || ql.includes('media spend')) {
+      const pmRows = s5.table || [];
+      const totalRow = pmRows.find(r => r.isTotal) || pmRows[pmRows.length - 1] || {};
+      if (matchedMonths.length === 1) {
+        const mObj = matchedMonths[0];
+        const mRow = pmRows.find(r => String(r.month || '').toLowerCase() === mObj.key) || {};
+        return {
+          question: q,
+          answer: `In **${mObj.full} 2026**, Paid Media spend was **${mRow.spendFmt || '$0'}**, driving **${mRow.signups ?? 0} sign-ups** (**${mRow.spendPerSignup || '—'}/sign-up**), **${mRow.started ?? 0} therapy starts** (**${mRow.spendPerStarted || '—'}/starter**), **${mRow.fills ?? 0} fills**, and **${mRow.marginFmt || '$0'}** in pharmacy gross margin (**${mRow.roas || '—'}** return on spend).`
+        };
+      }
+      return {
+        question: q,
+        answer: `Campaign-to-date Paid Media return on spend is **${totalRow.roas || '463%'} (4.63x)**: **${totalRow.spendFmt || '$142,033'}** in total media spend generated **${totalRow.signups || 414} sign-ups** (**${totalRow.spendPerSignup || '$343'}/sign-up**), **${totalRow.started || 243} therapy starts** (**${totalRow.spendPerStarted || '$584'}/starter**), and **${totalRow.marginFmt || '$658,361'}** in pharmacy gross margin across **${totalRow.fills || 786} fills**.`
+      };
+    }
+
+    // Simple single-medication question (Ozempic, Wegovy pill, Wegovy pen)
+    if (ql.includes('ozempic') || ql.includes('pill') || ql.includes('pen')) {
+      const mObj = matchedMonths.length === 1 ? matchedMonths[0] : monthMap[8];
+      const pen = s8.chart?.wegovyPen?.[mObj.idx] || 0;
+      const pill = s8.chart?.wegovyPill?.[mObj.idx] || 0;
+      const oz = s8.chart?.ozempic?.[mObj.idx] || 0;
+      const tot = pen + pill + oz;
+      if (ql.includes('ozempic') && !ql.includes('wegovy')) {
+        const share = tot > 0 ? ((oz / tot) * 100).toFixed(1) + '%' : '0%';
+        const ytdOz = (s8.chart?.ozempic || []).reduce((a, b) => a + b, 0);
+        return {
+          question: q,
+          answer: `There were **${oz} Ozempic fills** (**${share}** of ${tot} total dispenses) in **${mObj.full} 2026**, and **${ytdOz} Ozempic fills** YTD.`
+        };
+      }
+      if (ql.includes('pill') && !ql.includes('pen')) {
+        const share = tot > 0 ? ((pill / tot) * 100).toFixed(1) + '%' : '0%';
+        const ytdPill = (s8.chart?.wegovyPill || []).reduce((a, b) => a + b, 0);
+        return {
+          question: q,
+          answer: `There were **${pill} Wegovy pill fills** (**${share}** of ${tot} total dispenses) in **${mObj.full} 2026**, and **${ytdPill} Wegovy pill fills** YTD.`
+        };
+      }
+      if (ql.includes('pen') && !ql.includes('pill')) {
+        const share = tot > 0 ? ((pen / tot) * 100).toFixed(1) + '%' : '0%';
+        const ytdPen = (s8.chart?.wegovyPen || []).reduce((a, b) => a + b, 0);
+        return {
+          question: q,
+          answer: `There were **${pen} Wegovy pen fills** (**${share}** of ${tot} total dispenses) in **${mObj.full} 2026**, and **${ytdPen} Wegovy pen fills** YTD.`
+        };
+      }
+    }
+
+    // Simple single-channel source question (EPIC, LHD, McGohan Brabender, Employee)
+    const srcRows = s4.table || [];
+    const singleSourceMatch = [
+      { tok: 'epic', match: r => r.source.toLowerCase().includes('epic') },
+      { tok: 'lhd', match: r => r.source.toLowerCase().includes('lhd') },
+      { tok: 'mcgohan', match: r => r.source.toLowerCase().includes('mcgohan') },
+      { tok: 'employee', match: r => r.source.toLowerCase().includes('employee') }
+    ].filter(s => ql.includes(s.tok));
+    if (singleSourceMatch.length === 1) {
+      const sRow = srcRows.find(singleSourceMatch[0].match);
+      if (sRow) {
+        return {
+          question: q,
+          answer: `**${sRow.source}** has driven **${sRow.enrolledYtd} YTD enrollments** (**${sRow.enrolledSept}** in September, **${sRow.share}** of program sign-ups), with a **${sRow.filled1stRx} first-fill rate**, **${sRow.refilled1to2} 1st→2nd refill rate**, and **${sRow.grossMarginFmt} in pharmacy gross margin** across **${sRow.glp1Fills.toLocaleString()} GLP-1 fills**.`
+        };
+      }
+    }
+
+    // Simple funnel timing question
+    if (ql.includes('timing') || ql.includes('how long') || ql.includes('median time') || ql.includes('hours')) {
+      const timingStr = (s6.timing || []).map(t => `**${t.metric}** (${t.label})`).join(', ');
+      return {
+        question: q,
+        answer: `Median step timing in the first-fill funnel is: ${timingStr}.`
+      };
+    }
+
+    // Simple first-fill rate question
+    if (ql.includes('first fill rate') || ql.includes('1st fill rate') || ql.includes('first-fill rate')) {
+      const filledStep = (s6.steps || []).find(s => s.stage.toLowerCase().includes('filled')) || { patients: 523, pctOfEnrolled: 69 };
+      const enrolledStep = (s6.steps || [])[0] || { patients: 760 };
+      return {
+        question: q,
+        answer: `**${filledStep.pctOfEnrolled}%** of pre-September sign-ups (**${filledStep.patients} of ${enrolledStep.patients} patients**) filled their first GLP-1 prescription.`
+      };
+    }
   }
 
   // 2. Paid Media ROI & Monthly Media Cohorts (Slide 5)
@@ -2221,8 +2399,21 @@ function buildGeminiDataContext(state) {
 
 async function askGeminiWithFullData(state, question, history = []) {
   const memberBlockedFlag = isMemberLevelQuery(state, question);
-  const contextData = buildGeminiDataContext(state);
   const meta = state.meta || {};
+  if (memberBlockedFlag) {
+    const blockedReply = buildMemberPrivacyGuardrailReply(state, question);
+    return {
+      question,
+      clientId: meta.clientId,
+      aiPowered: true,
+      aiModel: VERTEX_GEMINI_MODEL,
+      memberLevelBlocked: true,
+      reply: blockedReply.answer,
+      answer: blockedReply.answer
+    };
+  }
+
+  const contextData = buildGeminiDataContext(state);
   const s2 = state.slide2_summary || {};
   const s3 = state.slide3_financials || {};
 
@@ -2249,23 +2440,26 @@ STRICT POWERPOINT-ONLY SCOPE & AGGREGATE PRIVACY RULE:
   8. Program Definitions, Methodology & Fills Reconciliation (1,952 matched member fills out of 2,034 total P&L fills; 51 no ID, 20 unmatched ID; $40/fill cost; 30-day funnel & 45-day refill cutoffs)
   9. Member Cohort Retention Matrix by Joining Month (M0 through M8)
 - NEVER invent, guess, or hallucinate numbers outside \`contextData\`.
-- If a user asks about granular data not included in the executive PowerPoint report deck (such as individual employer company names, specific prescriber names, third-party insurance/payer/savings cards, milligram dose strengths like 0.25mg vs 2.4mg, or individual patient worklist queues), clearly explain that the portal is powered strictly by the executive report deck and immediately present the closest relevant aggregate table and chart from \`contextData\`.
-- If someone asks to look up a specific member ID or individual patient record (e.g. an 8-char hex ID like 6d3f1831), politely explain that for member privacy, Ask Bridge AI only provides aggregate program, financial, channel, funnel, refill, and medication analytics—individual member-level and patient-level records are not included in the portal.
+- If a user asks about granular data not included in the executive PowerPoint report deck (such as individual employer company names, specific prescriber names, third-party insurance/payer/savings cards, milligram dose strengths like 0.25mg vs 2.4mg, or individual patient worklist queues), concisely explain in 1–2 sentences that the portal is powered strictly by the executive report deck and mention what aggregate metrics are available (only include a table/chart if the user explicitly asked for a channel or program breakdown).
+- If someone asks to look up a specific member ID or individual patient record, politely explain in 1 sentence that for member privacy, Ask Bridge AI only provides aggregate analytics.
 
-KEY PROGRAM METRICS (${meta.client}):
-- Headline KPIs: ${activeSep} active members in Sep, ${fillsSep} Sep GLP-1 fills, $${sepProceedsVal.toLocaleString()} Sep net program proceeds after ad spend, ${ytdProceedsFmt} YTD net program proceeds after ad spend, ${ytdRevFmt} YTD pharmacy revenue across ${s3.totalFillsInPnl?.toLocaleString() || '2,034'} completed GLP-1 fills, ${ytdFeesFmt} YTD membership fees collected. Whenever asked about revenue, membership fees, or net program proceeds, always cite both the September net proceeds ($${sepProceedsVal.toLocaleString()}) and the YTD net proceeds (${ytdProceedsFmt}) alongside YTD pharmacy revenue (${ytdRevFmt}) and YTD membership fees (${ytdFeesFmt}).
-- Answer both the "what" (exact numbers, percentages, and trends from the provided context) and the "so what" (strategic insight and operational takeaways).
-- Never cite slide numbers ("Slide 3") or raw JSON key names.
-
-RICH VISUAL FORMATTING — ALWAYS INCLUDE MARKDOWN TABLES & INTERACTIVE CHARTS:
-- For any analytical question, structure your response with:
-  1. **Executive Headline Summary** (concise bullet points with bold metrics).
-  2. **Structured Markdown Pipe Table** (\`| Metric | ... |\`) comparing the relevant numbers, percentages, or time periods.
-  3. **Interactive Chart Block (\`\`\`chart ... \`\`\`)**: Include a valid JSON Chart.js specification inside a fenced \`\`\`chart code block so the UI renders a live interactive chart directly inside your reply! Use this exact JSON schema inside \`\`\`chart:
+PROPORTIONAL RESPONSE CALIBRATION — ANSWER EXACTLY WHAT WAS ASKED (ZERO WORD VOMIT):
+- Tailor your response length and formatting strictly to the scope of the user's question:
+  1. **Simple, Direct, Single-Fact Questions** (e.g., "How many active members were there in September?", "What is the cost to fill?", "How many Ozempic fills were in September?", "What was the Paid Media ROAS in June?", "How long does it take from provider visit to prescription?", "How many patients enrolled via LHD in September?"):
+     - Answer directly in **1–2 crisp sentences** (under ~45 words) with the exact figure in the very first sentence.
+     - **DO NOT** include section headers (\`### ...\`), bullet lists, Markdown pipe tables, or \`\`\`chart\`\`\` blocks for a simple single-fact question.
+     - **DO NOT** dump unrequested metrics.
+  2. **Multi-Metric, Comparison, Trend, or Full-Breakdown Questions** (e.g., "What are our YTD pharmacy revenue, membership fees, and September and YTD net program proceeds?", "What are our total pharmacy revenue and net program proceeds?", "Compare our EPIC vs Paid Media channels...", "What are the refill persistence rates from Fill 1 to Fill 3, and how does the June cohort retain from M0 to M3?", "Break down our monthly program proceeds"):
+     - When asked about overall pharmacy revenue and net program proceeds, cite YTD pharmacy revenue (${ytdRevFmt}), YTD membership fees (${ytdFeesFmt}), September net program proceeds ($${sepProceedsVal.toLocaleString()}), and YTD net program proceeds (${ytdProceedsFmt}).
+     - Structure multi-metric / comparison / breakdown answers with:
+       a) Concise bullet points answering the specific metrics requested.
+       b) A focused **Markdown Pipe Table** (\`| Metric | ... |\`) with only the relevant rows/columns.
+       c) An **Interactive Chart Block (\`\`\`chart ... \`\`\`)** using valid JSON Chart.js format:
 \`\`\`chart
-{"type":"bar","title":"Chart Title Here","labels":["Label 1","Label 2"],"datasets":[{"label":"Series 1","data":[100,200],"backgroundColor":"#2563eb"},{"label":"Series 2","data":[80,150],"backgroundColor":"#059669"}]}
+{"type":"bar","title":"Chart Title Here","labels":["Label 1","Label 2"],"datasets":[{"label":"Series 1","data":[100,200],"backgroundColor":"#2563eb"}]}
 \`\`\`
-  (Keep the JSON inside \`\`\`chart on a single line or clean valid JSON with numeric values only—no dollar signs or commas inside the \`data\` array numbers).`;
+       (Use numeric values only inside \`data\` arrays—no dollar signs or commas).
+- Never cite slide numbers ("Slide 3") or raw JSON key names.`;
 
   const conversationTurns = [];
   if (Array.isArray(history)) {
