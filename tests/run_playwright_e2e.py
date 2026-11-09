@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import struct
 import sys
 import time
@@ -271,6 +272,35 @@ def run_suite():
             and api_excel_check["csvStatuses"] == [200, 200, 200, 200, 200, 200, 200]
             and bool(api_excel_check["finCsvHasHeader"]),
             str(api_excel_check),
+        )
+
+        # NO-EXCEL-05: Verify zero .xlsx/.xls files exist on disk in the repo and zero openpyxl/.xlsx references exist in scripts/
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        found_excel_files = []
+        for root_dir, dirs, files in os.walk(repo_root):
+            if "node_modules" in dirs:
+                dirs.remove("node_modules")
+            if ".git" in dirs:
+                dirs.remove(".git")
+            for fname in files:
+                if fname.lower().endswith((".xlsx", ".xls", ".xlsm")):
+                    found_excel_files.append(os.path.relpath(os.path.join(root_dir, fname), repo_root))
+        source_docs_files = sorted(os.listdir(os.path.join(repo_root, "source_docs")))
+        script_excel_refs = []
+        for sname in ("build_portal_data.py", "ingest_client.py"):
+            spath = os.path.join(repo_root, "scripts", sname)
+            with open(spath, "r", encoding="utf-8") as sf:
+                stext = sf.read().lower()
+            for bad_tok in ("openpyxl", ".xlsx", "worklists", "analysisworkbook"):
+                if bad_tok in stext:
+                    script_excel_refs.append(f"{sname}:{bad_tok}")
+        record(
+            "NO-EXCEL-05",
+            "Zero Excel (.xlsx/.xls) files exist in repository (source_docs has strictly Damien_Program_Dashboard_Sep2026.pptx) and zero openpyxl/.xlsx references exist in scripts/",
+            len(found_excel_files) == 0
+            and source_docs_files == ["Damien_Program_Dashboard_Sep2026.pptx"]
+            and len(script_excel_refs) == 0,
+            f"excel_files={found_excel_files}, source_docs={source_docs_files}, script_refs={script_excel_refs}",
         )
 
         # ---------------------------------------------------------------------

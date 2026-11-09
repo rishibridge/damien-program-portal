@@ -4,7 +4,8 @@ __pycache__/
 *.pyc
 test-results/
 data/runtime_state.json
-data/clients/*/worklist_edits.json
+*.xlsx
+*.xls
 data/clients/*/audit_log.json
 data/clients/*/qa_history.json
 data/clients/users_directory.json

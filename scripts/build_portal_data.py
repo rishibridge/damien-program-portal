@@ -1,201 +1,35 @@
 import os
 import json
-import datetime
 import urllib.request
-import openpyxl
 
-PROJ_DIR = r"C:\Users\rishi\.gemini\antigravity\scratch\damien-program-portal"
-XLSX_PATH = os.path.join(PROJ_DIR, "source_docs", "Damien_First_Fill_Worklist_Sep2026.xlsx")
+PROJ_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PPTX_PATH = os.path.join(PROJ_DIR, "source_docs", "Damien_Program_Dashboard_Sep2026.pptx")
 DATA_DIR = os.path.join(PROJ_DIR, "data")
 ASSETS_DIR = os.path.join(PROJ_DIR, "public", "assets")
 
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(ASSETS_DIR, exist_ok=True)
 
-# 1. Download Bridge Health Hub logo
+# 1. Download Bridge Health Hub logo if not already present
 logo_path = os.path.join(ASSETS_DIR, "logo.png")
-try:
-    req = urllib.request.Request(
-        "https://www.bridgehealthhub.com/assets/images/logo.png",
-        headers={"User-Agent": "Mozilla/5.0"}
-    )
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        with open(logo_path, "wb") as f:
-            f.write(resp.read())
-    print("Downloaded Bridge Health Hub logo:", os.path.getsize(logo_path), "bytes")
-except Exception as e:
-    print("Warning: could not download logo:", e)
+if not os.path.exists(logo_path):
+    try:
+        req = urllib.request.Request(
+            "https://www.bridgehealthhub.com/assets/images/logo.png",
+            headers={"User-Agent": "Mozilla/5.0"}
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            with open(logo_path, "wb") as f:
+                f.write(resp.read())
+        print("Downloaded Bridge Health Hub logo:", os.path.getsize(logo_path), "bytes")
+    except Exception as e:
+        print("Warning: could not download logo:", e)
 
-def fmt_val(v):
-    if v is None:
-        return None
-    if isinstance(v, (datetime.datetime, datetime.date)):
-        if isinstance(v, datetime.datetime) and (v.hour != 0 or v.minute != 0 or v.second != 0):
-            return v.strftime("%Y-%m-%d %H:%M:%S")
-        return v.strftime("%Y-%m-%d")
-    if isinstance(v, str):
-        return v.replace("\xa0", " ").strip()
-    return v
-
-def levenshtein(s1, s2):
-    if len(s1) < len(s2):
-        return levenshtein(s2, s1)
-    if len(s2) == 0:
-        return len(s1)
-    previous_row = range(len(s2) + 1)
-    for i, c1 in enumerate(s1):
-        current_row = [i + 1]
-        for j, c2 in enumerate(s2):
-            insertions = previous_row[j + 1] + 1
-            deletions = current_row[j] + 1
-            substitutions = previous_row[j] + (c1 != c2)
-            current_row.append(min(insertions, deletions, substitutions))
-        previous_row = current_row
-    return previous_row[-1]
-
-wb = openpyxl.load_workbook(XLSX_PATH, data_only=True)
-
-# Sheet 1: Pharmacy To-Do
-sh_todo = wb["Pharmacy To-Do"]
-todo_headers = [fmt_val(sh_todo.cell(4, c).value) for c in range(1, sh_todo.max_column + 1)]
-pharmacy_todo = []
-for r in range(5, sh_todo.max_row + 1):
-    vals = [fmt_val(sh_todo.cell(r, c).value) for c in range(1, sh_todo.max_column + 1)]
-    if any(v is not None for v in vals):
-        item = {"id": f"todo-{r-4}", "rowNumber": r}
-        for h, v in zip(todo_headers, vals):
-            item[h] = v
-        pharmacy_todo.append(item)
-
-# Sheet 2: Refill Follow-Up
-sh_refill = wb["Refill Follow-Up"]
-refill_headers = [fmt_val(sh_refill.cell(4, c).value) for c in range(1, sh_refill.max_column + 1)]
-refill_followup = []
-for r in range(5, sh_refill.max_row + 1):
-    vals = [fmt_val(sh_refill.cell(r, c).value) for c in range(1, sh_refill.max_column + 1)]
-    if any(v is not None for v in vals):
-        item = {"id": f"refill-{r-4}", "rowNumber": r}
-        for h, v in zip(refill_headers, vals):
-            item[h] = v
-        refill_followup.append(item)
-
-# Sheet 4: Ended – Never Filled
-sh_ended = wb["Ended – Never Filled"]
-ended_headers = [fmt_val(sh_ended.cell(4, c).value) for c in range(1, sh_ended.max_column + 1)]
-ended_never_filled = []
-for r in range(5, sh_ended.max_row + 1):
-    vals = [fmt_val(sh_ended.cell(r, c).value) for c in range(1, sh_ended.max_column + 1)]
-    if any(v is not None for v in vals):
-        item = {"id": f"ended-{r-4}", "rowNumber": r}
-        for h, v in zip(ended_headers, vals):
-            item[h] = v
-        ended_never_filled.append(item)
-
-# Collect all known member IDs across Pharmacy To-Do, Refill Follow-Up, and Ended - Never Filled for fuzzy matching
-known_patients = {}
-for item in pharmacy_todo:
-    pid = item.get("Pharmacy patient ID")
-    if pid:
-        known_patients[pid] = {
-            "pharmacyPatientId": pid,
-            "alphaMemberId": item.get("Alpha member ID"),
-            "sheet": "Pharmacy To-Do",
-            "rxMedication": item.get("Rx medication"),
-            "rxWritten": item.get("Rx written"),
-            "patientSource": item.get("Patient source"),
-            "employerGroup": item.get("Employer group"),
-            "priority": item.get("Priority")
-        }
-for item in refill_followup:
-    pid = item.get("Pharmacy patient ID")
-    if pid and pid not in known_patients:
-        known_patients[pid] = {
-            "pharmacyPatientId": pid,
-            "alphaMemberId": item.get("Alpha member ID"),
-            "sheet": "Refill Follow-Up",
-            "rxMedication": item.get("Last item filled"),
-            "rxWritten": item.get("Last fill"),
-            "patientSource": item.get("Patient source"),
-            "employerGroup": None,
-            "priority": item.get("Membership status")
-        }
-for item in ended_never_filled:
-    pid = item.get("Pharmacy patient ID")
-    if pid and pid not in known_patients:
-        known_patients[pid] = {
-            "pharmacyPatientId": pid,
-            "alphaMemberId": item.get("Alpha member ID"),
-            "sheet": "Ended – Never Filled",
-            "rxMedication": None,
-            "rxWritten": item.get("Signed up"),
-            "patientSource": item.get("Patient source"),
-            "employerGroup": item.get("Employer group"),
-            "priority": item.get("Stage")
-        }
-
-# Sheet 3: Pharmacy Data Fixes
-sh_fixes = wb["Pharmacy Data Fixes"]
-# Table A: rows 6..60 (headers at row 5)
-fixes_no_id_headers = [fmt_val(sh_fixes.cell(5, c).value) for c in range(1, 7)]
-fixes_no_id = []
-for r in range(6, 61):
-    vals = [fmt_val(sh_fixes.cell(r, c).value) for c in range(1, 7)]
-    if any(v is not None for v in vals):
-        item = {"id": f"fix-noid-{r-5}", "rowNumber": r, "fixType": "No Patient Alternate ID"}
-        for h, v in zip(fixes_no_id_headers, vals):
-            item[h] = v
-        fixes_no_id.append(item)
-
-# Table B: rows 65..95 (headers at row 64)
-fixes_unmatched_headers = [fmt_val(sh_fixes.cell(64, c).value) for c in range(1, 7)]
-fixes_unmatched = []
-for r in range(65, sh_fixes.max_row + 1):
-    vals = [fmt_val(sh_fixes.cell(r, c).value) for c in range(1, 7)]
-    if any(v is not None for v in vals):
-        item = {"id": f"fix-unmatched-{r-64}", "rowNumber": r, "fixType": "Unmatched Patient ID"}
-        for h, v in zip(fixes_unmatched_headers, vals):
-            item[h] = v
-        # Compute fuzzy match against known_patients
-        raw_id = str(item.get("Patient ID on file") or "").strip().lower()
-        best_match = None
-        best_dist = 999
-        for k_pid, k_info in known_patients.items():
-            d = levenshtein(raw_id, k_pid.lower())
-            if d <= 2 and d < best_dist:
-                best_dist = d
-                best_match = {
-                    "suggestedPatientId": k_pid,
-                    "alphaMemberId": k_info["alphaMemberId"],
-                    "editDistance": d,
-                    "matchedInSheet": k_info["sheet"],
-                    "rxMedication": k_info["rxMedication"],
-                    "patientSource": k_info["patientSource"]
-                }
-        item["suggestedMatch"] = best_match
-        fixes_unmatched.append(item)
-
-# Also tag Pharmacy To-Do items that have a fuzzy match in Pharmacy Data Fixes
-matched_by_target = {}
-for fix in fixes_unmatched:
-    sm = fix.get("suggestedMatch")
-    if sm and sm.get("suggestedPatientId"):
-        t_pid = sm["suggestedPatientId"]
-        matched_by_target.setdefault(t_pid, []).append({
-            "fixId": fix["id"],
-            "patientIdOnFile": fix.get("Patient ID on file"),
-            "dateFilled": fix.get("Date filled"),
-            "dispensedItem": fix.get("Dispensed item"),
-            "prescriber": fix.get("Prescriber"),
-            "editDistance": sm["editDistance"]
-        })
-
-for item in pharmacy_todo:
-    pid = item.get("Pharmacy patient ID")
-    item["possibleDataFixes"] = matched_by_target.get(pid, [])
-
-# Build complete dashboard data from the 10 PPTX slides
+# 2. Build complete dashboard data strictly from the 10 PowerPoint slides (Slides 1-10)
 dashboard_data = {
     "meta": {
+        "clientId": "damien",
+        "shortName": "Damien",
         "programTitle": "Damien Center GLP-1 Weight Loss Program",
         "subtitle": "Program performance through September 30, 2026",
         "preparedBy": "Bridge Health Hub",
@@ -203,6 +37,9 @@ dashboard_data = {
         "telehealthPartner": "Hello Alpha",
         "pharmacyPartner": "Damien Pharmacy",
         "asOfDate": "2026-09-30",
+        "asOfDateFormatted": "September 30, 2026",
+        "asOfShort": "Sep2026",
+        "cutoffMonthName": "September",
         "months": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep"]
     },
     "slide2_summary": {
@@ -314,9 +151,9 @@ dashboard_data = {
             {"stage": "Filled 1st Rx", "patients": 523, "pctOfEnrolled": 69, "stepConversion": "86%"}
         ],
         "dropoffs": [
-            {"count": 76, "label": "never completed a provider visit", "filterSheet": "ended", "filterStage": "No provider visit"},
-            {"count": 76, "label": "saw a provider but were not prescribed", "filterSheet": "ended", "filterStage": "Saw provider, no Rx"},
-            {"count": 85, "label": "were prescribed but never filled", "filterSheet": "todo", "filterStage": "Rx written, not filled"}
+            {"count": 76, "label": "never completed a provider visit"},
+            {"count": 76, "label": "saw a provider but were not prescribed"},
+            {"count": 85, "label": "were prescribed but never filled"}
         ],
         "timing": [
             {"metric": "Under 1 hour", "label": "Sign-up to provider visit"},
@@ -389,36 +226,6 @@ dashboard_data = {
             {"joined": "Sep", "members": 273, "M0": "100%", "M1": "", "M2": "", "M3": "", "M4": "", "M5": "", "M6": "", "M7": "", "M8": ""}
         ],
         "footnote": "Share of each sign-up month's members whose membership was still active at the end of each month after joining (M0 = joining month)."
-    },
-    "worklists": {
-        "pharmacyTodo": {
-            "title": "Pharmacy To-Do",
-            "description": "Owner: Damien Pharmacy. Members with an active membership who have a prescription at Damien Pharmacy that has not been filled. Data through September 30, 2026. Update Status, Date contacted and Notes (yellow) as you work the list.",
-            "headers": todo_headers,
-            "rows": pharmacy_todo
-        },
-        "refillFollowup": {
-            "title": "Refill Follow-Up",
-            "description": "Owner: Damien Pharmacy. Active members who filled before but have no fill in the last 35+ days (typical gap between fills is ~27 days). Contact to schedule the next fill.",
-            "headers": refill_headers,
-            "rows": refill_followup
-        },
-        "pharmacyDataFixes": {
-            "title": "Pharmacy Data Fixes",
-            "description": "Owner: Damien Pharmacy. Fills that can't be linked to a program member. Add or correct the Patient Alternate ID (first 8 characters of the Alpha member ID) in the dispense system.",
-            "noIdTitle": "Fills with no Patient Alternate ID (55)",
-            "noIdHeaders": fixes_no_id_headers,
-            "noIdRows": fixes_no_id,
-            "unmatchedTitle": "Patient IDs that don't match any program member (21 IDs, 31 fills)",
-            "unmatchedHeaders": fixes_unmatched_headers,
-            "unmatchedRows": fixes_unmatched
-        },
-        "endedNeverFilled": {
-            "title": "Ended Memberships – Never Filled (reference)",
-            "description": "Members whose membership has already ended without a first fill. No action required; use for root-cause review and possible win-back outreach.",
-            "headers": ended_headers,
-            "rows": ended_never_filled
-        }
     }
 }
 
@@ -426,9 +233,4 @@ out_file = os.path.join(DATA_DIR, "portal_data.json")
 with open(out_file, "w", encoding="utf-8") as f:
     json.dump(dashboard_data, f, indent=2, ensure_ascii=False)
 
-print(f"Saved {out_file} ({os.path.getsize(out_file)} bytes)")
-print(f"Counts -> Todo: {len(pharmacy_todo)}, Refill: {len(refill_followup)}, Fixes(NoID): {len(fixes_no_id)}, Fixes(Unmatched): {len(fixes_unmatched)}, Ended: {len(ended_never_filled)}")
-fuzzy_matches = [r for r in fixes_unmatched if r.get("suggestedMatch")]
-print(f"Fuzzy matches automatically detected in Unmatched IDs: {len(fuzzy_matches)} rows")
-for m in fuzzy_matches:
-    print(" ", m["Patient ID on file"], "->", m["suggestedMatch"])
+print(f"Saved {out_file} ({os.path.getsize(out_file)} bytes) from {PPTX_PATH}")
