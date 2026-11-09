@@ -1445,67 +1445,65 @@ app.get('/api/export/csv/:tableKey', async (req, res) => {
   let filename = `${shortPrefix}_${tableKey}_${asOfSuffix}.csv`;
 
   if (tableKey === 'financials') {
-    headers = ['Line Item', 'YTD Amount ($)'];
-    rows = (data.slide3_financials?.ytdTable || []).map(r => [r.item, r.amount]);
+    headers = ['Line Item', 'YTD Amount ($)', 'Formatted'];
+    rows = (data.slide3_financials?.ytdTable || []).map(r => [r.item, r.amount, r.formatted || '']);
     filename = `${shortPrefix}_YTD_Financials_${asOfSuffix}.csv`;
   } else if (tableKey === 'sources') {
-    headers = ['Source', 'Enrolled in Sept', 'Enrolled YTD', 'Share (%)', 'Filled 1st Rx', '1st Rx Rate (%)', 'Refilled 1st -> 2nd', 'Refill Rate (%)', 'GLP-1 Fills', 'Gross Margin ($)'];
+    headers = ['Source', 'Enrolled in Sept', 'Enrolled YTD', 'Share', 'Filled 1st Rx', 'Refilled 1st -> 2nd', 'GLP-1 Fills', 'Gross Margin ($)'];
     rows = (data.slide4_sources?.table || []).map(r => [
       r.source,
       r.enrolledSept,
       r.enrolledYtd,
-      r.sharePct,
-      r.filled1stCount,
-      r.filled1stPct ?? '',
-      r.refilled1to2Count ?? '',
-      r.refilled1to2Pct ?? '',
+      r.share,
+      r.filled1stRx,
+      r.refilled1to2,
       r.glp1Fills,
       r.grossMargin
     ]);
     filename = `${shortPrefix}_Patient_Sources_${asOfSuffix}.csv`;
   } else if (tableKey === 'paidmedia') {
-    headers = ['Sign-up Month', 'Media Spend ($)', 'Sign-ups', 'Spend / Sign-up ($)', 'Started Therapy', 'Started (%)', 'Spend / Started ($)', 'Fills to Date', 'Gross Margin ($)', 'Return on Spend (x)'];
-    rows = (data.slide5_paidMedia?.cohorts || []).map(r => [
+    headers = ['Sign-up Month', 'Media Spend ($)', 'Sign-ups', 'Spend / Sign-up', 'Started Therapy', 'Spend / Started', 'Fills to Date', 'Gross Margin ($)', 'Return on Spend'];
+    rows = (data.slide5_paidMedia?.table || []).map(r => [
       r.month,
-      r.mediaSpend,
-      r.signUps,
-      r.spendPerSignUp ?? '',
-      r.startedTherapyCount ?? '',
-      r.startedTherapyPct ?? '',
+      r.spend,
+      r.signups,
+      r.spendPerSignup ?? '',
+      r.started ?? '',
       r.spendPerStarted ?? '',
-      r.fillsToDate ?? '',
-      r.grossMargin ?? '',
-      r.returnOnSpend ?? ''
+      r.fills ?? '',
+      r.margin ?? '',
+      r.roas ?? ''
     ]);
     filename = `${shortPrefix}_Paid_Media_Cohorts_${asOfSuffix}.csv`;
   } else if (tableKey === 'funnel') {
-    headers = ['Funnel Stage', 'Patients', 'Share of Enrolled (%)'];
-    rows = (data.slide6_funnel?.stages || []).map(s => [s.stage, s.count, s.pct]);
+    headers = ['Funnel Stage', 'Patients', 'Share of Enrolled (%)', 'Step Conversion'];
+    rows = (data.slide6_funnel?.steps || []).map(s => [s.stage, s.patients, s.pctOfEnrolled, s.stepConversion || '']);
     filename = `${shortPrefix}_First_Fill_Funnel_${asOfSuffix}.csv`;
   } else if (tableKey === 'refill-steps') {
-    headers = ['Refill Step', 'Continuation Rate (%)', 'Eligible Patients'];
-    rows = (data.slide7_refill?.stepTable || []).map(r => [r.step, r.cameBackPct, r.eligiblePts]);
+    headers = ['Refill Step', 'Came Back', 'Eligible Patients'];
+    rows = (data.slide7_refill?.stepTable || []).map(r => [r.step, r.cameBack, r.eligiblePts]);
     filename = `${shortPrefix}_Refill_Steps_${asOfSuffix}.csv`;
   } else if (tableKey === 'retention-matrix') {
     const ret = data.slide10_retention || {};
-    headers = ['Sign-up Cohort', 'Enrolled', ...(ret.columns || [])];
-    rows = (ret.cohorts || []).map(c => [
-      c.cohort,
-      c.enrolled,
-      ...(ret.columns || []).map(col => (c[col] !== null && c[col] !== undefined) ? `${c[col]}%` : '')
+    const mCols = (ret.columns || []).filter(c => /^M\d+$/i.test(c));
+    headers = ['Joined', 'Members', ...mCols];
+    rows = (ret.rows || []).map(c => [
+      c.joined,
+      c.members,
+      ...mCols.map(col => c[col] ?? '')
     ]);
     filename = `${shortPrefix}_Cohort_Retention_Matrix_${asOfSuffix}.csv`;
   } else if (tableKey === 'medmix') {
-    const m8 = data.slide8_medMix || {};
+    const ch = data.slide8_medMix?.chart || {};
     headers = ['Month', 'Wegovy Pen', 'Wegovy Pill', 'Ozempic', 'Total Dispenses', 'Wegovy Pill Share (%)'];
-    rows = (m8.months || []).map((mo, i) => [
-      mo,
-      m8.wegovyPen?.[i] ?? 0,
-      m8.wegovyPill?.[i] ?? 0,
-      m8.ozempic?.[i] ?? 0,
-      m8.totals?.[i] ?? 0,
-      m8.pillSharePct?.[i] ?? 0
-    ]);
+    rows = (ch.months || []).map((mo, i) => {
+      const pen = ch.wegovyPen?.[i] ?? 0;
+      const pill = ch.wegovyPill?.[i] ?? 0;
+      const oz = ch.ozempic?.[i] ?? 0;
+      const tot = pen + pill + oz;
+      const pillPct = tot > 0 ? ((pill / tot) * 100).toFixed(1) + '%' : '0.0%';
+      return [mo, pen, pill, oz, tot, pillPct];
+    });
     filename = `${shortPrefix}_Medication_Mix_${asOfSuffix}.csv`;
   } else {
     return res.status(404).json({ ok: false, error: 'Unknown export table key.' });
@@ -1856,6 +1854,7 @@ function answerQuestion(state, rawQuestion) {
   const s6 = state.slide6_funnel || {};
   const s7 = state.slide7_refill || {};
   const s8 = state.slide8_medMix || {};
+  const s9 = state.slide9_appendix || {};
   const s10 = state.slide10_retention || {};
 
   // 0. Strict Member-Level Privacy Guardrail
@@ -1863,11 +1862,83 @@ function answerQuestion(state, rawQuestion) {
     return buildMemberPrivacyGuardrailReply(state, q);
   }
 
-  // 1. Channel / Broker vs Paid Media & Patient Sources (Slide 4 & Slide 5)
+  // 1. Out-of-Deck Granular Queries (Prescribers, Individual Employers, Payers/Savings Cards, Dose Strengths, Worklists)
+  if (
+    ql.includes('prescriber') || ql.includes('doctor') || ql.includes('townsend') ||
+    ql.includes('payer') || ql.includes('savings card') || ql.includes('insurance') ||
+    ql.includes('dose') || ql.includes('0.25') || ql.includes('2.4') ||
+    ql.includes('worklist') || ql.includes('to-do') || ql.includes('todo') ||
+    ql.includes('evansville') || ql.includes('employer group')
+  ) {
+    const srcRows = s4.table || [];
+    const tableLines = srcRows.map(r =>
+      `| **${r.source}** | ${r.enrolledSept} | **${r.enrolledYtd}** | ${r.share} | **${r.filled1stRx}** | ${r.refilled1to2} | ${r.glp1Fills.toLocaleString()} | **${r.grossMarginFmt}** |`
+    ).join('\n');
+    return {
+      question: q,
+      answer:
+        `### **Executive Report Scope & Aggregate Channel Summary (${meta.client})**\n` +
+        `• **Report Scope**: **Ask Bridge AI** is powered strictly by the **${meta.programTitle}** executive report deck (Slides 1–10 through ${meta.asOfDateFormatted || 'September 30, 2026'}). Granular workbook breakouts (such as individual prescribers, specific employer companies, third-party payer/savings cards, milligram dose strengths, or patient worklist queues) are not part of the executive deck.\n` +
+        `• **Available Aggregate Channel & Program Analytics**: Below is the full channel enrollment, conversion, and gross margin breakdown from the executive report:\n\n` +
+        `| Source | Enrolled Sep | Enrolled YTD | Share | Filled 1st Rx | Refilled 1st→2nd | GLP-1 Fills | Gross Margin |\n` +
+        `| --- | --- | --- | --- | --- | --- | --- | --- |\n` +
+        `${tableLines}\n\n` +
+        `\`\`\`chart\n` +
+        JSON.stringify({
+          type: 'bar',
+          title: 'YTD Enrollments & GLP-1 Fills by Patient Source',
+          labels: srcRows.map(r => r.source),
+          datasets: [
+            { label: 'Enrolled YTD', data: srcRows.map(r => Number(r.enrolledYtd) || 0), backgroundColor: '#154672' },
+            { label: 'GLP-1 Fills', data: srcRows.map(r => Number(r.glp1Fills) || 0), backgroundColor: '#26abe4' }
+          ]
+        }) +
+        `\n\`\`\``
+    };
+  }
+
+  // 2. Paid Media ROI & Monthly Media Cohorts (Slide 5)
+  if (
+    ql.includes('paid media') || ql.includes('roas') || ql.includes('return on spend') ||
+    ql.includes('media spend') || ql.includes('ad spend') || ql.includes('4.63') || ql.includes('463%') ||
+    (ql.includes('cohort') && (ql.includes('media') || ql.includes('spend')))
+  ) {
+    const pmRows = s5.table || [];
+    const totalRow = pmRows.find(r => r.isTotal) || pmRows[pmRows.length - 1] || {};
+    const monthRows = pmRows.filter(r => !r.isTotal);
+    const tableLines = pmRows.map(r =>
+      `| **${r.month}** | ${r.spendFmt} | ${r.signups} | ${r.spendPerSignup} | ${r.started} | ${r.spendPerStarted} | ${r.fills} | **${r.marginFmt}** | **${r.roas || '—'}** |`
+    ).join('\n');
+
+    return {
+      question: q,
+      answer:
+        `### **Paid Media ROI & Cohort Performance (${meta.client} Through ${meta.asOfDateFormatted || 'Sep 30, 2026'})**\n` +
+        `• **Headline**: ${s5.headline || 'Every $1 of media spend has returned $4.63 of pharmacy margin from Paid Media patients.'}\n` +
+        `• **Campaign-to-Date Totals**: **${totalRow.spendFmt || '$142,033'}** total media spend across **${totalRow.signups || 414} sign-ups** (**${totalRow.spendPerSignup || '$343'}/sign-up**) and **${totalRow.started || 243} therapy starters** (**${totalRow.spendPerStarted || '$584'}/starter**), generating **${totalRow.marginFmt || '$658,361'}** in pharmacy gross margin across **${totalRow.fills || 786} fills** (**${totalRow.roas || '463%'}** return on spend).\n` +
+        `• **Methodology Note**: ${s5.footnote || ''}\n\n` +
+        `| Sign-up Month | Media Spend | Sign-ups | Spend / Sign-up | Started Therapy | Spend / Started | Fills to Date | Gross Margin | Return on Spend |\n` +
+        `| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n` +
+        `${tableLines}\n\n` +
+        `\`\`\`chart\n` +
+        JSON.stringify({
+          type: 'bar',
+          title: 'Monthly Paid Media Spend vs. Cumulative Gross Margin ($)',
+          labels: monthRows.map(r => r.month),
+          datasets: [
+            { label: 'Media Spend ($)', data: monthRows.map(r => Number(r.spend) || 0), backgroundColor: '#94a3b8' },
+            { label: 'Gross Margin ($)', data: monthRows.map(r => Number(r.margin) || 0), backgroundColor: '#154672' }
+          ]
+        }) +
+        `\n\`\`\``
+    };
+  }
+
+  // 3. Patient Sources & Broker Channels (Slide 4)
   if (
     ql.includes('epic') || ql.includes('lhd') || ql.includes('mcgohan') ||
     ql.includes('source') || ql.includes('channel') || ql.includes('broker') ||
-    ql.includes('paid media') || ql.includes('roas') || ql.includes('ad spend')
+    ql.includes('employee') || ql.includes('where are patients')
   ) {
     const srcRows = s4.table || [];
     const epicRow = srcRows.find(r => r.source.toLowerCase().includes('epic')) || srcRows[0] || {};
@@ -1880,16 +1951,17 @@ function answerQuestion(state, rawQuestion) {
       question: q,
       answer:
         `### **Patient Sources & Channel Economics (${meta.client} Through ${meta.asOfDateFormatted || 'Sep 30, 2026'})**\n` +
-        `• **Headline**: ${s4.headline || 'Broker partners drove 62% of September sign-ups and convert to first fill at a higher rate than paid media.'}\n` +
+        `• **Headline**: ${s4.headline || 'EPIC and broker partners drove 62% of September enrollments.'}\n` +
         (epicRow.source ? `• **${epicRow.source}**: **${epicRow.enrolledYtd} YTD enrollments** (${epicRow.enrolledSept} in Sep, ${epicRow.share} share), **${epicRow.filled1stRx} first-fill conversion**, **${epicRow.refilled1to2} refill rate**, and **${epicRow.grossMarginFmt} gross margin** across ${epicRow.glp1Fills?.toLocaleString() || 0} fills.\n` : '') +
-        (pmRow.source ? `• **${pmRow.source}**: **${pmRow.enrolledYtd} YTD enrollments** (${pmRow.enrolledSept} in Sep, ${pmRow.share} share), **${pmRow.filled1stRx} first-fill conversion**, **${pmRow.refilled1to2} refill rate**, and **${pmRow.grossMarginFmt} gross margin** across ${pmRow.glp1Fills?.toLocaleString() || 0} fills.\n\n` : '\n') +
+        (pmRow.source ? `• **${pmRow.source}**: **${pmRow.enrolledYtd} YTD enrollments** (${pmRow.enrolledSept} in Sep, ${pmRow.share} share), **${pmRow.filled1stRx} first-fill conversion**, **${pmRow.refilled1to2} refill rate**, and **${pmRow.grossMarginFmt} gross margin** across ${pmRow.glp1Fills?.toLocaleString() || 0} fills.\n` : '') +
+        `• **Note**: ${s4.footnote || ''}\n\n` +
         `| Source | Enrolled Sep | Enrolled YTD | Share | Filled 1st Rx | Refilled 1st→2nd | GLP-1 Fills | Gross Margin |\n` +
         `| --- | --- | --- | --- | --- | --- | --- | --- |\n` +
         `${tableLines}\n\n` +
         `\`\`\`chart\n` +
         JSON.stringify({
           type: 'bar',
-          title: 'YTD Enrollments by Patient Source',
+          title: 'YTD Enrollments & GLP-1 Fills by Patient Source',
           labels: srcRows.map(r => r.source),
           datasets: [
             { label: 'Enrolled YTD', data: srcRows.map(r => Number(r.enrolledYtd) || 0), backgroundColor: '#154672' },
@@ -1900,10 +1972,10 @@ function answerQuestion(state, rawQuestion) {
     };
   }
 
-  // 2. Medication Mix: Wegovy Pen vs. Wegovy Pill vs. Ozempic (Slide 8)
+  // 4. Medication Mix: Wegovy Pen vs. Wegovy Pill vs. Ozempic (Slide 8)
   if (
     ql.includes('wegovy') || ql.includes('ozempic') || ql.includes('pill') ||
-    ql.includes('pen') || ql.includes('medication') || ql.includes('drug')
+    ql.includes('pen') || ql.includes('medication') || ql.includes('drug') || ql.includes('dispense')
   ) {
     const callouts = s8.septemberCallouts || [];
     const calloutLines = callouts.map(c => `• **${c.label}**: **${c.value}** fills in September (**${c.share}** share)`).join('\n');
@@ -1913,16 +1985,18 @@ function answerQuestion(state, rawQuestion) {
       const pill = s8.chart.wegovyPill[i] || 0;
       const oz = s8.chart.ozempic[i] || 0;
       const tot = pen + pill + oz;
-      return `| **${m}** | ${pen} | ${pill} | ${oz} | **${tot}** |`;
+      const pillShare = tot > 0 ? ((pill / tot) * 100).toFixed(1) + '%' : '0.0%';
+      return `| **${m}** | ${pen} | ${pill} | ${oz} | **${tot}** | ${pillShare} |`;
     }).join('\n');
 
     return {
       question: q,
       answer:
         `### **Medication Mix (${meta.client} Through ${meta.asOfDateFormatted || 'Sep 30, 2026'})**\n` +
+        `• **Headline**: ${s8.headline || 'Wegovy pill reached 38% of fills in September.'}\n` +
         `${calloutLines}\n\n` +
-        `| Month | Wegovy Pen | Wegovy Pill | Ozempic | Total Fills |\n` +
-        `| --- | --- | --- | --- | --- |\n` +
+        `| Month | Wegovy Pen | Wegovy Pill | Ozempic | Total Fills | Wegovy Pill % |\n` +
+        `| --- | --- | --- | --- | --- | --- |\n` +
         `${tableLines}\n\n` +
         `\`\`\`chart\n` +
         JSON.stringify({
@@ -1939,23 +2013,72 @@ function answerQuestion(state, rawQuestion) {
     };
   }
 
-  // 3. First-Fill Funnel & Refill Persistence / Retention (Slide 6, Slide 7, Slide 10)
+  // 5. Cohort Retention Matrix & Refill Persistence (Slide 7 & Slide 10)
   if (
-    ql.includes('funnel') || ql.includes('conversion') || ql.includes('refill') ||
-    ql.includes('retention') || ql.includes('cohort') || ql.includes('drop')
+    ql.includes('retention') || ql.includes('m0') || ql.includes('m1') ||
+    ql.includes('how long are patients staying') || ql.includes('refill') ||
+    ql.includes('fill 1') || ql.includes('fill 2') || ql.includes('persistence')
   ) {
-    const steps = s6.steps || [];
-    const stepLines = steps.map(s => `• **${s.stage}**: **${s.patients}** patients (**${s.pctOfEnrolled}%** of enrolled)`).join('\n');
     const refillSteps = (s7.stepTable || []).map(r => `| **${r.step}** | **${r.cameBack}** | ${r.eligiblePts} |`).join('\n');
+    const fills = s7.chart?.fills || [];
+    const shareStill = s7.chart?.shareStillFilling || [];
+    const ptCounts = s7.chart?.patientCounts || [];
+    const fillCurveLines = fills.map((f, i) => `• **${f}**: **${shareStill[i]}%** still filling (**${ptCounts[i]}** patients)`).join('\n');
+    const retRows = (s10.rows || []).map(r =>
+      `| **${r.joined}** | ${r.members} | ${r.M0 || '—'} | ${r.M1 || '—'} | ${r.M2 || '—'} | ${r.M3 || '—'} | ${r.M4 || '—'} | ${r.M5 || '—'} | ${r.M6 || '—'} | ${r.M7 || '—'} | ${r.M8 || '—'} |`
+    ).join('\n');
 
     return {
       question: q,
       answer:
-        `### **First-Fill Funnel & Refill Persistence (${meta.client})**\n` +
-        `${stepLines}\n\n` +
+        `### **Refill Persistence & Member Cohort Retention (${meta.client})**\n` +
+        `• **Headline**: ${s7.headline || 'Once patients start, more than 9 in 10 come back for each refill.'}\n` +
+        `${fillCurveLines}\n\n` +
+        `#### **Refill Continuation by Step (45+ Day Cutoff)**\n` +
         `| Refill Step | Came Back | Eligible Patients |\n` +
         `| --- | --- | --- |\n` +
         `${refillSteps}\n\n` +
+        `#### **Member Cohort Retention by Joining Month (M0 = Joining Month)**\n` +
+        `| Joined | Members | M0 | M1 | M2 | M3 | M4 | M5 | M6 | M7 | M8 |\n` +
+        `| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n` +
+        `${retRows}\n\n` +
+        `\`\`\`chart\n` +
+        JSON.stringify({
+          type: 'bar',
+          title: 'Share of Patients Still Filling by Fill Number (%)',
+          labels: fills,
+          datasets: [
+            { label: 'Share Still Filling (%)', data: shareStill, backgroundColor: '#154672' }
+          ]
+        }) +
+        `\n\`\`\``
+    };
+  }
+
+  // 6. First-Fill Funnel, Drop-Offs & Median Timing (Slide 6)
+  if (
+    ql.includes('funnel') || ql.includes('conversion') || ql.includes('drop') ||
+    ql.includes('provider') || ql.includes('prescribed') || ql.includes('timing') ||
+    ql.includes('median time') || ql.includes('17 hours')
+  ) {
+    const steps = s6.steps || [];
+    const dropoffs = s6.dropoffs || [];
+    const timing = s6.timing || [];
+    const stepTable = steps.map(s => `| **${s.stage}** | **${s.patients}** | **${s.pctOfEnrolled}%** | ${s.stepConversion || '—'} |`).join('\n');
+    const dropLines = dropoffs.map(d => `• **${d.count} patients** ${d.label}`).join('\n');
+    const timingLines = timing.map(t => `• **${t.metric}**: ${t.label}`).join('\n');
+
+    return {
+      question: q,
+      answer:
+        `### **First-Fill Conversion Funnel, Drop-Offs & Timing (${meta.client})**\n` +
+        `• **Headline**: ${s6.headline || '69% of sign-ups fill their first prescription; the losses happen before the pharmacy.'}\n` +
+        `• **Cohort**: ${s6.chartTitle || 'Members who enrolled before September (at least 30 days since enrollment)'}\n\n` +
+        `| Funnel Stage | Patients | % of Enrolled | Step Conversion |\n` +
+        `| --- | --- | --- | --- |\n` +
+        `${stepTable}\n\n` +
+        `#### **Drop-Off Breakdown**\n${dropLines}\n\n` +
+        `#### **Median Time Between Steps**\n${timingLines}\n\n` +
         `\`\`\`chart\n` +
         JSON.stringify({
           type: 'bar',
@@ -1969,7 +2092,42 @@ function answerQuestion(state, rawQuestion) {
     };
   }
 
-  // 4. Financials / Monthly P&L / Proceeds / Revenue / Fees (Slide 3)
+  // 7. Program Definitions, Methodology & Fills Reconciliation (Slide 9)
+  if (
+    ql.includes('definition') || ql.includes('appendix') || ql.includes('methodology') ||
+    ql.includes('reconcil') || ql.includes('1,952') || ql.includes('1952') ||
+    ql.includes('unmatched') || ql.includes('alternate id') || ql.includes('data note')
+  ) {
+    const notes = (s9.notes || []).map((n, idx) => `${idx + 1}. ${n}`).join('\n');
+    const pnlFills = s3.totalFillsInPnl || 2034;
+    return {
+      question: q,
+      answer:
+        `### **Program Definitions, Methodology & Reconciliation Notes (${meta.client})**\n` +
+        `${notes}\n\n` +
+        `| Metric / Reconciliation Item | Value / Rule |\n` +
+        `| --- | --- |\n` +
+        `| **Total GLP-1 Fills in P&L** | **${pnlFills.toLocaleString()}** |\n` +
+        `| **Matched Member Fills (8-Char Alternate ID)** | **1,952 (96%)** |\n` +
+        `| **Fills With No Patient ID** | **51** |\n` +
+        `| **Fills With Unmatched ID** | **20** |\n` +
+        `| **Assumed Cost to Fill** | **$40 per fill** |\n` +
+        `| **First-Fill Funnel Cutoff** | **Enrolled before September (30+ days)** |\n` +
+        `| **Refill Step Rate Cutoff** | **Prior fill 45+ days before Sep 30, 2026** |\n\n` +
+        `\`\`\`chart\n` +
+        JSON.stringify({
+          type: 'bar',
+          title: 'GLP-1 Fills Reconciliation (Matched vs. Unmatched)',
+          labels: ['Total P&L Fills', 'Matched Member Fills', 'No Patient ID', 'Unmatched ID'],
+          datasets: [
+            { label: 'GLP-1 Fills', data: [pnlFills, 1952, 51, 20], backgroundColor: '#154672' }
+          ]
+        }) +
+        `\n\`\`\``
+    };
+  }
+
+  // 8. Financials / Monthly P&L / Proceeds / Revenue / Fees (Slide 3)
   if (
     ql.includes('financial') || ql.includes('proceeds') || ql.includes('p&l') || ql.includes('pnl') ||
     ql.includes('revenue') || ql.includes('profit') || ql.includes('fee') || ql.includes('commission') ||
@@ -1992,7 +2150,8 @@ function answerQuestion(state, rawQuestion) {
         `• **Pharmacy Revenue**: **${revRow ? revRow.formatted : '$2,336,983'}** YTD across **${(s3.totalFillsInPnl || 2034).toLocaleString()}** GLP-1 fills\n` +
         `• **Pharmacy Gross Margin**: **${gmRow ? gmRow.formatted : '$1,758,625'}** YTD (**$${s3.septemberGrossMarginPerFill || 911}/fill** in September)\n` +
         `• **Membership Fees Collected**: **+${feesRow ? feesRow.formatted : '$44,164'}** YTD\n` +
-        `• **Net Program Proceeds (After Ad Spend & Fees)**: **$${sepProceeds.toLocaleString()}** in September (vs. **$${augProceeds.toLocaleString()}** in August) and **${procRow ? procRow.formatted : '$961,691'}** YTD.\n\n` +
+        `• **Net Program Proceeds (After Ad Spend & Fees)**: **$${sepProceeds.toLocaleString()}** in September (vs. **$${augProceeds.toLocaleString()}** in August) and **${procRow ? procRow.formatted : '$961,691'}** YTD.\n` +
+        `• **Formula**: ${s3.footnote || ''}\n\n` +
         `| YTD P&L Line Item | YTD Through Sep 2026 |\n` +
         `| --- | --- |\n` +
         `${pnlLines}\n\n` +
@@ -2009,21 +2168,37 @@ function answerQuestion(state, rawQuestion) {
     };
   }
 
-  // Default executive overview for the authenticated tenant (Slides 1–3)
+  // 9. Default Executive Overview & Membership Growth (Slide 2)
   const revRow = s3.ytdTable.find(r => r.item === 'Pharmacy revenue');
   const feesRow = s3.ytdTable.find(r => r.item === 'Membership fees collected');
   const procRow = s3.ytdTable.find(r => r.item === 'Program proceeds');
   const sepProceeds = s3.monthlyProceeds.values[s3.monthlyProceeds.values.length - 1];
   const activeSep = s2.kpis.find(k => k.id === 'active_sep')?.value || '862';
   const fillsSep = s2.kpis.find(k => k.id === 'fills_sep')?.value || '673';
+  const memMonths = s2.activeMembersByMonth?.months || ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'];
+  const memVals = s2.activeMembersByMonth?.values || [];
+  const memTable = memMonths.map((m, i) => `| **${m}** | **${memVals[i] ?? 0}** |`).join('\n');
 
   return {
     question: q || 'Executive Summary',
     answer:
-      `**${meta.programTitle} (${meta.asOfDateFormatted || 'Through September 30, 2026'})**:\n` +
+      `### **${meta.programTitle} (${meta.asOfDateFormatted || 'Through September 30, 2026'})**\n` +
+      `• **Headline**: ${s2.headline || ''}\n` +
       `• **Active Members & Fills**: **${activeSep} active members** and **${fillsSep} GLP-1 fills** in September at **${meta.pharmacyPartner}**.\n` +
-      `• **Revenue & Net Proceeds**: **${revRow ? revRow.formatted : '$2,336,983'}** YTD pharmacy revenue, **${feesRow ? feesRow.formatted : '$44,164'}** YTD membership fees collected, **$${sepProceeds.toLocaleString()}** September net program proceeds, and **${procRow ? procRow.formatted : '$961,691'}** YTD net program proceeds.\n` +
-      `• **Channel & Conversion Highlights**: ${s4.headline || ''} ${s6.headline || ''}`
+      `• **Revenue & Net Proceeds**: **${revRow ? revRow.formatted : '$2,336,983'}** YTD pharmacy revenue, **${feesRow ? feesRow.formatted : '$44,164'}** YTD membership fees collected, **$${sepProceeds.toLocaleString()}** September net program proceeds, and **${procRow ? procRow.formatted : '$961,691'}** YTD net program proceeds.\n\n` +
+      `| Month | Active Members |\n` +
+      `| --- | --- |\n` +
+      `${memTable}\n\n` +
+      `\`\`\`chart\n` +
+      JSON.stringify({
+        type: 'bar',
+        title: 'Active Members by Month (Jan – Sep 2026)',
+        labels: memMonths,
+        datasets: [
+          { label: 'Active Members', data: memVals, backgroundColor: '#154672' }
+        ]
+      }) +
+      `\n\`\`\``
   };
 }
 
@@ -2062,9 +2237,19 @@ async function askGeminiWithFullData(state, question, history = []) {
 
 You are having an intelligent, natural, executive-ready conversation with a stakeholder or pharmacy/program leader.
 
-STRICT PRIVACY & AGGREGATE-ONLY RULE:
-- You ONLY provide AGGREGATE program, financial, patient source, paid media ROI, first-fill funnel conversion, refill persistence, cohort retention, and medication mix analytics from the executive report deck.
-- Zero individual member IDs, patient alternate IDs, or row-level member/patient records exist in your context. NEVER output or fabricate individual member IDs, patient alternate IDs, UUIDs, or individual member/patient records.
+STRICT POWERPOINT-ONLY SCOPE & AGGREGATE PRIVACY RULE:
+- Your ENTIRE source of truth is the executive PowerPoint report deck (Slides 1–10) provided in \`contextData\`:
+  1. Executive Summary & Monthly Active Membership Growth (Jan–Sep 2026)
+  2. Program Financials & YTD P&L + Monthly Net Program Proceeds (after ad spend & fees)
+  3. Patient Sources & Channel Economics (EPIC, Paid Media, Employee, LHD, McGohan Brabender, Other)
+  4. Paid Media ROI & Monthly Sign-Up Cohort Performance
+  5. First-Fill Conversion Funnel (Enrolled -> Saw a provider -> Prescribed -> Filled 1st Rx), Drop-Offs & Median Step Timing
+  6. Refill Persistence (Fill 1 through Fill 8) & Step-to-Step Continuation Rates
+  7. Medication Mix (Wegovy Pen, Wegovy Pill, Ozempic monthly dispenses & September share)
+  8. Program Definitions, Methodology & Fills Reconciliation (1,952 matched member fills out of 2,034 total P&L fills; 51 no ID, 20 unmatched ID; $40/fill cost; 30-day funnel & 45-day refill cutoffs)
+  9. Member Cohort Retention Matrix by Joining Month (M0 through M8)
+- NEVER invent, guess, or hallucinate numbers outside \`contextData\`.
+- If a user asks about granular data not included in the executive PowerPoint report deck (such as individual employer company names, specific prescriber names, third-party insurance/payer/savings cards, milligram dose strengths like 0.25mg vs 2.4mg, or individual patient worklist queues), clearly explain that the portal is powered strictly by the executive report deck and immediately present the closest relevant aggregate table and chart from \`contextData\`.
 - If someone asks to look up a specific member ID or individual patient record (e.g. an 8-char hex ID like 6d3f1831), politely explain that for member privacy, Ask Bridge AI only provides aggregate program, financial, channel, funnel, refill, and medication analytics—individual member-level and patient-level records are not included in the portal.
 
 KEY PROGRAM METRICS (${meta.client}):

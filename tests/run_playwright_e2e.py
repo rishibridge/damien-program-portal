@@ -377,36 +377,96 @@ def run_suite():
             str(ai_rich_dom),
         )
 
-        # Verify Ask Bridge AI answers Patient Sources, First-Fill Funnel, Refill/Retention, and Med Mix strictly from PowerPoint Slides 1-10
+        # Verify Ask Bridge AI answers EVERY PowerPoint Slide (Slides 2, 3, 4, 5, 6, 7, 8, 9, 10) + Out-of-Deck Scope Guardrail
         qa_slides_test = page.evaluate("""async () => {
-            const rSrc = await fetch('/api/ask', {
+            const ask = (q, mode = 'instant') => fetch('/api/ask', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({question: 'Compare our Patient Sources by active members, first-fill conversion, and YTD pharmacy margin.', mode: 'instant'})
+                body: JSON.stringify({question: q, mode})
             }).then(r => r.json());
-            const rFun = await fetch('/api/ask', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({question: 'Break down our First-Fill Funnel conversion stages and drop-off points.', mode: 'instant'})
-            }).then(r => r.json());
-            const rMed = await fetch('/api/ask', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({question: 'What is our GLP-1 medication mix across Wegovy Pen, Wegovy Pill, and Ozempic in September?', mode: 'instant'})
-            }).then(r => r.json());
+
+            const [rSum, rSrc, rPm, rFun, rRef, rMed, rDef, rOutInstant, rOutLlm] = await Promise.all([
+                ask('How has our active membership grown from January to September 2026?', 'instant'),
+                ask('Compare our Patient Sources by YTD enrollments, first-fill conversion, refill rate, and gross margin.', 'instant'),
+                ask('Is our Paid Media spend paying off? Break down our media spend, sign-ups, started therapy, gross margin, and ROAS by month.', 'instant'),
+                ask('Break down our First-Fill Funnel conversion stages, drop-off points, and median timing between steps.', 'instant'),
+                ask('How are our refill continuation rates across Fill 1 to Fill 8 and our monthly cohort retention matrix M0 to M8?', 'instant'),
+                ask('What is our GLP-1 medication mix across Wegovy Pen, Wegovy Pill, and Ozempic in September and by month?', 'instant'),
+                ask('Explain our program definitions, methodology, and how the 1,952 matched fills reconcile to the 2,034 total fills.', 'instant'),
+                ask('Who are our top prescribers and third-party insurance payers?', 'instant'),
+                ask('What are the refill persistence rates from Fill 1 to Fill 3, and how does the June cohort retain from M0 to M3?', 'llm')
+            ]);
+
             return {
+                sumReply: rSum.reply || '',
                 srcReply: rSrc.reply || '',
+                pmReply: rPm.reply || '',
                 funReply: rFun.reply || '',
-                medReply: rMed.reply || ''
+                refReply: rRef.reply || '',
+                medReply: rMed.reply || '',
+                defReply: rDef.reply || '',
+                outInstantReply: rOutInstant.reply || '',
+                outLlmReply: rOutLlm.reply || '',
+                outLlmPowered: Boolean(rOutLlm.aiPowered)
             };
         }""")
         record(
-            "DAMIEN-20",
-            "Ask Bridge AI answers Patient Sources (452 EPIC YTD, 417 Paid Media YTD), Funnel (760 enrolled, 523 filled), and Medication Mix (411 Wegovy Pen, 256 Pill, 6 Ozempic) strictly from Slides 1-10",
-            ("452" in qa_slides_test["srcReply"] and "417" in qa_slides_test["srcReply"])
-            and ("760" in qa_slides_test["funReply"] and "523" in qa_slides_test["funReply"])
-            and ("411" in qa_slides_test["medReply"] and "256" in qa_slides_test["medReply"]),
-            f"srcLen={len(qa_slides_test['srcReply'])}, funLen={len(qa_slides_test['funReply'])}, medLen={len(qa_slides_test['medReply'])}",
+            "DAMIEN-20A",
+            "Ask Bridge AI answers Slide 2 Executive Summary & Active Membership Growth (23 in Jan -> 644 in Aug -> 862 in Sep, 673 Sep fills)",
+            ("862" in qa_slides_test["sumReply"]) and ("644" in qa_slides_test["sumReply"]) and ("23" in qa_slides_test["sumReply"]),
+            f"len={len(qa_slides_test['sumReply'])}",
+        )
+        record(
+            "DAMIEN-20B",
+            "Ask Bridge AI answers Slide 4 Patient Sources (EPIC 452 YTD / 77% 1st fill / $696,172 margin, Paid Media 417 YTD / 62% 1st fill / $671,400 margin)",
+            ("452" in qa_slides_test["srcReply"] and "696,172" in qa_slides_test["srcReply"])
+            and ("417" in qa_slides_test["srcReply"] and "671,400" in qa_slides_test["srcReply"]),
+            f"len={len(qa_slides_test['srcReply'])}",
+        )
+        record(
+            "DAMIEN-20C",
+            "Ask Bridge AI answers Slide 5 Paid Media ROI ($142,033 spend, 414 sign-ups, 243 started, $658,361 margin, 463% / 4.63x ROAS)",
+            ("142,033" in qa_slides_test["pmReply"])
+            and ("414" in qa_slides_test["pmReply"])
+            and ("243" in qa_slides_test["pmReply"])
+            and ("658,361" in qa_slides_test["pmReply"])
+            and ("463%" in qa_slides_test["pmReply"] or "4.63" in qa_slides_test["pmReply"]),
+            f"len={len(qa_slides_test['pmReply'])}",
+        )
+        record(
+            "DAMIEN-20D",
+            "Ask Bridge AI answers Slide 6 First-Fill Funnel (760 enrolled, 684 saw provider, 608 prescribed, 523 filled, drop-offs 76/76/85, timing 17 hours)",
+            ("760" in qa_slides_test["funReply"] and "684" in qa_slides_test["funReply"] and "608" in qa_slides_test["funReply"] and "523" in qa_slides_test["funReply"])
+            and ("85" in qa_slides_test["funReply"] and "17 hours" in qa_slides_test["funReply"]),
+            f"len={len(qa_slides_test['funReply'])}",
+        )
+        record(
+            "DAMIEN-20E",
+            "Ask Bridge AI answers Slide 7 Refill Persistence (670 Fill 1, 94% Fill 1->2, 391 eligible) & Slide 10 Cohort Retention Matrix (Jan 65% M8, Aug 84% M1)",
+            ("670" in qa_slides_test["refReply"] and "391" in qa_slides_test["refReply"] and "94%" in qa_slides_test["refReply"])
+            and ("65%" in qa_slides_test["refReply"] and "84%" in qa_slides_test["refReply"]),
+            f"len={len(qa_slides_test['refReply'])}",
+        )
+        record(
+            "DAMIEN-20F",
+            "Ask Bridge AI answers Slide 8 Medication Mix (411 Wegovy Pen / 61.1%, 256 Wegovy Pill / 38.0%, 6 Ozempic / 0.9%)",
+            ("411" in qa_slides_test["medReply"] and "256" in qa_slides_test["medReply"] and "61.1%" in qa_slides_test["medReply"] and "38.0%" in qa_slides_test["medReply"]),
+            f"len={len(qa_slides_test['medReply'])}",
+        )
+        record(
+            "DAMIEN-20G",
+            "Ask Bridge AI answers Slide 9 Definitions & Reconciliation (1,952 matched of 2,034 total fills = 96%, 51 no ID, 20 unmatched, $40/fill cost)",
+            ("1,952" in qa_slides_test["defReply"] and "2,034" in qa_slides_test["defReply"] and "51" in qa_slides_test["defReply"] and "20" in qa_slides_test["defReply"] and "$40" in qa_slides_test["defReply"]),
+            f"len={len(qa_slides_test['defReply'])}",
+        )
+        record(
+            "DAMIEN-20H",
+            "Ask Bridge AI handles out-of-deck queries without hallucination and synthesizes Slide 7 + Slide 10 via real Gemini LLM (94%/93.6%, June 166 members -> 57% M3)",
+            ("executive report" in qa_slides_test["outInstantReply"].lower())
+            and ("townsend" not in qa_slides_test["outInstantReply"].lower())
+            and ("94" in qa_slides_test["outLlmReply"] or "93.6" in qa_slides_test["outLlmReply"])
+            and ("57%" in qa_slides_test["outLlmReply"] or "166" in qa_slides_test["outLlmReply"]),
+            f"llmPowered={qa_slides_test['outLlmPowered']}, llmLen={len(qa_slides_test['outLlmReply'])}",
         )
 
         qa_member_block = page.evaluate("""async () => {

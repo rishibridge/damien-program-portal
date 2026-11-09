@@ -634,21 +634,15 @@
     "dropoffs": [
       {
         "count": 76,
-        "label": "never completed a provider visit",
-        "filterSheet": "ended",
-        "filterStage": "No provider visit"
+        "label": "never completed a provider visit"
       },
       {
         "count": 76,
-        "label": "saw a provider but were not prescribed",
-        "filterSheet": "ended",
-        "filterStage": "Saw provider, no Rx"
+        "label": "saw a provider but were not prescribed"
       },
       {
         "count": 85,
-        "label": "were prescribed but never filled",
-        "filterSheet": "todo",
-        "filterStage": "Rx written, not filled"
+        "label": "were prescribed but never filled"
       }
     ],
     "timing": [

@@ -599,7 +599,7 @@
         "isTotal": true
       }
     ],
-    "footnote": "Spend from the agency's Google + Meta reports. Sign-ups are Alpha members with no referral or coupon code; therapy starts, fills and margin come from linking them to Damien Pharmacy fills. Recent months are still building margin (September sign-ups have had at most one fill)."
+    "footnote": "Spend from the agency's Google + Meta reports. Sign-ups are Alpha members with no referral or coupon code; therapy starts, fills and margin come from linking them to Metro Specialty Pharmacy fills. Recent months are still building margin (September sign-ups have had at most one fill)."
   },
   "slide6_funnel": {
     "sectionTitle": "ARE PATIENTS SEEING A PROVIDER AND FILLING?",
@@ -634,21 +634,15 @@
     "dropoffs": [
       {
         "count": 40,
-        "label": "never completed a provider visit",
-        "filterSheet": "ended",
-        "filterStage": "No provider visit"
+        "label": "never completed a provider visit"
       },
       {
         "count": 45,
-        "label": "saw a provider but were not prescribed",
-        "filterSheet": "ended",
-        "filterStage": "Saw provider, no Rx"
+        "label": "saw a provider but were not prescribed"
       },
       {
         "count": 55,
-        "label": "were prescribed but never filled",
-        "filterSheet": "todo",
-        "filterStage": "Rx written, not filled"
+        "label": "were prescribed but never filled"
       }
     ],
     "timing": [
