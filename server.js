@@ -3523,44 +3523,24 @@ STRICT RULES:
     };
   }
 
-  const explicitTable = /\b(table|tabular)\b/i.test(String(question || ''));
-  const explicitChart = /\b(chart|graph|visual|plot)\b/i.test(String(question || ''));
-  if (explicitTable || explicitChart) {
-    const hasTable = /\|[\s:-]+\|/.test(cleanReply);
-    let hasValidChart = false;
-    const existingChartMatch = cleanReply.match(/```(?:chart|json-chart|chartjs)\s*([\s\S]*?)```/i);
-    if (existingChartMatch) {
-      try {
-        const parsedSpec = JSON.parse(existingChartMatch[1].trim());
-        hasValidChart = Boolean(
-          parsedSpec &&
-          Array.isArray(parsedSpec.labels) && parsedSpec.labels.length > 0 &&
-          Array.isArray(parsedSpec.datasets) && parsedSpec.datasets.length > 0 &&
-          parsedSpec.datasets.every(ds => Array.isArray(ds.data) && ds.data.length > 0 && ds.data.every(v => typeof v === 'number' && !Number.isNaN(v)))
-        );
-      } catch (_) {
-        hasValidChart = false;
-      }
-    }
-    if ((explicitTable && !hasTable) || (explicitChart && !hasValidChart)) {
-      const detFallback = answerQuestion(state, `${question} breakdown table chart`).answer || '';
-      if (detFallback !== UNABLE_TO_ANSWER_MSG) {
-        if (explicitTable && !hasTable) {
-          const tblLines = detFallback.split('\n').filter(l => l.trim().startsWith('|') && l.trim().endsWith('|'));
-          if (tblLines.length >= 2) {
-            cleanReply += `\n\n${tblLines.join('\n')}`;
-          }
-        }
-        if (explicitChart && !hasValidChart) {
-          cleanReply = cleanReply.replace(/```(?:chart|json-chart|chartjs)[\s\S]*?```/gi, '').trim();
-          const chartMatch = detFallback.match(/```chart[\s\S]*?```/i);
-          if (chartMatch) {
-            cleanReply += `\n\n${chartMatch[0]}`;
+  // Sanitize any chart JSON emitted by Gemini so string-formatted numbers (e.g. "$142,033") parse cleanly as numbers in Chart.js
+  cleanReply = cleanReply.replace(/```(?:chart|json-chart|chartjs)\s*([\s\S]*?)```/gi, (fullMatch, jsonBody) => {
+    try {
+      const cleanedJson = String(jsonBody || '').trim().replace(/,\s*([\]}])/g, '$1');
+      const spec = JSON.parse(cleanedJson);
+      if (spec && Array.isArray(spec.datasets)) {
+        for (const ds of spec.datasets) {
+          if (Array.isArray(ds.data)) {
+            ds.data = ds.data.map(v => (typeof v === 'number' ? v : Number(String(v).replace(/[^0-9.-]/g, '')) || 0));
           }
         }
       }
+      return `\`\`\`chart\n${JSON.stringify(spec)}\n\`\`\``;
+    } catch (_) {
+      return fullMatch;
     }
-  }
+  });
+
   return {
     question,
     clientId: meta.clientId,
@@ -3584,30 +3564,40 @@ app.post('/api/ask', async (req, res) => {
   const memberBlockedFlag = isMemberLevelQuery(state, q);
 
   if (mode !== 'instant') {
-    try {
-      const geminiResult = await askGeminiWithFullData(state, q, history);
-      const latencyMs = Date.now() - startMs;
-      const qaEntry = recordQaHistoryEntry(req, {
-        clientId,
-        question: q,
-        answer: geminiResult.reply || geminiResult.answer || '',
-        aiPowered: true,
-        aiModel: geminiResult.aiModel || VERTEX_GEMINI_MODEL,
-        memberLevelBlocked: Boolean(geminiResult.memberLevelBlocked),
-        latencyMs
-      });
-      recordAuditEvent(req, 'AI_QUERY', {
-        qaId: qaEntry.id,
-        question: q,
-        answerPreview: String(geminiResult.reply || '').slice(0, 180),
-        aiModel: geminiResult.aiModel || VERTEX_GEMINI_MODEL,
-        latencyMs,
-        memberBlocked: memberBlockedFlag
-      });
-      return res.json({ ...geminiResult, qaId: qaEntry.id, latencyMs });
-    } catch (err) {
-      console.error('Gemini API error, falling back to deterministic engine:', err.message);
+    let lastErr = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const geminiResult = await askGeminiWithFullData(state, q, history);
+        const latencyMs = Date.now() - startMs;
+        const qaEntry = recordQaHistoryEntry(req, {
+          clientId,
+          question: q,
+          answer: geminiResult.reply || geminiResult.answer || '',
+          aiPowered: true,
+          aiModel: geminiResult.aiModel || VERTEX_GEMINI_MODEL,
+          memberLevelBlocked: Boolean(geminiResult.memberLevelBlocked),
+          latencyMs
+        });
+        recordAuditEvent(req, 'AI_QUERY', {
+          qaId: qaEntry.id,
+          question: q,
+          answerPreview: String(geminiResult.reply || '').slice(0, 180),
+          aiModel: geminiResult.aiModel || VERTEX_GEMINI_MODEL,
+          latencyMs,
+          memberBlocked: memberBlockedFlag
+        });
+        return res.json({ ...geminiResult, qaId: qaEntry.id, latencyMs });
+      } catch (err) {
+        lastErr = err;
+        console.error(`Gemini API attempt ${attempt} error:`, err.message);
+      }
     }
+    return res.status(502).json({
+      ok: false,
+      aiPowered: false,
+      error: `Gemini AI service error: ${lastErr ? lastErr.message : 'Unknown error'}`,
+      reply: `Unable to reach the AI service right now (${lastErr ? lastErr.message : 'Unknown error'}). Please try again.`
+    });
   }
 
   if (memberBlockedFlag) {
