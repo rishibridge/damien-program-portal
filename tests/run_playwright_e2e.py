@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import hmac
+import io
 import json
 import os
 import struct
@@ -8,6 +9,7 @@ import sys
 import time
 import urllib.request
 import urllib.error
+import zipfile
 from playwright.sync_api import sync_playwright
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -1252,6 +1254,237 @@ def run_suite():
             and bool(csv_export_test["qaHasHeader"])
             and csv_export_test["totalExports"] >= 2,
             str(csv_export_test),
+        )
+
+        # PPTX-01 .. PPTX-05: In-Portal PowerPoint (.pptx) Upload, 10-Slide Dynamic Parsing, Staged Preview Isolation & Safe Restore
+        proj_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        sep_pptx_path = os.path.join(proj_root, "source_docs", "Damien_Program_Dashboard_Sep2026.pptx")
+        with open(sep_pptx_path, "rb") as f:
+            sep_pptx_bytes = f.read()
+
+        # Build a synthetic October 2026 10-slide .pptx in-memory by updating Slide 1 subtitle and Slide 2 KPIs (980 active members)
+        oct_buf = io.BytesIO()
+        with zipfile.ZipFile(io.BytesIO(sep_pptx_bytes), "r") as zin, zipfile.ZipFile(oct_buf, "w", zipfile.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                raw_bytes = zin.read(item.filename)
+                if item.filename == "ppt/slides/slide1.xml":
+                    s1_txt = raw_bytes.decode("utf-8")
+                    s1_txt = s1_txt.replace("September 30, 2026", "October 31, 2026")
+                    raw_bytes = s1_txt.encode("utf-8")
+                elif item.filename == "ppt/slides/slide2.xml":
+                    s2_txt = raw_bytes.decode("utf-8")
+                    s2_txt = s2_txt.replace(">862<", ">980<").replace(">673<", ">745<")
+                    raw_bytes = s2_txt.encode("utf-8")
+                zout.writestr(item, raw_bytes)
+        oct_pptx_b64 = base64.b64encode(oct_buf.getvalue()).decode("ascii")
+
+        # PPTX-01: Super-Admin uploads & stages the synthetic October 2026 .pptx deck via UI/API and enters Preview Mode
+        pptx_stage_test = page.evaluate(f"""async () => {{
+            await openSecurityModal();
+            const cardVisible = document.getElementById('secAdminPptxCard')?.style.display !== 'none';
+            const rBad = await fetch('/api/admin/upload-pptx', {{
+                method: 'POST',
+                headers: {{'Content-Type': 'application/json'}},
+                body: JSON.stringify({{ filename: 'not_allowed.xlsx', fileBase64: 'dGVzdA==' }})
+            }});
+            const rStage = await fetch('/api/admin/upload-pptx', {{
+                method: 'POST',
+                headers: {{'Content-Type': 'application/json'}},
+                body: JSON.stringify({{
+                    filename: 'Damien_Program_Dashboard_Oct2026_Test.pptx',
+                    fileBase64: '{oct_pptx_b64}'
+                }})
+            }});
+            const dStage = await rStage.json();
+            await loadPortalDataAndRefreshUI(true, true);
+            await refreshSecurityModalData();
+            closeSecurityModal();
+            const bannerVisible = document.getElementById('adminPreviewBanner')?.style.display === 'flex';
+            const topbarAsOf = document.getElementById('topbarAsOfSub')?.innerText || '';
+            const activeKpiVal = document.querySelector("[data-testid='kpi-active_sep'] .kpi-val")?.innerText || '';
+            const fillsKpiVal = document.querySelector("[data-testid='kpi-fills_sep'] .kpi-val")?.innerText || '';
+            return {{
+                cardVisible,
+                xlsxRejectedStatus: rBad.status,
+                stageOk: dStage.ok,
+                bannerVisible,
+                topbarAsOf,
+                activeKpiVal,
+                fillsKpiVal
+            }};
+        }}""")
+        record(
+            "PPTX-01",
+            "Bridge Super-Admin stages new 10-slide PowerPoint (.pptx), rejects .xlsx (400), and previews October 31, 2026 (980 active members) across portal UI",
+            bool(pptx_stage_test["cardVisible"])
+            and pptx_stage_test["xlsxRejectedStatus"] == 400
+            and bool(pptx_stage_test["stageOk"])
+            and bool(pptx_stage_test["bannerVisible"])
+            and "October 31, 2026" in pptx_stage_test["topbarAsOf"]
+            and pptx_stage_test["activeKpiVal"] == "980"
+            and pptx_stage_test["fillsKpiVal"] == "745",
+            str(pptx_stage_test),
+        )
+
+        # PPTX-02: Super-Admin toggles between Preview Mode (Oct 31, 2026 / 980) and Live Published View (Sep 30, 2026 / 862), plus Ask Bridge AI in Preview Mode
+        pptx_toggle_test = page.evaluate("""async () => {
+            const rAskPreview = await fetch('/api/ask', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ question: 'How many active members are in the program?', mode: 'instant', preview: true })
+            }).then(r => r.json());
+            await toggleAdminPreviewMode();
+            const liveAsOf = document.getElementById('topbarAsOfSub')?.innerText || '';
+            const liveActiveVal = document.querySelector("[data-testid='kpi-active_sep'] .kpi-val")?.innerText || '';
+            await toggleAdminPreviewMode();
+            const backToPreviewAsOf = document.getElementById('topbarAsOfSub')?.innerText || '';
+            const backToPreviewVal = document.querySelector("[data-testid='kpi-active_sep'] .kpi-val")?.innerText || '';
+            return {
+                askPreviewAns: rAskPreview.reply || '',
+                liveAsOf,
+                liveActiveVal,
+                backToPreviewAsOf,
+                backToPreviewVal
+            };
+        }""")
+        record(
+            "PPTX-02",
+            "Admin Preview Banner toggles seamlessly between Staged Preview (Oct 31, 2026 / 980) and Live Published View (Sep 30, 2026 / 862) and Ask Bridge AI reflects preview data",
+            "980" in pptx_toggle_test["askPreviewAns"]
+            and "September 30, 2026" in pptx_toggle_test["liveAsOf"]
+            and pptx_toggle_test["liveActiveVal"] == "862"
+            and "October 31, 2026" in pptx_toggle_test["backToPreviewAsOf"]
+            and pptx_toggle_test["backToPreviewVal"] == "980",
+            str(pptx_toggle_test),
+        )
+
+        # PPTX-03: Strict Staged Isolation — While draft is staged, standard client user (damien) still sees ONLY September 30, 2026 (862) and gets 403 on admin endpoints
+        client_isolation_test = page.evaluate("""async () => {
+            // Switch session to standard client user 'damien' while draft is still staged
+            const r1 = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ username: 'damien', password: 'bridge2026' })
+            });
+            const d1 = await r1.json();
+            await fetch('/api/auth/verify-mfa', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ challengeToken: d1.challengeToken, code: d1.emailCodePreview, trustDevice: false })
+            });
+            const pubData = await fetch('/api/portal-data').then(r => r.json());
+            const rForcedPreview = await fetch('/api/portal-data?preview=1');
+            const forcedPreviewAttempt = await rForcedPreview.json();
+            const forcedPreviewFlag = rForcedPreview.headers.get('X-Bridge-Preview-Mode') === '1';
+            const rUploadAttempt = await fetch('/api/admin/upload-pptx', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}' });
+            const rPublishAttempt = await fetch('/api/admin/publish-pptx', { method: 'POST' });
+            const rDiscardAttempt = await fetch('/api/admin/discard-pptx', { method: 'POST' });
+
+            // Switch back to rishi.damien
+            const rAdmin = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ username: 'rishi.damien', password: 'BridgeDamien2026!' })
+            });
+            const dAdmin = await rAdmin.json();
+            await fetch('/api/auth/verify-mfa', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ challengeToken: dAdmin.challengeToken, code: dAdmin.emailCodePreview, trustDevice: false })
+            });
+
+            return {
+                damienAsOf: pubData.meta?.asOfDateFormatted,
+                damienActive: pubData.slide2_summary?.kpis?.find(k => k.id === 'active_sep')?.value,
+                forcedPreviewAsOf: forcedPreviewAttempt.meta?.asOfDateFormatted,
+                forcedPreviewActive: forcedPreviewAttempt.slide2_summary?.kpis?.find(k => k.id === 'active_sep')?.value,
+                forcedPreviewFlag,
+                uploadStatus: rUploadAttempt.status,
+                publishStatus: rPublishAttempt.status,
+                discardStatus: rDiscardAttempt.status
+            };
+        }""")
+        record(
+            "PPTX-03",
+            "Strict Staged Isolation: Client user (damien) continues seeing September 30, 2026 (862 active members) even with ?preview=1 and gets 403 on all /api/admin/* endpoints",
+            client_isolation_test["damienAsOf"] == "September 30, 2026"
+            and client_isolation_test["damienActive"] == "862"
+            and client_isolation_test["forcedPreviewAsOf"] == "September 30, 2026"
+            and client_isolation_test["forcedPreviewActive"] == "862"
+            and not client_isolation_test["forcedPreviewFlag"]
+            and client_isolation_test["uploadStatus"] == 403
+            and client_isolation_test["publishStatus"] == 403
+            and client_isolation_test["discardStatus"] == 403,
+            str(client_isolation_test),
+        )
+
+        # PPTX-04 & PPTX-05: Discard Staged Draft, Verify Audit Trail Events, and Confirm Live September 2026 Baseline is 100% Untouched
+        pptx_discard_and_restore_test = page.evaluate("""async () => {
+            const rDiscard = await fetch('/api/admin/discard-pptx', { method: 'POST' });
+            const dDiscard = await rDiscard.json();
+            await loadPortalDataAndRefreshUI(false, true);
+            const bannerDisplay = document.getElementById('adminPreviewBanner')?.style.display;
+            const liveAsOf = document.getElementById('topbarAsOfSub')?.innerText || '';
+            const liveActive = document.querySelector("[data-testid='kpi-active_sep'] .kpi-val")?.innerText || '';
+            const ov = await fetch('/api/security/overview').then(r => r.json());
+            const evTypes = (ov.auditEvents || []).map(e => e.eventType);
+            return {
+                discardOk: dDiscard.ok && !dDiscard.hasDraft,
+                bannerHidden: bannerDisplay === 'none',
+                liveAsOf,
+                liveActive,
+                hasUploadAudit: evTypes.includes('PPTX_DRAFT_UPLOADED'),
+                hasDiscardAudit: evTypes.includes('PPTX_DRAFT_DISCARDED')
+            };
+        }""")
+        record(
+            "PPTX-04",
+            "Discarding staged draft removes preview banner, logs PPTX_DRAFT_UPLOADED & PPTX_DRAFT_DISCARDED in Security Audit Log, and keeps live September 30, 2026 baseline intact (862)",
+            bool(pptx_discard_and_restore_test["discardOk"])
+            and bool(pptx_discard_and_restore_test["bannerHidden"])
+            and "September 30, 2026" in pptx_discard_and_restore_test["liveAsOf"]
+            and pptx_discard_and_restore_test["liveActive"] == "862"
+            and bool(pptx_discard_and_restore_test["hasUploadAudit"])
+            and bool(pptx_discard_and_restore_test["hasDiscardAudit"]),
+            str(pptx_discard_and_restore_test),
+        )
+
+        # PPTX-05: Re-stage the actual Damien_Program_Dashboard_Sep2026.pptx and Publish to verify full Publish lifecycle while keeping September 2026 live
+        sep_pptx_b64 = base64.b64encode(sep_pptx_bytes).decode("ascii")
+        pptx_publish_sep_test = page.evaluate(f"""async () => {{
+            const rStageSep = await fetch('/api/admin/upload-pptx', {{
+                method: 'POST',
+                headers: {{'Content-Type': 'application/json'}},
+                body: JSON.stringify({{
+                    filename: 'Damien_Program_Dashboard_Sep2026.pptx',
+                    fileBase64: '{sep_pptx_b64}'
+                }})
+            }}).then(r => r.json());
+            const rPubSep = await fetch('/api/admin/publish-pptx', {{ method: 'POST' }}).then(r => r.json());
+            const liveData = await fetch('/api/portal-data?silent=1').then(r => r.json());
+            const ov = await fetch('/api/security/overview').then(r => r.json());
+            const evTypes = (ov.auditEvents || []).map(e => e.eventType);
+            return {{
+                stageOk: rStageSep.ok,
+                pubOk: rPubSep.ok && !rPubSep.hasDraft,
+                asOf: liveData.meta?.asOfDateFormatted,
+                active: liveData.slide2_summary?.kpis?.find(k => k.id === 'active_sep')?.value,
+                fills: liveData.slide2_summary?.kpis?.find(k => k.id === 'fills_sep')?.value,
+                ytdProceeds: liveData.slide3_financials?.ytdTable?.find(r => r.item === 'Program proceeds')?.formatted,
+                hasPublishAudit: evTypes.includes('PPTX_DRAFT_PUBLISHED')
+            }};
+        }}""")
+        record(
+            "PPTX-05",
+            "Publishing Damien_Program_Dashboard_Sep2026.pptx promotes 10-slide report to live portal, logs PPTX_DRAFT_PUBLISHED, and preserves exact September 2026 metrics (862 active, 673 fills, $961,691 YTD)",
+            bool(pptx_publish_sep_test["stageOk"])
+            and bool(pptx_publish_sep_test["pubOk"])
+            and pptx_publish_sep_test["asOf"] == "September 30, 2026"
+            and pptx_publish_sep_test["active"] == "862"
+            and pptx_publish_sep_test["fills"] == "673"
+            and pptx_publish_sep_test["ytdProceeds"] == "$961,691"
+            and bool(pptx_publish_sep_test["hasPublishAudit"]),
+            str(pptx_publish_sep_test),
         )
 
         # SEC-12: Strict XSS HTML Escaping in formatMarkdownText() & Session Revocation on Logout

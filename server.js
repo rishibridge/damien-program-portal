@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
 const { execSync } = require('child_process');
 const QRCode = require('qrcode');
 
@@ -532,6 +533,9 @@ function formatAuditSummary(eventType, details = {}) {
   if (et === 'MFA_CONFIG_UPDATED') return `Updated MFA settings for '${details.targetUsername}' (method: ${details.mfaMethod})`;
   if (et === 'PASSWORD_CHANGED') return 'Updated account password';
   if (et === 'UNAUTHORIZED_ADMIN_ATTEMPT') return `Blocked unauthorized admin call to ${details.endpoint || 'admin API'}`;
+  if (et === 'PPTX_DRAFT_UPLOADED') return `Staged PowerPoint draft '${details.filename || 'deck.pptx'}' (${details.asOfDateFormatted || 'new period'}, ${details.activeMembers || 0} active members)`;
+  if (et === 'PPTX_DRAFT_PUBLISHED') return `Published staged PowerPoint report (${details.asOfDateFormatted || 'new period'}, ${details.activeMembers || 0} active members) to all users`;
+  if (et === 'PPTX_DRAFT_DISCARDED') return `Discarded staged PowerPoint draft (${details.discardedAsOf || 'draft'})`;
   if (et === 'PII_INPUT_REJECTED') return `Rejected prohibited PII / non-hex input in ${details.field || 'worklist'} (${details.reason || 'policy'})`;
   return JSON.stringify(details || {});
 }
@@ -719,7 +723,7 @@ function setNoCacheHeaders(res) {
   setSecurityAndNoCacheHeaders(res, false);
 }
 
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({ limit: '25mb' }));
 
 // Global Security Headers + US-Only Geo-Fencing Middleware
 app.use((req, res, next) => {
@@ -1433,8 +1437,11 @@ app.get('/api/security/export/qa-csv', async (req, res) => {
 // Export PowerPoint Dashboard Tables as CSV (Slides 3, 4, 5, 6, 7, 8, 10)
 app.get('/api/export/csv/:tableKey', async (req, res) => {
   const clientId = req.clientId || 'damien';
-  const state = await ensureClientStateLoaded(clientId);
-  const data = state.data || {};
+  const usePreview = req.query.preview === '1' && isCallerBridgeAdmin(req);
+  const state = usePreview
+    ? ((await ensureClientDraftStateLoaded(clientId)) || (await ensureClientStateLoaded(clientId)))
+    : (await ensureClientStateLoaded(clientId));
+  const data = state.data || state || {};
   const meta = data.meta || {};
   const shortPrefix = String(meta.shortName || clientId).replace(/[^A-Za-z0-9_-]/g, '_');
   const asOfSuffix = String(meta.asOfShort || 'Sep2026').replace(/[^A-Za-z0-9_-]/g, '');
@@ -1603,9 +1610,10 @@ app.use(express.static(path.join(__dirname, 'public'), {
 }));
 
 // ============================================================================
-// PER-CLIENT STATE MANAGER (POWERPOINT DECK DATA ONLY)
+// PER-CLIENT STATE MANAGER & DYNAMIC 10-SLIDE POWERPOINT (.PPTX) ENGINE
 // ============================================================================
-const clientStates = {};       // clientId -> hydrated portalData object
+const clientStates = {};       // clientId -> published portalData object
+const clientDraftStates = {};  // clientId -> staged draft portalData object (bridge_admin preview only)
 const clientInitPromises = {}; // clientId -> Promise
 
 function getClientBaselinePath(clientId) {
@@ -1614,9 +1622,12 @@ function getClientBaselinePath(clientId) {
   return path.join(__dirname, 'data', 'portal_data.json');
 }
 
-function loadClientBaseline(clientId) {
-  const raw = JSON.parse(fs.readFileSync(getClientBaselinePath(clientId), 'utf8'));
-  // Ensure any Excel-sourced keys (worklists, worklistSummary, enrollmentReporting, analysisWorkbook) are stripped
+function getClientDraftPath(clientId) {
+  return path.join(CLIENTS_DIR, clientId, 'portal_data_draft.json');
+}
+
+function sanitizePortalDataObject(raw) {
+  if (!raw || typeof raw !== 'object') return raw;
   delete raw.worklists;
   delete raw.worklistSummary;
   delete raw.enrollmentReporting;
@@ -1627,6 +1638,708 @@ function loadClientBaseline(clientId) {
     }
   }
   return raw;
+}
+
+function loadClientBaseline(clientId) {
+  const raw = JSON.parse(fs.readFileSync(getClientBaselinePath(clientId), 'utf8'));
+  return sanitizePortalDataObject(raw);
+}
+
+function loadClientDraftFromDisk(clientId) {
+  const p = getClientDraftPath(clientId);
+  if (!fs.existsSync(p)) return null;
+  try {
+    const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
+    return sanitizePortalDataObject(raw);
+  } catch (_) {
+    return null;
+  }
+}
+
+function readZipEntries(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 22 || buffer.readUInt32LE(0) !== 0x04034b50) {
+    throw new Error('Uploaded file is not a valid PowerPoint (.pptx) ZIP archive.');
+  }
+  const entries = {};
+  let eocdOffset = -1;
+  for (let i = buffer.length - 22; i >= Math.max(0, buffer.length - 65557); i--) {
+    if (buffer.readUInt32LE(i) === 0x06054b50) {
+      eocdOffset = i;
+      break;
+    }
+  }
+  if (eocdOffset < 0) {
+    throw new Error('Invalid PowerPoint (.pptx) archive: End of Central Directory not found.');
+  }
+  const cdCount = buffer.readUInt16LE(eocdOffset + 10);
+  const cdOffset = buffer.readUInt32LE(eocdOffset + 16);
+  let pos = cdOffset;
+  for (let i = 0; i < cdCount; i++) {
+    if (pos + 46 > buffer.length || buffer.readUInt32LE(pos) !== 0x02014b50) break;
+    const compMethod = buffer.readUInt16LE(pos + 10);
+    const compSize = buffer.readUInt32LE(pos + 20);
+    const fnLen = buffer.readUInt16LE(pos + 28);
+    const extraLen = buffer.readUInt16LE(pos + 30);
+    const commentLen = buffer.readUInt16LE(pos + 32);
+    const localHdrOffset = buffer.readUInt32LE(pos + 42);
+    const name = buffer.slice(pos + 46, pos + 46 + fnLen).toString('utf8');
+    pos += 46 + fnLen + extraLen + commentLen;
+    if (localHdrOffset + 30 > buffer.length || buffer.readUInt32LE(localHdrOffset) !== 0x04034b50) continue;
+    const lFnLen = buffer.readUInt16LE(localHdrOffset + 26);
+    const lExtraLen = buffer.readUInt16LE(localHdrOffset + 28);
+    const dataStart = localHdrOffset + 30 + lFnLen + lExtraLen;
+    const compData = buffer.slice(dataStart, dataStart + compSize);
+    if (compMethod === 0) {
+      entries[name] = compData.toString('utf8');
+    } else if (compMethod === 8) {
+      entries[name] = zlib.inflateRawSync(compData).toString('utf8');
+    }
+  }
+  return entries;
+}
+
+function decodeXmlEntities(s) {
+  return String(s || '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+}
+
+function extractTextParagraphsFromXml(xmlBlock) {
+  const paras = [];
+  const pRe = /<a:p\b[^>]*>([\s\S]*?)<\/a:p>/g;
+  let pm;
+  while ((pm = pRe.exec(xmlBlock)) !== null) {
+    const tRe = /<a:t\b[^>]*>([\s\S]*?)<\/a:t>/g;
+    let tm;
+    let line = '';
+    while ((tm = tRe.exec(pm[1])) !== null) {
+      line += decodeXmlEntities(tm[1]);
+    }
+    if (line.trim()) paras.push(line.trim());
+  }
+  return paras;
+}
+
+function parseChartXmlFromPptx(chartXml) {
+  if (!chartXml) return null;
+  const titleParas = [];
+  const titleMatch = chartXml.match(/<c:title\b[^>]*>([\s\S]*?)<\/c:title>/);
+  if (titleMatch) {
+    titleParas.push(...extractTextParagraphsFromXml(titleMatch[1]));
+  }
+  const series = [];
+  const serRe = /<c:ser\b[^>]*>([\s\S]*?)<\/c:ser>/g;
+  let sm;
+  while ((sm = serRe.exec(chartXml)) !== null) {
+    const serBlock = sm[1];
+    let name = '';
+    const txMatch = serBlock.match(/<c:tx\b[^>]*>([\s\S]*?)<\/c:tx>/);
+    if (txMatch) {
+      const vMatch = txMatch[1].match(/<c:v\b[^>]*>([\s\S]*?)<\/c:v>/);
+      if (vMatch) name = decodeXmlEntities(vMatch[1]).trim();
+    }
+    const cats = [];
+    const catMatch = serBlock.match(/<c:cat\b[^>]*>([\s\S]*?)<\/c:cat>/);
+    if (catMatch) {
+      const ptRe = /<c:pt\b[^>]*idx="(\d+)"[^>]*>\s*<c:v\b[^>]*>([\s\S]*?)<\/c:v>\s*<\/c:pt>/g;
+      let pm;
+      while ((pm = ptRe.exec(catMatch[1])) !== null) {
+        cats[Number(pm[1])] = decodeXmlEntities(pm[2]).trim();
+      }
+    }
+    const vals = [];
+    const valMatch = serBlock.match(/<c:val\b[^>]*>([\s\S]*?)<\/c:val>/);
+    if (valMatch) {
+      const ptRe = /<c:pt\b[^>]*idx="(\d+)"[^>]*>\s*<c:v\b[^>]*>([\s\S]*?)<\/c:v>\s*<\/c:pt>/g;
+      let pm;
+      while ((pm = ptRe.exec(valMatch[1])) !== null) {
+        vals[Number(pm[1])] = Number(pm[2]);
+      }
+    }
+    series.push({
+      name,
+      categories: cats.filter(x => x !== undefined),
+      values: vals.filter(x => x !== undefined)
+    });
+  }
+  return { title: titleParas.join(' ').trim(), series };
+}
+
+function parseSlideFromPptxEntries(entries, slideIndex) {
+  const sXml = entries[`ppt/slides/slide${slideIndex}.xml`];
+  if (!sXml) {
+    throw new Error(`Missing Slide ${slideIndex} (ppt/slides/slide${slideIndex}.xml) — deck must contain all 10 program slides.`);
+  }
+  const rXml = entries[`ppt/slides/_rels/slide${slideIndex}.xml.rels`] || '';
+  const shapes = [];
+  const spRe = /<p:sp\b[^>]*>([\s\S]*?)<\/p:sp>/g;
+  let m;
+  while ((m = spRe.exec(sXml)) !== null) {
+    const ps = extractTextParagraphsFromXml(m[1]);
+    if (ps.length) shapes.push(ps);
+  }
+  const tables = [];
+  const tblRe = /<a:tbl\b[^>]*>([\s\S]*?)<\/a:tbl>/g;
+  while ((m = tblRe.exec(sXml)) !== null) {
+    const rows = [];
+    const trRe = /<a:tr\b[^>]*>([\s\S]*?)<\/a:tr>/g;
+    let trm;
+    while ((trm = trRe.exec(m[1])) !== null) {
+      const cells = [];
+      const tcRe = /<a:tc\b[^>]*>([\s\S]*?)<\/a:tc>/g;
+      let tcm;
+      while ((tcm = tcRe.exec(trm[1])) !== null) {
+        cells.push(extractTextParagraphsFromXml(tcm[1]).join(' '));
+      }
+      rows.push(cells);
+    }
+    tables.push(rows);
+  }
+  const charts = [];
+  const relRe = /Target="\.\.\/charts\/(chart\d+\.xml)"/g;
+  while ((m = relRe.exec(rXml)) !== null) {
+    const parsedChart = parseChartXmlFromPptx(entries[`ppt/charts/${m[1]}`]);
+    if (parsedChart) charts.push(parsedChart);
+  }
+  return { shapes, tables, charts };
+}
+
+function parseMoneyOrNumeric(raw) {
+  if (raw === null || raw === undefined) return 0;
+  const s = String(raw).trim();
+  if (!s || s === '—' || s === '-') return 0;
+  const isNeg = /^[−-]/.test(s) || s.includes('−') || s.startsWith('(');
+  const digits = s.replace(/[^0-9.]/g, '');
+  if (!digits) return 0;
+  let val = Number(digits);
+  if (/K\b/i.test(s)) val *= 1000;
+  if (/M\b/i.test(s)) val *= 1000000;
+  return isNeg ? -val : val;
+}
+
+const PPTX_MONTH_NAME_MAP = {
+  january: { num: '01', short: 'Jan', full: 'January' },
+  february: { num: '02', short: 'Feb', full: 'February' },
+  march: { num: '03', short: 'Mar', full: 'March' },
+  april: { num: '04', short: 'Apr', full: 'April' },
+  may: { num: '05', short: 'May', full: 'May' },
+  june: { num: '06', short: 'Jun', full: 'June' },
+  july: { num: '07', short: 'Jul', full: 'July' },
+  august: { num: '08', short: 'Aug', full: 'August' },
+  september: { num: '09', short: 'Sep', full: 'September' },
+  october: { num: '10', short: 'Oct', full: 'October' },
+  november: { num: '11', short: 'Nov', full: 'November' },
+  december: { num: '12', short: 'Dec', full: 'December' }
+};
+
+function parsePptxBufferToPortalData(buffer, baselineState) {
+  const entries = readZipEntries(buffer);
+  const slides = {};
+  for (let i = 1; i <= 10; i++) {
+    slides[i] = parseSlideFromPptxEntries(entries, i);
+  }
+
+  const out = JSON.parse(JSON.stringify(baselineState || {}));
+
+  // SLIDE 1: Title, Subtitle, As-Of Date
+  const s1Texts = slides[1].shapes.flat();
+  const programTitle = s1Texts[0] || out.meta?.programTitle || 'Damien Center GLP-1 Weight Loss Program';
+  const subtitle = s1Texts.find(t => /through/i.test(t)) || s1Texts[1] || out.meta?.subtitle || 'Program performance through September 30, 2026';
+  const prepLine = s1Texts.find(t => /Prepared by/i.test(t)) || 'Prepared by Bridge Health Hub';
+  const preparedBy = prepLine.replace(/^Prepared by\s+/i, '').trim() || 'Bridge Health Hub';
+
+  let asOfDateFormatted = out.meta?.asOfDateFormatted || 'September 30, 2026';
+  let asOfDate = out.meta?.asOfDate || '2026-09-30';
+  let asOfShort = out.meta?.asOfShort || 'Sep2026';
+  let cutoffMonthName = out.meta?.cutoffMonthName || 'September';
+
+  const dateMatch = subtitle.match(/through\s+([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})/i);
+  if (dateMatch) {
+    const mInfo = PPTX_MONTH_NAME_MAP[dateMatch[1].toLowerCase()];
+    const dayStr = String(dateMatch[2]).padStart(2, '0');
+    const yrStr = dateMatch[3];
+    if (mInfo) {
+      asOfDateFormatted = `${mInfo.full} ${Number(dateMatch[2])}, ${yrStr}`;
+      asOfDate = `${yrStr}-${mInfo.num}-${dayStr}`;
+      asOfShort = `${mInfo.short}${yrStr}`;
+      cutoffMonthName = mInfo.full;
+    }
+  }
+
+  // SLIDE 2: Summary, Active Members Chart, KPIs, What You Need To Know
+  const s2 = slides[2];
+  const s2Chart = s2.charts[0] || {};
+  const s2Series = s2Chart.series?.[0] || {};
+  const months = s2Series.categories?.length ? s2Series.categories : (out.meta?.months || ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep']);
+  const activeValues = s2Series.values?.length ? s2Series.values.map(v => Math.round(v)) : (out.slide2_summary?.activeMembersByMonth?.values || []);
+
+  out.meta = {
+    ...(out.meta || {}),
+    programTitle,
+    subtitle,
+    preparedBy,
+    asOfDate,
+    asOfDateFormatted,
+    asOfShort,
+    cutoffMonthName,
+    months
+  };
+
+  const s2Flat = s2.shapes.map(arr => arr.join('\n'));
+  const s2Headline = s2Flat[1] || out.slide2_summary?.headline || '';
+
+  const findNextShapeValue = (shapesArr, labelRegex) => {
+    for (let i = 0; i < shapesArr.length - 1; i++) {
+      const txt = shapesArr[i].join(' ').trim();
+      if (labelRegex.test(txt)) {
+        return {
+          label: txt,
+          value: shapesArr[i + 1].join(' ').trim(),
+          subtext: shapesArr[i + 2] ? shapesArr[i + 2].join(' ').trim() : ''
+        };
+      }
+    }
+    return null;
+  };
+
+  // SLIDE 3: Program Financials
+  const s3 = slides[3];
+  const s3Headline = s3.shapes[1]?.join(' ') || out.slide3_financials?.headline || '';
+  const s3Footnote = s3.shapes.find(a => a.join(' ').includes('Proceeds ='))?.join(' ') || out.slide3_financials?.footnote || '';
+  const s3Chart = s3.charts[0]?.series?.[0] || {};
+  const proceedsMonths = s3Chart.categories?.length ? s3Chart.categories : months;
+  const proceedsValues = s3Chart.values?.length ? s3Chart.values.map(v => Math.round(v)) : (out.slide3_financials?.monthlyProceeds?.values || []);
+
+  const s3TableRows = s3.tables[0] || [];
+  const ytdTable = [];
+  for (let r = 1; r < s3TableRows.length; r++) {
+    const [item, formatted] = s3TableRows[r];
+    if (!item) continue;
+    const amount = parseMoneyOrNumeric(formatted);
+    let type = 'expense';
+    if (/Pharmacy revenue/i.test(item)) type = 'revenue';
+    else if (/gross margin/i.test(item)) type = 'subtotal';
+    else if (/Membership fees/i.test(item)) type = 'positive';
+    else if (/Program proceeds/i.test(item)) type = 'total';
+    ytdTable.push({ item: item.trim(), amount, formatted: formatted.trim(), type });
+  }
+
+  const gmPerFillMatch = s3Footnote.match(/gross margin per fill:\s*\$?([\d,]+)/i);
+  const septemberGrossMarginPerFill = gmPerFillMatch ? Number(gmPerFillMatch[1].replace(/,/g, '')) : (out.slide3_financials?.septemberGrossMarginPerFill || 911);
+  const costFillRow = ytdTable.find(r => /Cost to fill/i.test(r.item));
+  const costPerFillMatch = (costFillRow?.item || s3Footnote).match(/\$(\d+)\s*(?:per fill|cost to fill)/i);
+  const costPerFill = costPerFillMatch ? Number(costPerFillMatch[1]) : 40;
+  const totalFillsInPnl = costFillRow && costPerFill > 0 ? Math.round(Math.abs(costFillRow.amount) / costPerFill) : (out.slide3_financials?.totalFillsInPnl || 2034);
+
+  out.slide3_financials = {
+    sectionTitle: s3.shapes[0]?.join(' ') || 'PROGRAM FINANCIALS',
+    headline: s3Headline,
+    monthlyProceeds: {
+      title: s3.charts[0]?.title || 'Monthly program proceeds (after ad spend)',
+      months: proceedsMonths,
+      values: proceedsValues
+    },
+    ytdTable: ytdTable.length ? ytdTable : out.slide3_financials.ytdTable,
+    septemberGrossMarginPerFill,
+    costPerFill,
+    totalFillsInPnl,
+    footnote: s3Footnote
+  };
+
+  // SLIDE 8: Medication Mix
+  const s8 = slides[8];
+  const s8Headline = s8.shapes[1]?.join(' ') || out.slide8_medMix?.headline || '';
+  const s8Note = s8.shapes.find(a => a.join(' ').includes('Completed Wegovy'))?.join(' ') || out.slide8_medMix?.note || '';
+  const s8Series = s8.charts[0]?.series || [];
+  const penSer = s8Series.find(s => /Pen/i.test(s.name)) || s8Series[0] || {};
+  const pillSer = s8Series.find(s => /Pill/i.test(s.name)) || s8Series[1] || {};
+  const ozSer = s8Series.find(s => /Ozempic/i.test(s.name)) || s8Series[2] || {};
+  const medMonths = penSer.categories?.length ? penSer.categories : months;
+  const wegovyPen = (penSer.values || []).map(v => Math.round(v));
+  const wegovyPill = (pillSer.values || []).map(v => Math.round(v));
+  const ozempic = (ozSer.values || []).map(v => Math.round(v));
+
+  const lastIdx = Math.max(0, wegovyPen.length - 1);
+  const lastPen = wegovyPen[lastIdx] ?? 411;
+  const lastPill = wegovyPill[lastIdx] ?? 256;
+  const lastOz = ozempic[lastIdx] ?? 6;
+  const lastMedTotal = Math.max(1, lastPen + lastPill + lastOz);
+
+  const penLabelShape = s8.shapes.find(a => /pen fills/i.test(a.join(' ')))?.join(' ') || `Wegovy pen fills, ${months[months.length - 1]}`;
+  const pillLabelShape = s8.shapes.find(a => /pill fills/i.test(a.join(' ')))?.join(' ') || `Wegovy pill fills, ${months[months.length - 1]}`;
+  const ozLabelShape = s8.shapes.find(a => /Ozempic fills/i.test(a.join(' ')))?.join(' ') || `Ozempic fills, ${months[months.length - 1]}`;
+
+  out.slide8_medMix = {
+    sectionTitle: s8.shapes[0]?.join(' ') || 'WHAT ARE PATIENTS FILLING?',
+    headline: s8Headline,
+    chart: {
+      months: medMonths,
+      wegovyPen,
+      wegovyPill,
+      ozempic
+    },
+    septemberCallouts: [
+      { value: lastPen, share: `${((lastPen / lastMedTotal) * 100).toFixed(1)}%`, label: penLabelShape, color: '#154672' },
+      { value: lastPill, share: `${((lastPill / lastMedTotal) * 100).toFixed(1)}%`, label: pillLabelShape, color: '#26ABE4' },
+      { value: lastOz, share: `${((lastOz / lastMedTotal) * 100).toFixed(1)}%`, label: ozLabelShape, color: '#1BAF7A' }
+    ],
+    note: s8Note
+  };
+
+  // Build Slide 2 KPIs dynamically from Slide 2 + Slide 3 + Slide 8
+  const kpiActive = findNextShapeValue(s2.shapes, /^Active members/i);
+  const kpiFills = findNextShapeValue(s2.shapes, /^GLP-1 fills/i);
+  const kpiProcMo = findNextShapeValue(s2.shapes, /^Program proceeds,\s*(?!YTD)/i);
+  const kpiProcYtd = findNextShapeValue(s2.shapes, /^Program proceeds,\s*YTD/i);
+  const kpiFirstFill = findNextShapeValue(s2.shapes, /^Sign-ups who filled/i);
+  const kpiRefill = findNextShapeValue(s2.shapes, /^1st-fill patients who refilled/i);
+
+  const lastActive = activeValues[activeValues.length - 1] ?? 862;
+  const prevActive = activeValues[activeValues.length - 2] ?? 644;
+  const prevMonthLabel = months[months.length - 2] || 'Aug';
+  const activeMomPct = prevActive > 0 ? (((lastActive - prevActive) / prevActive) * 100).toFixed(1) : '0.0';
+  const lastProceeds = proceedsValues[proceedsValues.length - 1] ?? 371214;
+  const ytdProceedsRow = ytdTable.find(r => /Program proceeds/i.test(r.item));
+  const ytdProceedsExact = ytdProceedsRow ? ytdProceedsRow.amount : 961691;
+
+  const knowHeadingIdx = s2.shapes.findIndex(a => /What you need to know/i.test(a.join(' ')));
+  const knowParas = (knowHeadingIdx >= 0 && s2.shapes[knowHeadingIdx + 1]) ? s2.shapes[knowHeadingIdx + 1] : [];
+  const defaultKnow = out.slide2_summary?.whatYouNeedToKnow || [];
+  const whatYouNeedToKnow = knowParas.length
+    ? knowParas.map((p, idx) => {
+        const dotIdx = p.indexOf('.');
+        const title = dotIdx > 0 ? p.slice(0, dotIdx + 1).trim() : (defaultKnow[idx]?.title || 'Key Insight.');
+        let body = dotIdx > 0 ? p.slice(dotIdx + 1).trim() : p.trim();
+        if (body && !/[.!?]$/.test(body)) body += '.';
+        const fallback = defaultKnow[idx] || { targetView: 'summary', badge: 'Insight' };
+        return {
+          title,
+          body,
+          targetView: fallback.targetView || 'summary',
+          badge: fallback.badge || 'Insight'
+        };
+      })
+    : defaultKnow;
+
+  out.slide2_summary = {
+    sectionTitle: s2.shapes[0]?.join(' ') || 'SUMMARY',
+    headline: s2Headline,
+    kpis: [
+      {
+        id: 'active_sep',
+        label: kpiActive?.label || `Active members, ${months[months.length - 1]}`,
+        value: kpiActive?.value || String(lastActive),
+        numericValue: parseMoneyOrNumeric(kpiActive?.value || lastActive),
+        subtext: `+${activeMomPct}% vs ${prevMonthLabel} (${prevActive.toLocaleString()})`,
+        targetView: 'summary'
+      },
+      {
+        id: 'fills_sep',
+        label: kpiFills?.label || `GLP-1 fills, ${months[months.length - 1]}`,
+        value: kpiFills?.value || String(lastMedTotal),
+        numericValue: parseMoneyOrNumeric(kpiFills?.value || lastMedTotal),
+        subtext: `${lastPen} Pen · ${lastPill} Pill · ${lastOz} Ozempic`,
+        targetView: 'medmix'
+      },
+      {
+        id: 'proceeds_sep',
+        label: kpiProcMo?.label || `Program proceeds, ${months[months.length - 1]}`,
+        value: kpiProcMo?.value || `$${Math.round(lastProceeds / 1000)}K`,
+        numericValue: lastProceeds,
+        subtext: `$${lastProceeds.toLocaleString()} after ad spend`,
+        targetView: 'financials'
+      },
+      {
+        id: 'proceeds_ytd',
+        label: kpiProcYtd?.label || 'Program proceeds, YTD',
+        value: kpiProcYtd?.value || `$${Math.round(ytdProceedsExact / 1000)}K`,
+        numericValue: ytdProceedsExact,
+        subtext: `$${ytdProceedsExact.toLocaleString()} net of fees & media`,
+        targetView: 'financials'
+      },
+      {
+        id: 'first_fill_rate',
+        label: kpiFirstFill?.label || 'Sign-ups who filled 1st Rx',
+        value: kpiFirstFill?.value || '69%',
+        numericValue: parseMoneyOrNumeric(kpiFirstFill?.value || 69),
+        subtext: kpiFirstFill?.subtext || `Members joined before ${months[months.length - 1]}`,
+        targetView: 'funnel'
+      },
+      {
+        id: 'refill_rate',
+        label: kpiRefill?.label || '1st-fill patients who refilled',
+        value: kpiRefill?.value || '94%',
+        numericValue: parseMoneyOrNumeric(kpiRefill?.value || 94),
+        subtext: kpiRefill?.subtext || 'Patients with time to refill',
+        targetView: 'refill'
+      }
+    ],
+    activeMembersByMonth: {
+      title: 'Membership growth: active members by month',
+      subtitle: '(includes members that cancelled in-month)',
+      months,
+      values: activeValues
+    },
+    whatYouNeedToKnow
+  };
+
+  // SLIDE 4: Patient Sources
+  const s4 = slides[4];
+  const s4Palette = {
+    'EPIC': '#154672',
+    'Paid Media': '#26ABE4',
+    'Employee': '#1BAF7A',
+    'LHD': '#E97132',
+    'McGohan Brabender': '#8B5CF6',
+    'Other': '#6F7886'
+  };
+  const s4Chart = s4.charts[0] || {};
+  const s4Series = (s4Chart.series || []).map((ser, idx) => ({
+    name: ser.name,
+    values: (ser.values || []).map(v => Math.round(v)),
+    color: s4Palette[ser.name] || Object.values(s4Palette)[idx % 6]
+  }));
+  const s4Table = [];
+  const s4RawTable = s4.tables[0] || [];
+  for (let r = 1; r < s4RawTable.length; r++) {
+    const row = s4RawTable[r];
+    if (!row || !row[0]) continue;
+    const source = row[0].trim();
+    const sourceKey = source.replace(/\s*\(new since[^)]*\)/i, '').trim();
+    const enrolledSept = parseMoneyOrNumeric(row[1]);
+    const enrolledYtd = parseMoneyOrNumeric(row[2]);
+    const share = (row[3] || '0%').trim();
+    const filled1stRx = (row[4] || '0%').trim();
+    const refilled1to2 = (row[5] || '—').trim();
+    const glp1Fills = parseMoneyOrNumeric(row[6]);
+    const grossMarginFmt = (row[7] || '$0').trim();
+    const grossMargin = parseMoneyOrNumeric(grossMarginFmt);
+    const entry = {
+      source,
+      ...(sourceKey !== source ? { sourceKey } : {}),
+      enrolledSept,
+      enrolledYtd,
+      share,
+      shareNum: parseMoneyOrNumeric(share),
+      filled1stRx,
+      filled1stRxNum: parseMoneyOrNumeric(filled1stRx),
+      refilled1to2,
+      refilled1to2Num: refilled1to2 === '—' ? null : parseMoneyOrNumeric(refilled1to2),
+      glp1Fills,
+      grossMargin,
+      grossMarginFmt
+    };
+    s4Table.push(entry);
+  }
+
+  out.slide4_sources = {
+    sectionTitle: s4.shapes[0]?.join(' ') || 'WHERE ARE PATIENTS COMING FROM?',
+    headline: s4.shapes[1]?.join(' ') || out.slide4_sources?.headline || '',
+    chart: {
+      title: s4Chart.title || 'New enrollments by source and month',
+      months: s4Chart.series?.[0]?.categories || months,
+      series: s4Series.length ? s4Series : out.slide4_sources.chart.series
+    },
+    table: s4Table.length ? s4Table : out.slide4_sources.table,
+    footnote: s4.shapes.find(a => a.join(' ').includes('Fill rate uses'))?.join(' ') || out.slide4_sources?.footnote || ''
+  };
+
+  // SLIDE 5: Paid Media
+  const s5 = slides[5];
+  const s5Table = [];
+  const s5RawTable = s5.tables[0] || [];
+  for (let r = 1; r < s5RawTable.length; r++) {
+    const row = s5RawTable[r];
+    if (!row || !row[0]) continue;
+    const month = row[0].trim();
+    const spendFmt = (row[1] || '$0').trim();
+    const spend = parseMoneyOrNumeric(spendFmt);
+    const signups = parseMoneyOrNumeric(row[2]);
+    const spendPerSignup = (row[3] || '—').trim();
+    const started = parseMoneyOrNumeric(row[4]);
+    const spendPerStarted = (row[5] || '—').trim();
+    const fills = parseMoneyOrNumeric(row[6]);
+    const marginFmt = (row[7] || '$0').trim();
+    const margin = parseMoneyOrNumeric(marginFmt);
+    const roas = (row[8] || '').trim();
+    const isTotal = /total/i.test(month);
+    const item = {
+      month,
+      spend,
+      spendFmt,
+      signups,
+      spendPerSignup,
+      started,
+      spendPerStarted,
+      fills,
+      margin,
+      marginFmt,
+      roas
+    };
+    if (roas) item.roasNum = parseMoneyOrNumeric(roas);
+    if (isTotal) item.isTotal = true;
+    s5Table.push(item);
+  }
+  const s5TotalRow = s5Table.find(r => r.isTotal) || {};
+  const pmSpendKpi = findNextShapeValue(s5.shapes, /^Media spend/i);
+  const pmSignupsKpi = findNextShapeValue(s5.shapes, /^Paid Media sign-ups/i);
+  const pmStartedKpi = findNextShapeValue(s5.shapes, /^Started therapy/i);
+  const pmMarginKpi = findNextShapeValue(s5.shapes, /^Pharmacy gross margin/i);
+
+  out.slide5_paidMedia = {
+    sectionTitle: s5.shapes[0]?.join(' ') || 'IS PAID MEDIA PAYING OFF?',
+    headline: s5.shapes[1]?.join(' ') || out.slide5_paidMedia?.headline || '',
+    kpis: [
+      {
+        label: pmSpendKpi?.label || 'Media spend, campaign to date',
+        value: pmSpendKpi?.value || '$142K',
+        exact: s5TotalRow.spendFmt || '$142,033',
+        subtext: pmSpendKpi?.subtext || "Jan ‘26 – Sep '26"
+      },
+      {
+        label: pmSignupsKpi?.label || 'Paid Media sign-ups',
+        value: pmSignupsKpi?.value || String(s5TotalRow.signups || 414),
+        exact: `${s5TotalRow.signups || 414} sign-ups`,
+        subtext: pmSignupsKpi?.subtext || '$343 of spend per sign-up'
+      },
+      {
+        label: pmStartedKpi?.label || 'Started therapy',
+        value: pmStartedKpi?.value || String(s5TotalRow.started || 243),
+        exact: `${s5TotalRow.started || 243} patients`,
+        subtext: pmStartedKpi?.subtext || '$584 per patient started'
+      },
+      {
+        label: pmMarginKpi?.label || 'Pharmacy gross margin',
+        value: pmMarginKpi?.value || '$658K',
+        exact: s5TotalRow.marginFmt || '$658,361',
+        subtext: pmMarginKpi?.subtext || '786 fills from these patients'
+      }
+    ],
+    table: s5Table.length ? s5Table : out.slide5_paidMedia.table,
+    footnote: s5.shapes.find(a => a.join(' ').includes('Spend from the agency'))?.join(' ') || out.slide5_paidMedia?.footnote || ''
+  };
+
+  // SLIDE 6: First-Fill Funnel
+  const s6 = slides[6];
+  const s6Chart = s6.charts[0] || {};
+  const s6Ser = s6Chart.series?.[0] || {};
+  const s6Cats = s6Ser.categories || ['Enrolled', 'Saw a provider', 'Prescribed', 'Filled 1st Rx'];
+  const s6Vals = (s6Ser.values || [760, 684, 608, 523]).map(v => Math.round(v));
+  const enrolledBase = Math.max(1, s6Vals[0] || 760);
+  const s6Steps = s6Cats.map((stage, idx) => {
+    const patients = s6Vals[idx] ?? 0;
+    const prevPts = idx === 0 ? patients : (s6Vals[idx - 1] || 1);
+    return {
+      stage,
+      patients,
+      pctOfEnrolled: Math.round((patients / enrolledBase) * 100),
+      stepConversion: `${Math.round((patients / prevPts) * 100)}%`
+    };
+  });
+  const s6Dropoffs = [];
+  for (const sh of s6.shapes) {
+    if (sh.length === 2 && /^\d+$/.test(sh[0].trim())) {
+      s6Dropoffs.push({ count: Number(sh[0].trim()), label: sh[1].trim() });
+    }
+  }
+  const timingHeaderIdx = s6.shapes.findIndex(a => /Median time between steps/i.test(a.join(' ')));
+  const s6Timing = [];
+  if (timingHeaderIdx >= 0) {
+    for (let i = timingHeaderIdx + 1; i + 1 < s6.shapes.length; i += 2) {
+      const mTxt = s6.shapes[i].join(' ').trim();
+      const lTxt = s6.shapes[i + 1].join(' ').trim();
+      if (/^\d+$/.test(mTxt) && i + 1 === s6.shapes.length - 1) break;
+      s6Timing.push({ metric: mTxt, label: lTxt });
+    }
+  }
+
+  out.slide6_funnel = {
+    sectionTitle: s6.shapes[0]?.join(' ') || 'ARE PATIENTS SEEING A PROVIDER AND FILLING?',
+    headline: s6.shapes[1]?.join(' ') || out.slide6_funnel?.headline || '',
+    chartTitle: s6Chart.title || out.slide6_funnel?.chartTitle || 'Members who enrolled before September (760 patients)',
+    steps: s6Steps,
+    dropoffs: s6Dropoffs.length ? s6Dropoffs : out.slide6_funnel.dropoffs,
+    timing: s6Timing.length ? s6Timing : out.slide6_funnel.timing
+  };
+
+  // SLIDE 7: Refill Persistence
+  const s7 = slides[7];
+  const s7Chart = s7.charts[0] || {};
+  const s7Ser = s7Chart.series?.[0] || {};
+  const s7Footnote = s7.shapes.find(a => a.join(' ').includes('Step rates count'))?.join(' ') || out.slide7_refill?.footnote || '';
+  const fillCountMatches = [...s7Footnote.matchAll(/Fill\s+\d+\s+([\d,]+)/gi)].map(m => Number(m[1].replace(/,/g, '')));
+  const s7StepTable = [];
+  const s7RawTable = s7.tables[0] || [];
+  for (let r = 1; r < s7RawTable.length; r++) {
+    const row = s7RawTable[r];
+    if (!row || !row[0]) continue;
+    const step = row[0].trim();
+    const cameBack = (row[1] || '0%').trim();
+    const eligiblePts = parseMoneyOrNumeric(row[2]);
+    s7StepTable.push({
+      step,
+      cameBack,
+      cameBackNum: parseMoneyOrNumeric(cameBack),
+      eligiblePts,
+      lowSample: eligiblePts < 30
+    });
+  }
+
+  out.slide7_refill = {
+    sectionTitle: s7.shapes[0]?.join(' ') || 'ARE PATIENTS REFILLING?',
+    headline: s7.shapes[1]?.join(' ') || out.slide7_refill?.headline || '',
+    chart: {
+      title: s7Chart.title || 'Share of patients who started therapy still filling, by fill number',
+      fills: s7Ser.categories || ['Fill 1', 'Fill 2', 'Fill 3', 'Fill 4', 'Fill 5', 'Fill 6', 'Fill 7', 'Fill 8'],
+      shareStillFilling: (s7Ser.values || []).map(v => Number(Number(v).toFixed(1))),
+      patientCounts: fillCountMatches.length ? fillCountMatches : (out.slide7_refill?.chart?.patientCounts || [670, 494, 311, 203, 118, 68, 41, 24])
+    },
+    stepTable: s7StepTable.length ? s7StepTable : out.slide7_refill.stepTable,
+    footnote: s7Footnote
+  };
+
+  // SLIDE 9: Appendix Definitions
+  const s9 = slides[9];
+  const s9Notes = s9.shapes[2] || out.slide9_appendix?.notes || [];
+  out.slide9_appendix = {
+    sectionTitle: s9.shapes[0]?.join(' ') || 'APPENDIX',
+    headline: s9.shapes[1]?.join(' ') || 'Definitions and data notes',
+    notes: s9Notes
+  };
+
+  // SLIDE 10: Cohort Retention Matrix
+  const s10 = slides[10];
+  const s10RawTable = s10.tables[0] || [];
+  const s10Cols = s10RawTable[0] || ['Joined', 'Members', 'M0', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8'];
+  const s10Rows = [];
+  for (let r = 1; r < s10RawTable.length; r++) {
+    const row = s10RawTable[r];
+    if (!row || !row[0]) continue;
+    const obj = {
+      joined: row[0].trim(),
+      members: parseMoneyOrNumeric(row[1])
+    };
+    for (let c = 2; c < s10Cols.length; c++) {
+      const colName = s10Cols[c].trim();
+      obj[colName] = (row[c] || '').trim();
+    }
+    s10Rows.push(obj);
+  }
+
+  out.slide10_retention = {
+    sectionTitle: s10.shapes[0]?.join(' ') || 'HOW LONG ARE PATIENTS STAYING?',
+    headline: s10.shapes[1]?.join(' ') || 'Appendix – Member retention by month',
+    columns: s10Cols,
+    rows: s10Rows.length ? s10Rows : out.slide10_retention.rows,
+    footnote: s10.shapes.find(a => a.join(' ').includes('Share of each sign-up'))?.join(' ') || out.slide10_retention?.footnote || ''
+  };
+
+  return sanitizePortalDataObject(out);
 }
 
 let _cachedGcpToken = null;
@@ -1770,7 +2483,13 @@ async function ensureClientStateLoaded(clientId) {
   if (clientInitPromises[clientId]) return clientInitPromises[clientId];
 
   clientInitPromises[clientId] = (async () => {
-    const baseline = loadClientBaseline(clientId);
+    let baseline = loadClientBaseline(clientId);
+    if (GCS_STATE_BUCKET) {
+      const remotePub = await loadJsonFromGcs(`clients/${clientId}/portal_data.json`);
+      if (remotePub && remotePub.meta && remotePub.slide2_summary) {
+        baseline = sanitizePortalDataObject(remotePub);
+      }
+    }
     clientStates[clientId] = baseline;
     return baseline;
   })();
@@ -1780,6 +2499,46 @@ async function ensureClientStateLoaded(clientId) {
   } finally {
     delete clientInitPromises[clientId];
   }
+}
+
+async function ensureClientDraftStateLoaded(clientId) {
+  if (clientDraftStates[clientId] !== undefined) return clientDraftStates[clientId];
+  let draft = loadClientDraftFromDisk(clientId);
+  if (!draft && GCS_STATE_BUCKET) {
+    const remoteDraft = await loadJsonFromGcs(`clients/${clientId}/portal_data_draft.json`);
+    if (remoteDraft && remoteDraft.meta && remoteDraft.slide2_summary) {
+      draft = sanitizePortalDataObject(remoteDraft);
+    }
+  }
+  clientDraftStates[clientId] = draft || null;
+  return clientDraftStates[clientId];
+}
+
+function summarizeReportState(state) {
+  if (!state || !state.meta) return null;
+  const s2 = state.slide2_summary || {};
+  const s3 = state.slide3_financials || {};
+  const activeKpi = s2.kpis?.find(k => k.id === 'active_sep');
+  const fillsKpi = s2.kpis?.find(k => k.id === 'fills_sep');
+  const procValues = s3.monthlyProceeds?.values || [];
+  const lastProc = procValues[procValues.length - 1] ?? 0;
+  const ytdProcRow = s3.ytdTable?.find(r => /Program proceeds/i.test(r.item));
+  return {
+    asOfDateFormatted: state.meta.asOfDateFormatted || 'September 30, 2026',
+    asOfShort: state.meta.asOfShort || 'Sep2026',
+    cutoffMonthName: state.meta.cutoffMonthName || 'September',
+    monthsCount: (state.meta.months || []).length,
+    activeMembers: activeKpi?.numericValue ?? activeKpi?.value ?? 0,
+    activeMembersFmt: activeKpi?.value || String(activeKpi?.numericValue || 0),
+    fills: fillsKpi?.numericValue ?? fillsKpi?.value ?? 0,
+    fillsFmt: fillsKpi?.value || String(fillsKpi?.numericValue || 0),
+    latestMonthlyProceeds: lastProc,
+    latestMonthlyProceedsFmt: `$${Number(lastProc || 0).toLocaleString()}`,
+    ytdProceedsFmt: ytdProcRow?.formatted || '$961,691',
+    stagedFilename: state.meta.stagedFilename || null,
+    stagedAt: state.meta.stagedAt || null,
+    stagedBy: state.meta.stagedBy || null
+  };
 }
 
 // Health check (unauthenticated for Cloud Run startup/liveness probes; exposes zero tenant PII)
@@ -1800,17 +2559,213 @@ app.get('/api/health', async (req, res) => {
 });
 
 // Full portal data for authenticated tenant (PowerPoint Slides 1–10 only)
+// Supports ?preview=1 strictly for Bridge Super-Admins (bridge_admin) when a staged draft exists
 app.get('/api/portal-data', async (req, res) => {
   const clientId = req.clientId || 'damien';
-  const state = await ensureClientStateLoaded(clientId);
+  const isAdmin = isCallerBridgeAdmin(req);
+  const draftState = isAdmin ? await ensureClientDraftStateLoaded(clientId) : null;
+  const usePreview = Boolean(isAdmin && req.query.preview === '1' && draftState);
+  const state = usePreview ? draftState : await ensureClientStateLoaded(clientId);
+
   if (req.query.silent !== '1') {
     recordAuditEvent(req, 'PORTAL_LOADED', {
       clientId,
       clientName: state.meta?.client || clientId,
-      activeView: 'summary'
+      activeView: 'summary',
+      previewMode: usePreview
     });
   }
+  res.setHeader('X-Bridge-Preview-Mode', usePreview ? '1' : '0');
+  res.setHeader('X-Bridge-Has-Draft', draftState ? '1' : '0');
   res.json(state);
+});
+
+// ============================================================================
+// ADMIN MONTHLY POWERPOINT (.PPTX) UPLOAD, STAGED PREVIEW & PUBLISH API
+// STRICT RBAC: ONLY Bridge Super-Admins (bridge_admin) CAN ACCESS
+// ============================================================================
+app.get('/api/admin/report-status', async (req, res) => {
+  if (!isCallerBridgeAdmin(req)) {
+    return res.status(403).json({ ok: false, error: 'Forbidden: Only Bridge Super-Admins (bridge_admin) can view report staging status.' });
+  }
+  const clientId = req.clientId || 'damien';
+  const [published, draft] = await Promise.all([
+    ensureClientStateLoaded(clientId),
+    ensureClientDraftStateLoaded(clientId)
+  ]);
+  res.json({
+    ok: true,
+    clientId,
+    published: summarizeReportState(published),
+    hasDraft: Boolean(draft),
+    draft: draft ? summarizeReportState(draft) : null
+  });
+});
+
+app.post('/api/admin/upload-pptx', async (req, res) => {
+  if (!isCallerBridgeAdmin(req)) {
+    recordAuditEvent(req, 'UNAUTHORIZED_ADMIN_ATTEMPT', { endpoint: '/api/admin/upload-pptx', method: 'POST' });
+    return res.status(403).json({
+      ok: false,
+      error: 'Forbidden: Only Bridge Super-Admins (bridge_admin) can upload PowerPoint report decks.'
+    });
+  }
+  const clientId = req.clientId || 'damien';
+  const { filename, fileBase64 } = req.body || {};
+  const cleanName = String(filename || 'Monthly_Program_Dashboard.pptx').trim();
+  if (!/\.pptx$/i.test(cleanName)) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Only PowerPoint (.pptx) files are accepted. Excel (.xlsx/.xls) and other file types are rejected.'
+    });
+  }
+  if (!fileBase64 || typeof fileBase64 !== 'string') {
+    return res.status(400).json({ ok: false, error: 'Missing fileBase64 payload.' });
+  }
+
+  let buffer;
+  try {
+    const rawB64 = fileBase64.includes(',') ? fileBase64.split(',').pop() : fileBase64;
+    buffer = Buffer.from(rawB64, 'base64');
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: 'Invalid base64 encoding for .pptx file.' });
+  }
+
+  try {
+    const publishedState = await ensureClientStateLoaded(clientId);
+    const parsedDraft = parsePptxBufferToPortalData(buffer, publishedState);
+    parsedDraft.meta = {
+      ...(parsedDraft.meta || {}),
+      clientId,
+      stagedFilename: cleanName,
+      stagedAt: new Date().toISOString(),
+      stagedBy: req.authenticatedUser
+    };
+
+    clientDraftStates[clientId] = parsedDraft;
+    try {
+      const draftPath = getClientDraftPath(clientId);
+      fs.mkdirSync(path.dirname(draftPath), { recursive: true });
+      fs.writeFileSync(draftPath, JSON.stringify(parsedDraft, null, 2), 'utf8');
+    } catch (e) {
+      console.warn('Could not save portal_data_draft.json locally:', e.message);
+    }
+    if (typeof saveJsonToGcsAsync === 'function') {
+      saveJsonToGcsAsync(`clients/${clientId}/portal_data_draft.json`, parsedDraft);
+    }
+
+    const summary = summarizeReportState(parsedDraft);
+    recordAuditEvent(req, 'PPTX_DRAFT_UPLOADED', {
+      filename: cleanName,
+      asOfDateFormatted: summary.asOfDateFormatted,
+      activeMembers: summary.activeMembers,
+      fills: summary.fills,
+      ytdProceedsFmt: summary.ytdProceedsFmt
+    });
+
+    res.json({
+      ok: true,
+      message: `Staged '${cleanName}' (${summary.asOfDateFormatted}) in Preview Mode. Client users continue seeing ${publishedState.meta?.asOfDateFormatted || 'the current published report'} until you click Publish.`,
+      hasDraft: true,
+      draft: summary,
+      published: summarizeReportState(publishedState)
+    });
+  } catch (err) {
+    return res.status(400).json({
+      ok: false,
+      error: err.message || 'Failed to parse 10-slide PowerPoint deck.'
+    });
+  }
+});
+
+app.post('/api/admin/publish-pptx', async (req, res) => {
+  if (!isCallerBridgeAdmin(req)) {
+    recordAuditEvent(req, 'UNAUTHORIZED_ADMIN_ATTEMPT', { endpoint: '/api/admin/publish-pptx', method: 'POST' });
+    return res.status(403).json({
+      ok: false,
+      error: 'Forbidden: Only Bridge Super-Admins (bridge_admin) can publish staged PowerPoint reports.'
+    });
+  }
+  const clientId = req.clientId || 'damien';
+  const draft = await ensureClientDraftStateLoaded(clientId);
+  if (!draft) {
+    return res.status(400).json({ ok: false, error: 'No staged PowerPoint draft found to publish.' });
+  }
+
+  const nextPublished = JSON.parse(JSON.stringify(draft));
+  delete nextPublished.meta.stagedFilename;
+  delete nextPublished.meta.stagedAt;
+  delete nextPublished.meta.stagedBy;
+
+  clientStates[clientId] = nextPublished;
+  clientDraftStates[clientId] = null;
+
+  try {
+    const pubPath = getClientBaselinePath(clientId);
+    fs.mkdirSync(path.dirname(pubPath), { recursive: true });
+    fs.writeFileSync(pubPath, JSON.stringify(nextPublished, null, 2), 'utf8');
+    if (clientId === 'damien') {
+      const legacyPath = path.join(__dirname, 'data', 'portal_data.json');
+      fs.writeFileSync(legacyPath, JSON.stringify(nextPublished, null, 2), 'utf8');
+    }
+    const draftPath = getClientDraftPath(clientId);
+    if (fs.existsSync(draftPath)) fs.unlinkSync(draftPath);
+  } catch (e) {
+    console.warn('Could not write published portal_data.json locally:', e.message);
+  }
+
+  if (typeof saveJsonToGcsAsync === 'function') {
+    saveJsonToGcsAsync(`clients/${clientId}/portal_data.json`, nextPublished);
+    saveJsonToGcsAsync(`clients/${clientId}/portal_data_draft.json`, null);
+  }
+
+  const summary = summarizeReportState(nextPublished);
+  recordAuditEvent(req, 'PPTX_DRAFT_PUBLISHED', {
+    asOfDateFormatted: summary.asOfDateFormatted,
+    activeMembers: summary.activeMembers,
+    fills: summary.fills,
+    ytdProceedsFmt: summary.ytdProceedsFmt
+  });
+
+  res.json({
+    ok: true,
+    message: `Published ${summary.asOfDateFormatted} report to all ${clientId} portal users.`,
+    hasDraft: false,
+    published: summary
+  });
+});
+
+app.post('/api/admin/discard-pptx', async (req, res) => {
+  if (!isCallerBridgeAdmin(req)) {
+    recordAuditEvent(req, 'UNAUTHORIZED_ADMIN_ATTEMPT', { endpoint: '/api/admin/discard-pptx', method: 'POST' });
+    return res.status(403).json({
+      ok: false,
+      error: 'Forbidden: Only Bridge Super-Admins (bridge_admin) can discard staged PowerPoint drafts.'
+    });
+  }
+  const clientId = req.clientId || 'damien';
+  const draft = await ensureClientDraftStateLoaded(clientId);
+  const discardedAsOf = draft?.meta?.asOfDateFormatted || 'none';
+  clientDraftStates[clientId] = null;
+
+  try {
+    const draftPath = getClientDraftPath(clientId);
+    if (fs.existsSync(draftPath)) fs.unlinkSync(draftPath);
+  } catch (_) {}
+
+  if (typeof saveJsonToGcsAsync === 'function') {
+    saveJsonToGcsAsync(`clients/${clientId}/portal_data_draft.json`, null);
+  }
+
+  const published = await ensureClientStateLoaded(clientId);
+  recordAuditEvent(req, 'PPTX_DRAFT_DISCARDED', { discardedAsOf });
+
+  res.json({
+    ok: true,
+    message: 'Staged PowerPoint draft discarded. Live portal remains on published report.',
+    hasDraft: false,
+    published: summarizeReportState(published)
+  });
 });
 
 // ============================================================================
@@ -1963,15 +2918,25 @@ function answerQuestion(state, rawQuestion) {
       };
     }
 
-    // Simple active members question (for a single month or current/September)
+    // Simple active members question (for a single month or current/latest cutoff month)
     if (ql.includes('active member') || ql.includes('how many members')) {
-      const mObj = matchedMonths.length === 1 ? matchedMonths[0] : monthMap[8];
-      const val = s2.activeMembersByMonth?.values?.[mObj.idx];
-      const prevVal = mObj.idx > 0 ? s2.activeMembersByMonth?.values?.[mObj.idx - 1] : null;
-      const deltaTxt = (prevVal && val) ? ` (${val >= prevVal ? '+' : ''}${(((val - prevVal) / prevVal) * 100).toFixed(1)}% vs. ${prevVal} in ${monthMap[mObj.idx - 1].full})` : '';
+      if (matchedMonths.length === 1) {
+        const mObj = matchedMonths[0];
+        const val = s2.activeMembersByMonth?.values?.[mObj.idx];
+        const prevVal = mObj.idx > 0 ? s2.activeMembersByMonth?.values?.[mObj.idx - 1] : null;
+        const deltaTxt = (prevVal && val) ? ` (${val >= prevVal ? '+' : ''}${(((val - prevVal) / prevVal) * 100).toFixed(1)}% vs. ${prevVal} in ${monthMap[mObj.idx - 1].full})` : '';
+        return {
+          question: q,
+          answer: `**${meta.client}** had **${val ?? 862} active members** in **${mObj.full} 2026**${deltaTxt}.`
+        };
+      }
+      const kpiActive = s2.kpis?.find(k => k.id === 'active_sep');
+      const latestVal = kpiActive?.value || String(s2.activeMembersByMonth?.values?.[s2.activeMembersByMonth.values.length - 1] ?? 862);
+      const cutoffMonth = meta.cutoffMonthName || 'September';
+      const subTxt = kpiActive?.subtext ? ` (${kpiActive.subtext})` : '';
       return {
         question: q,
-        answer: `**${meta.client}** had **${val ?? 862} active members** in **${mObj.full} 2026**${deltaTxt}.`
+        answer: `**${meta.client}** had **${latestVal} active members** in **${cutoffMonth} 2026**${subTxt}.`
       };
     }
 
@@ -2548,8 +3513,22 @@ PROPORTIONAL RESPONSE CALIBRATION — ANSWER EXACTLY WHAT WAS ASKED (ZERO WORD V
   const explicitTableOrChart = /\b(table|chart|graph|visual|plot)\b/i.test(String(question || ''));
   if (explicitTableOrChart) {
     const hasTable = /\|[\s:-]+\|/.test(cleanReply);
-    const hasChart = /```(?:chart|json-chart|chartjs)/i.test(cleanReply);
-    if (!hasTable || !hasChart) {
+    let hasValidChart = false;
+    const existingChartMatch = cleanReply.match(/```(?:chart|json-chart|chartjs)\s*([\s\S]*?)```/i);
+    if (existingChartMatch) {
+      try {
+        const parsedSpec = JSON.parse(existingChartMatch[1].trim());
+        hasValidChart = Boolean(
+          parsedSpec &&
+          Array.isArray(parsedSpec.labels) && parsedSpec.labels.length > 0 &&
+          Array.isArray(parsedSpec.datasets) && parsedSpec.datasets.length > 0 &&
+          parsedSpec.datasets.every(ds => Array.isArray(ds.data) && ds.data.length > 0 && ds.data.every(v => typeof v === 'number' && !Number.isNaN(v)))
+        );
+      } catch (_) {
+        hasValidChart = false;
+      }
+    }
+    if (!hasTable || !hasValidChart) {
       const detFallback = answerQuestion(state, `${question} breakdown table chart`).answer || '';
       if (!hasTable) {
         const tblLines = detFallback.split('\n').filter(l => l.trim().startsWith('|') && l.trim().endsWith('|'));
@@ -2557,7 +3536,8 @@ PROPORTIONAL RESPONSE CALIBRATION — ANSWER EXACTLY WHAT WAS ASKED (ZERO WORD V
           cleanReply += `\n\n${tblLines.join('\n')}`;
         }
       }
-      if (!hasChart) {
+      if (!hasValidChart) {
+        cleanReply = cleanReply.replace(/```(?:chart|json-chart|chartjs)[\s\S]*?```/gi, '').trim();
         const chartMatch = detFallback.match(/```chart[\s\S]*?```/i);
         if (chartMatch) {
           cleanReply += `\n\n${chartMatch[0]}`;
@@ -2579,8 +3559,11 @@ PROPORTIONAL RESPONSE CALIBRATION — ANSWER EXACTLY WHAT WAS ASKED (ZERO WORD V
 app.post('/api/ask', async (req, res) => {
   const startMs = Date.now();
   const clientId = req.clientId || 'damien';
-  const state = await ensureClientStateLoaded(clientId);
-  const { question, history, mode } = req.body || {};
+  const { question, history, mode, preview } = req.body || {};
+  const usePreview = Boolean((preview === true || preview === '1' || req.query.preview === '1') && isCallerBridgeAdmin(req));
+  const state = usePreview
+    ? ((await ensureClientDraftStateLoaded(clientId)) || (await ensureClientStateLoaded(clientId)))
+    : (await ensureClientStateLoaded(clientId));
   const q = String(question || '').trim() || 'How is the program performing through September 2026?';
   const memberBlockedFlag = isMemberLevelQuery(state, q);
 

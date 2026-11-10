@@ -2,6 +2,7 @@ import argparse
 import copy
 import json
 import os
+import re
 from pptx import Presentation
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -10,9 +11,27 @@ CLIENTS_DIR = os.path.join(BASE_DIR, "data", "clients")
 os.makedirs(CLIENTS_DIR, exist_ok=True)
 
 
+def _parse_money_or_num(raw):
+    if raw is None:
+        return 0
+    s = str(raw).strip()
+    if not s or s in ("—", "-"):
+        return 0
+    neg = s.startswith("−") or s.startswith("-") or "−" in s or s.startswith("(")
+    digits = re.sub(r"[^0-9.]", "", s)
+    if not digits:
+        return 0
+    val = float(digits)
+    if re.search(r"K\b", s, re.I):
+        val *= 1000
+    if re.search(r"M\b", s, re.I):
+        val *= 1000000
+    val = int(round(val))
+    return -val if neg else val
+
+
 def build_damien_portal_data(pptx_path=None):
-    if pptx_path and os.path.exists(pptx_path):
-        _ = Presentation(pptx_path)
+    prs = Presentation(pptx_path) if (pptx_path and os.path.exists(pptx_path)) else None
 
     dashboard_data = {
         "meta": {
@@ -216,6 +235,74 @@ def build_damien_portal_data(pptx_path=None):
             "footnote": "Share of each sign-up month's members whose membership was still active at the end of each month after joining (M0 = joining month).",
         },
     }
+
+    if prs and len(prs.slides) >= 10:
+        # Dynamically overlay Slide 1 Title & Subtitle / As-Of Date
+        s1_texts = [p.text.strip() for sh in prs.slides[0].shapes if sh.has_text_frame for p in sh.text_frame.paragraphs if p.text.strip()]
+        if s1_texts:
+            dashboard_data["meta"]["programTitle"] = s1_texts[0]
+        sub_line = next((t for t in s1_texts if "through" in t.lower()), None)
+        if sub_line:
+            dashboard_data["meta"]["subtitle"] = sub_line
+            m_date = re.search(r"through\s+([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})", sub_line, re.I)
+            if m_date:
+                month_full = m_date.group(1).capitalize()
+                day_num = int(m_date.group(2))
+                yr_str = m_date.group(3)
+                month_map = {
+                    "January": ("01", "Jan"), "February": ("02", "Feb"), "March": ("03", "Mar"),
+                    "April": ("04", "Apr"), "May": ("05", "May"), "June": ("06", "Jun"),
+                    "July": ("07", "Jul"), "August": ("08", "Aug"), "September": ("09", "Sep"),
+                    "October": ("10", "Oct"), "November": ("11", "Nov"), "December": ("12", "Dec"),
+                }
+                if month_full in month_map:
+                    m_num, m_short = month_map[month_full]
+                    dashboard_data["meta"]["asOfDate"] = f"{yr_str}-{m_num}-{day_num:02d}"
+                    dashboard_data["meta"]["asOfDateFormatted"] = f"{month_full} {day_num}, {yr_str}"
+                    dashboard_data["meta"]["asOfShort"] = f"{m_short}{yr_str}"
+                    dashboard_data["meta"]["cutoffMonthName"] = month_full
+
+        # Slide 2 chart & KPIs
+        for sh in prs.slides[1].shapes:
+            if sh.has_chart:
+                ser = sh.chart.series[0]
+                cats = [str(c) for c in sh.chart.plots[0].categories]
+                vals = [int(round(v)) for v in ser.values]
+                if cats and vals:
+                    dashboard_data["meta"]["months"] = cats
+                    dashboard_data["slide2_summary"]["activeMembersByMonth"]["months"] = cats
+                    dashboard_data["slide2_summary"]["activeMembersByMonth"]["values"] = vals
+
+        # Slide 3 chart & YTD P&L table
+        for sh in prs.slides[2].shapes:
+            if sh.has_chart:
+                ser = sh.chart.series[0]
+                cats = [str(c) for c in sh.chart.plots[0].categories]
+                vals = [int(round(v)) for v in ser.values]
+                if cats and vals:
+                    dashboard_data["slide3_financials"]["monthlyProceeds"]["months"] = cats
+                    dashboard_data["slide3_financials"]["monthlyProceeds"]["values"] = vals
+            elif sh.has_table:
+                tbl_rows = []
+                for r_idx, row in enumerate(sh.table.rows):
+                    if r_idx == 0:
+                        continue
+                    item_txt = row.cells[0].text.strip()
+                    fmt_txt = row.cells[1].text.strip()
+                    amt = _parse_money_or_num(fmt_txt)
+                    t_type = "expense"
+                    if "Pharmacy revenue" in item_txt:
+                        t_type = "revenue"
+                    elif "gross margin" in item_txt:
+                        t_type = "subtotal"
+                    elif "Membership fees" in item_txt:
+                        t_type = "positive"
+                    elif "Program proceeds" in item_txt:
+                        t_type = "total"
+                    tbl_rows.append({"item": item_txt, "amount": amt, "formatted": fmt_txt, "type": t_type})
+                if tbl_rows:
+                    dashboard_data["slide3_financials"]["ytdTable"] = tbl_rows
+
     return dashboard_data
 
 

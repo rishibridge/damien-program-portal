@@ -110,6 +110,19 @@
       </div>
     </header>
 
+    <!-- ═══════════ BRIDGE SUPER-ADMIN STAGED PREVIEW BANNER (HIDDEN FOR CLIENT USERS) ═══════════ -->
+    <div id="adminPreviewBanner" data-testid="admin-preview-banner" style="display:none;background:linear-gradient(90deg,#fffbeb,#fef3c7);border-bottom:2px solid #f59e0b;padding:10px 24px;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span id="adminPreviewModeBadge" class="badge" style="background:#d97706;color:#ffffff;font-weight:700;padding:4px 10px;font-size:0.73rem">PREVIEW MODE (STAGED DRAFT)</span>
+        <span id="adminPreviewBannerText" style="font-size:0.82rem;color:#78350f;font-weight:600">Previewing staged PowerPoint report before publishing to client users.</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <button type="button" id="btnBannerTogglePreview" class="btn-bridge-outline" style="padding:5px 12px;font-size:0.76rem;background:#ffffff;border-color:#d97706;color:#92400e;font-weight:600" onclick="toggleAdminPreviewMode()">Switch to Live Published View</button>
+        <button type="button" id="btnBannerPublishDraft" class="btn-bridge-primary" style="padding:5px 14px;font-size:0.76rem;background:#059669;border-color:#059669" onclick="publishStagedPptxDraft()">Publish to All Users</button>
+        <button type="button" id="btnBannerDiscardDraft" class="btn-bridge-outline" style="padding:5px 12px;font-size:0.76rem;background:#ffffff;color:#b91c1c;border-color:#fca5a5" onclick="discardStagedPptxDraft()">Discard Draft</button>
+      </div>
+    </div>
+
     <div class="dash">
 
       <!-- ═══════════════════════════════════════════════════════════════════
@@ -640,6 +653,43 @@
             </div>
           </form>
         </div>
+      </div>
+
+      <!-- Bridge Super-Admin Monthly PowerPoint (.pptx) Report Upload, Staged Preview & Publish Card -->
+      <div class="card" id="secAdminPptxCard" data-testid="admin-pptx-card" style="display:none;padding:16px;margin-bottom:18px;background:linear-gradient(180deg,#ffffff,#f8fafc);border:1px solid #cbd5e1">
+        <div class="card-hd" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+          <div>
+            <span style="font-weight:700;color:#0f172a">Monthly PowerPoint Report Upload &amp; Staged Preview (Bridge Super-Admin Only)</span>
+            <br /><small>Upload a new 10-slide <code>.pptx</code> deck to stage and preview all tabs, charts, tables, and Ask Bridge AI before client users see it</small>
+          </div>
+          <span id="pptxStagedBadge" class="badge" style="background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;font-size:0.72rem;font-weight:700">Live Report Only</span>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px">
+            <div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;color:#64748b">Live Published Report (Visible to Clients)</div>
+            <div id="pptxLiveSummaryTitle" style="font-size:0.9rem;font-weight:700;color:#0f172a;margin-top:2px">Through September 30, 2026</div>
+            <div id="pptxLiveSummaryMetrics" style="font-size:0.76rem;color:#475569;margin-top:2px">862 active members · 673 fills · $961,691 YTD proceeds</div>
+          </div>
+          <div id="pptxDraftSummaryBox" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px">
+            <div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;color:#64748b">Staged Preview Draft (Admin Preview Only)</div>
+            <div id="pptxDraftSummaryTitle" style="font-size:0.9rem;font-weight:700;color:#64748b;margin-top:2px">No draft staged</div>
+            <div id="pptxDraftSummaryMetrics" style="font-size:0.76rem;color:#64748b;margin-top:2px">Upload a 10-slide .pptx deck below to preview before publishing</div>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;background:#ffffff;border:1px dashed #94a3b8;border-radius:8px;padding:10px 12px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <input type="file" id="pptxFileInput" accept=".pptx" style="font-size:0.78rem;color:#334155" />
+            <button type="button" id="btnUploadStagePptx" class="btn-bridge-primary" style="padding:6px 14px;font-size:0.77rem" onclick="handleUploadStagePptx()">Upload &amp; Stage Preview</button>
+          </div>
+          <div id="pptxDraftActionBtns" style="display:none;gap:8px;align-items:center;flex-wrap:wrap">
+            <button type="button" id="btnModalPreviewDraft" class="btn-bridge-outline" style="padding:5px 12px;font-size:0.75rem;border-color:#d97706;color:#92400e;font-weight:600" onclick="enterAdminPreviewAndCloseModal()">Preview All Portal Pages</button>
+            <button type="button" id="btnModalPublishDraft" class="btn-bridge-primary" style="padding:5px 12px;font-size:0.75rem;background:#059669;border-color:#059669" onclick="publishStagedPptxDraft()">Publish to All Users</button>
+            <button type="button" id="btnModalDiscardDraft" class="btn-bridge-outline" style="padding:5px 12px;font-size:0.75rem;color:#b91c1c;border-color:#fca5a5" onclick="discardStagedPptxDraft()">Discard Draft</button>
+          </div>
+        </div>
+        <div id="pptxUploadStatusMsg" style="margin-top:8px;font-size:0.76rem;font-weight:600;color:#475569"></div>
       </div>
 
       <!-- Bottom Card: Tabbed Audit Trail ("Who Viewed What") & Ask Bridge AI Q&A Transcript History -->

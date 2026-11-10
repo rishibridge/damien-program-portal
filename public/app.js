@@ -16,6 +16,81 @@ function destroyChart(key) {
 }
 
 let CURRENT_USER_PROFILE = null;
+let ADMIN_PREVIEW_MODE = false;
+let LAST_REPORT_STATUS = null;
+
+async function loadPortalDataAndRefreshUI(previewMode = false, silent = false) {
+  if (!CURRENT_USER_PROFILE) {
+    try {
+      const meResp = await fetch('/api/auth/me');
+      if (meResp.ok) CURRENT_USER_PROFILE = await meResp.json();
+    } catch (_) {}
+  }
+  ADMIN_PREVIEW_MODE = Boolean(previewMode && CURRENT_USER_PROFILE?.isBridgeAdmin);
+  const qs = [];
+  if (ADMIN_PREVIEW_MODE) qs.push('preview=1');
+  if (silent) qs.push('silent=1');
+  const url = '/api/portal-data' + (qs.length ? `?${qs.join('&')}` : '');
+  const resp = await fetch(url);
+  if (resp.status === 401) {
+    window.location.href = '/login';
+    return;
+  }
+  ADMIN_PREVIEW_MODE = resp.headers.get('X-Bridge-Preview-Mode') === '1';
+  PORTAL_DATA = await resp.json();
+  if (CURRENT_USER_PROFILE?.isBridgeAdmin) {
+    try {
+      const stResp = await fetch('/api/admin/report-status');
+      if (stResp.ok) LAST_REPORT_STATUS = await stResp.json();
+    } catch (_) {}
+  }
+  hydrateShellBranding();
+  renderAllViews();
+  updateAdminPreviewBannerUI();
+}
+
+function updateAdminPreviewBannerUI() {
+  const banner = document.getElementById('adminPreviewBanner');
+  if (!banner) return;
+  if (!CURRENT_USER_PROFILE?.isBridgeAdmin || !LAST_REPORT_STATUS?.hasDraft) {
+    banner.style.display = 'none';
+    return;
+  }
+  banner.style.display = 'flex';
+  const badge = document.getElementById('adminPreviewModeBadge');
+  const txt = document.getElementById('adminPreviewBannerText');
+  const btnToggle = document.getElementById('btnBannerTogglePreview');
+  const draftSum = LAST_REPORT_STATUS.draft || {};
+  const draftAsOf = draftSum.asOfDateFormatted || 'New Report';
+
+  if (ADMIN_PREVIEW_MODE) {
+    banner.style.background = 'linear-gradient(90deg,#fffbeb,#fef3c7)';
+    banner.style.borderBottom = '2px solid #f59e0b';
+    if (badge) {
+      badge.textContent = 'PREVIEW MODE (STAGED DRAFT)';
+      badge.style.background = '#d97706';
+    }
+    if (txt) {
+      txt.textContent = `Previewing staged report through ${draftAsOf} (${draftSum.activeMembersFmt || draftSum.activeMembers || ''} active members, ${draftSum.fillsFmt || draftSum.fills || ''} fills, ${draftSum.ytdProceedsFmt || ''} YTD proceeds). Client users still see the live published report.`;
+    }
+    if (btnToggle) {
+      btnToggle.textContent = 'Switch to Live Published View';
+    }
+  } else {
+    banner.style.background = 'linear-gradient(90deg,#eff6ff,#dbeafe)';
+    banner.style.borderBottom = '2px solid #3b82f6';
+    if (badge) {
+      badge.textContent = 'STAGED DRAFT READY';
+      badge.style.background = '#2563eb';
+    }
+    if (txt) {
+      txt.textContent = `A staged PowerPoint draft (${draftAsOf}) is ready for review. You are currently viewing the live published report.`;
+    }
+    if (btnToggle) {
+      btnToggle.textContent = 'Enter Preview Mode';
+    }
+  }
+}
 
 async function initPortal() {
   try {
@@ -34,9 +109,16 @@ async function initPortal() {
       if (userBadge && CURRENT_USER_PROFILE) {
         userBadge.textContent = `${CURRENT_USER_PROFILE.displayName || CURRENT_USER_PROFILE.user} (${CURRENT_USER_PROFILE.user})`;
       }
+      if (CURRENT_USER_PROFILE?.isBridgeAdmin) {
+        try {
+          const stResp = await fetch('/api/admin/report-status');
+          if (stResp.ok) LAST_REPORT_STATUS = await stResp.json();
+        } catch (_) {}
+      }
     }
     hydrateShellBranding();
     renderAllViews();
+    updateAdminPreviewBannerUI();
     renderChatThread();
     startIdleAutoLogoffTimer();
   } catch (err) {
@@ -92,7 +174,8 @@ function hydrateShellBranding() {
     const fillsVal = s2.kpis?.find(k => k.id === 'fills_sep')?.numericValue || 673;
     const sepProc = s3.monthlyProceeds?.values?.[s3.monthlyProceeds.values.length - 1] || 371214;
     const ytdProc = s3.ytdTable?.find(r => r.item === 'Program proceeds')?.formatted || '$961,691';
-    heroSubtext.textContent = `${activeVal.toLocaleString()} active September members · ${fillsVal.toLocaleString()} September GLP-1 fills · $${sepProc.toLocaleString()} September proceeds (${ytdProc} YTD)`;
+    const cutoffMonth = meta.cutoffMonthName || 'September';
+    heroSubtext.textContent = `${activeVal.toLocaleString()} active ${cutoffMonth} members · ${fillsVal.toLocaleString()} ${cutoffMonth} GLP-1 fills · $${sepProc.toLocaleString()} ${cutoffMonth} proceeds (${ytdProc} YTD)`;
   }
 }
 
@@ -721,7 +804,8 @@ async function executeAskQuestion(questionText) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         question: questionText,
-        history: QA_HISTORY.slice(-10)
+        history: QA_HISTORY.slice(-10),
+        preview: ADMIN_PREVIEW_MODE
       })
     });
     const ans = await resp.json();
@@ -1103,6 +1187,17 @@ async function refreshSecurityModalData() {
 
     const cur = data.currentUser || {};
     const isBridgeAdmin = Boolean(data.isBridgeAdmin);
+    CURRENT_USER_PROFILE = {
+      ...(CURRENT_USER_PROFILE || {}),
+      user: cur.username,
+      displayName: cur.displayName,
+      role: cur.role,
+      isBridgeAdmin
+    };
+    const userBadge = document.getElementById('badgeCurrentUser');
+    if (userBadge && cur.username) {
+      userBadge.textContent = `${cur.displayName || cur.username} (${cur.username})`;
+    }
     const meUserRec = (data.users || []).find(u => u.username.toLowerCase() === String(cur.username || '').toLowerCase());
     const lbl = document.getElementById('secCurrentUserLabel');
     if (lbl) {
@@ -1154,6 +1249,14 @@ async function refreshSecurityModalData() {
     if (createForm && rbacNotice) {
       createForm.style.display = isBridgeAdmin ? 'grid' : 'none';
       rbacNotice.style.display = isBridgeAdmin ? 'none' : 'block';
+    }
+
+    const pptxCard = document.getElementById('secAdminPptxCard');
+    if (pptxCard) {
+      pptxCard.style.display = isBridgeAdmin ? 'block' : 'none';
+      if (isBridgeAdmin) {
+        await refreshAdminPptxStatusUI();
+      }
     }
 
     const thActions = document.getElementById('thAdminUserActions');
@@ -1487,7 +1590,216 @@ function exportSecurityQaCsv() {
 }
 
 function exportPortalTableCsv(tableKey) {
-  window.location.href = `/api/export/csv/${encodeURIComponent(tableKey || 'financials')}`;
+  const qs = ADMIN_PREVIEW_MODE ? '?preview=1' : '';
+  window.location.href = `/api/export/csv/${encodeURIComponent(tableKey || 'financials')}${qs}`;
+}
+
+async function refreshAdminPptxStatusUI() {
+  try {
+    const resp = await fetch('/api/admin/report-status');
+    if (!resp.ok) return;
+    const status = await resp.json();
+    LAST_REPORT_STATUS = status;
+    updateAdminPreviewBannerUI();
+    const pub = status.published || {};
+    const draft = status.draft || null;
+
+    const liveTitle = document.getElementById('pptxLiveSummaryTitle');
+    const liveMetrics = document.getElementById('pptxLiveSummaryMetrics');
+    if (liveTitle) liveTitle.textContent = `Through ${pub.asOfDateFormatted || 'September 30, 2026'}`;
+    if (liveMetrics) {
+      liveMetrics.textContent = `${pub.activeMembersFmt || pub.activeMembers || 0} active members · ${pub.fillsFmt || pub.fills || 0} fills · ${pub.ytdProceedsFmt || '$961,691'} YTD proceeds`;
+    }
+
+    const draftBox = document.getElementById('pptxDraftSummaryBox');
+    const draftTitle = document.getElementById('pptxDraftSummaryTitle');
+    const draftMetrics = document.getElementById('pptxDraftSummaryMetrics');
+    const stagedBadge = document.getElementById('pptxStagedBadge');
+    const actionBtns = document.getElementById('pptxDraftActionBtns');
+
+    if (status.hasDraft && draft) {
+      if (draftBox) {
+        draftBox.style.background = '#fffbeb';
+        draftBox.style.borderColor = '#f59e0b';
+      }
+      if (draftTitle) {
+        draftTitle.style.color = '#92400e';
+        draftTitle.textContent = `Through ${draft.asOfDateFormatted} (${draft.stagedFilename || 'Staged Deck'})`;
+      }
+      if (draftMetrics) {
+        draftMetrics.style.color = '#78350f';
+        draftMetrics.textContent = `${draft.activeMembersFmt || draft.activeMembers || 0} active members · ${draft.fillsFmt || draft.fills || 0} fills · ${draft.ytdProceedsFmt || ''} YTD proceeds`;
+      }
+      if (stagedBadge) {
+        stagedBadge.style.background = '#fef3c7';
+        stagedBadge.style.color = '#92400e';
+        stagedBadge.style.borderColor = '#f59e0b';
+        stagedBadge.textContent = ADMIN_PREVIEW_MODE ? 'Previewing Staged Draft' : 'Staged Draft Ready';
+      }
+      if (actionBtns) actionBtns.style.display = 'flex';
+    } else {
+      if (draftBox) {
+        draftBox.style.background = '#f8fafc';
+        draftBox.style.borderColor = '#e2e8f0';
+      }
+      if (draftTitle) {
+        draftTitle.style.color = '#64748b';
+        draftTitle.textContent = 'No draft staged';
+      }
+      if (draftMetrics) {
+        draftMetrics.style.color = '#64748b';
+        draftMetrics.textContent = 'Upload a 10-slide .pptx deck below to preview before publishing';
+      }
+      if (stagedBadge) {
+        stagedBadge.style.background = '#e0f2fe';
+        stagedBadge.style.color = '#0369a1';
+        stagedBadge.style.borderColor = '#bae6fd';
+        stagedBadge.textContent = 'Live Report Only';
+      }
+      if (actionBtns) actionBtns.style.display = 'none';
+    }
+  } catch (err) {
+    console.error('Error loading PPTX status:', err);
+  }
+}
+
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Failed to read selected file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handleUploadStagePptx() {
+  const fileInput = document.getElementById('pptxFileInput');
+  const msgEl = document.getElementById('pptxUploadStatusMsg');
+  const btn = document.getElementById('btnUploadStagePptx');
+  if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+    if (msgEl) {
+      msgEl.style.color = '#b91c1c';
+      msgEl.textContent = 'Please select a 10-slide PowerPoint (.pptx) file first.';
+    }
+    return;
+  }
+  const file = fileInput.files[0];
+  if (!/\.pptx$/i.test(file.name)) {
+    if (msgEl) {
+      msgEl.style.color = '#b91c1c';
+      msgEl.textContent = 'Only PowerPoint (.pptx) files are supported.';
+    }
+    return;
+  }
+
+  try {
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Parsing 10 Slides...';
+    }
+    if (msgEl) {
+      msgEl.style.color = '#2563eb';
+      msgEl.textContent = `Reading and validating '${file.name}'...`;
+    }
+    const fileBase64 = await readFileAsBase64(file);
+    const resp = await fetch('/api/admin/upload-pptx', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filename: file.name,
+        fileBase64
+      })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.ok) {
+      if (msgEl) {
+        msgEl.style.color = '#b91c1c';
+        msgEl.textContent = data.error || 'Failed to stage PowerPoint deck.';
+      }
+      return;
+    }
+
+    if (msgEl) {
+      msgEl.style.color = '#059669';
+      msgEl.textContent = data.message || 'Staged PowerPoint draft in Preview Mode!';
+    }
+    fileInput.value = '';
+    // Automatically switch admin session into Preview Mode so they can inspect all pages immediately
+    await loadPortalDataAndRefreshUI(true, true);
+    await refreshSecurityModalData();
+  } catch (err) {
+    if (msgEl) {
+      msgEl.style.color = '#b91c1c';
+      msgEl.textContent = err.message || 'Error uploading PowerPoint file.';
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Upload & Stage Preview';
+    }
+  }
+}
+
+async function enterAdminPreviewAndCloseModal() {
+  await loadPortalDataAndRefreshUI(true, true);
+  closeSecurityModal();
+}
+
+async function toggleAdminPreviewMode() {
+  const nextMode = !ADMIN_PREVIEW_MODE;
+  await loadPortalDataAndRefreshUI(nextMode, true);
+}
+
+async function publishStagedPptxDraft() {
+  const msgEl = document.getElementById('pptxUploadStatusMsg');
+  try {
+    const resp = await fetch('/api/admin/publish-pptx', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.ok) {
+      if (msgEl) {
+        msgEl.style.color = '#b91c1c';
+        msgEl.textContent = data.error || 'Failed to publish staged report.';
+      }
+      return;
+    }
+    if (msgEl) {
+      msgEl.style.color = '#059669';
+      msgEl.textContent = data.message || 'Published report to all users!';
+    }
+    await loadPortalDataAndRefreshUI(false, true);
+    await refreshSecurityModalData();
+  } catch (err) {
+    console.error('Error publishing PPTX draft:', err);
+  }
+}
+
+async function discardStagedPptxDraft() {
+  const msgEl = document.getElementById('pptxUploadStatusMsg');
+  try {
+    const resp = await fetch('/api/admin/discard-pptx', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.ok) {
+      if (msgEl) {
+        msgEl.style.color = '#b91c1c';
+        msgEl.textContent = data.error || 'Failed to discard draft.';
+      }
+      return;
+    }
+    if (msgEl) {
+      msgEl.style.color = '#475569';
+      msgEl.textContent = data.message || 'Staged draft discarded.';
+    }
+    await loadPortalDataAndRefreshUI(false, true);
+    await refreshSecurityModalData();
+  } catch (err) {
+    console.error('Error discarding PPTX draft:', err);
+  }
 }
 
 window.addEventListener('DOMContentLoaded', initPortal);
