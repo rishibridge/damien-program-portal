@@ -383,7 +383,7 @@ def run_suite():
         record("DAMIEN-18", "Definitions modal displays all 6 Slide 9 notes", def_notes == 6, f"notes={def_notes}")
 
         page.click("button[data-view='ask']")
-        page.fill("#mainAskInput", "What are our YTD pharmacy revenue, membership fees, and September and YTD net program proceeds?")
+        page.fill("#mainAskInput", "What are our YTD pharmacy revenue, membership fees, and September and YTD net program proceeds? Show a summary table and chart.")
         page.click("#mainAskSubmitBtn")
         page.wait_for_selector("[data-testid='qa-ai-message']", timeout=60000)
         ai_reply_d = page.locator("[data-testid='qa-ai-message'] .chat-bubble").last.inner_text()
@@ -1052,8 +1052,18 @@ def run_suite():
             str(pwd_policy_test),
         )
 
-        # SEC-11: Bridge Super-Admin (rishi.damien) Full Directory & Audit Trail Visibility
+        # SEC-11: Bridge Super-Admin (rishi.damien) Full Directory (including cmerski & bplunkett) & Audit Trail Visibility
         admin_audit_test = page.evaluate("""async () => {
+            const rCath = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ username: 'cmerski', password: 'DamienCatherine2026!' })
+            }).then(r => r.json());
+            const rBrad = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ username: 'bplunkett', password: 'DamienBrad2026!' })
+            }).then(r => r.json());
             const r1 = await fetch('/api/auth/login', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -1071,16 +1081,20 @@ def run_suite():
             return {
                 isBridgeAdmin: ov.isBridgeAdmin,
                 userCount: usernames.length,
-                hasDamienAndBrady: usernames.includes('damien') && usernames.includes('brady.admin'),
+                hasDamienAndBrady: usernames.includes('damien') && usernames.includes('brady.admin') && usernames.includes('cmerski') && usernames.includes('bplunkett'),
+                cathLoginOk: Boolean(rCath.ok && rCath.mfaRequired),
+                bradLoginOk: Boolean(rBrad.ok && rBrad.mfaRequired),
                 hasMfaEvents: eventTypes.includes('LOGIN_SUCCESS_MFA')
             };
         }""")
         record(
             "SEC-11",
-            "Bridge Super-Admin (rishi.damien) views full Named Users Directory (damien, brady.admin, pharmacist.damien) & Audit Trail events",
+            "Bridge Super-Admin (rishi.damien) views full Named Users Directory (damien, brady.admin, pharmacist.damien, cmerski, bplunkett) & Audit Trail events",
             bool(admin_audit_test["isBridgeAdmin"])
-            and admin_audit_test["userCount"] >= 4
+            and admin_audit_test["userCount"] >= 6
             and bool(admin_audit_test["hasDamienAndBrady"])
+            and bool(admin_audit_test["cathLoginOk"])
+            and bool(admin_audit_test["bradLoginOk"])
             and bool(admin_audit_test["hasMfaEvents"]),
             str(admin_audit_test),
         )

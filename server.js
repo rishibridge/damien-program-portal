@@ -356,6 +356,34 @@ function buildDefaultUsers() {
       passwordUpdatedAt: '2026-11-01T00:00:00.000Z',
       passwordMaxAgeDays: 0,
       passwordHistory: []
+    },
+    {
+      username: 'cmerski',
+      passwordHash: hashPasswordScrypt('DamienCatherine2026!'),
+      clientId: 'damien',
+      displayName: 'Catherine Merski (Damien Center)',
+      email: 'cmerski@damien.org',
+      role: 'client_user',
+      mfaEnabled: true,
+      mfaMethod: 'email',
+      totpSecret: generateTotpSecret('cmerski'),
+      passwordUpdatedAt: '2026-11-01T00:00:00.000Z',
+      passwordMaxAgeDays: 0,
+      passwordHistory: []
+    },
+    {
+      username: 'bplunkett',
+      passwordHash: hashPasswordScrypt('DamienBrad2026!'),
+      clientId: 'damien',
+      displayName: 'Brad Plunkett (Damien Center)',
+      email: 'bplunkett@damien.org',
+      role: 'client_user',
+      mfaEnabled: true,
+      mfaMethod: 'email',
+      totpSecret: generateTotpSecret('bplunkett'),
+      passwordUpdatedAt: '2026-11-01T00:00:00.000Z',
+      passwordMaxAgeDays: 0,
+      passwordHistory: []
     }
   ];
 
@@ -823,7 +851,8 @@ app.post('/api/auth/login', async (req, res) => {
   const users = loadUsersDirectory();
   const matched = users.find(
     cred =>
-      cred.username.toLowerCase() === u.toLowerCase() &&
+      (cred.username.toLowerCase() === u.toLowerCase() ||
+        (u.includes('@') && String(cred.email || '').toLowerCase() === u.toLowerCase())) &&
       verifyPasswordScrypt(p, cred.passwordHash)
   );
 
@@ -1024,7 +1053,7 @@ app.get('/api/auth/me', (req, res) => {
 // NAMED-USER MANAGEMENT, PASSWORD COMPLEXITY CHANGE, MFA CONFIG & AUDIT API
 // STRICT ROLE-BASED ACCESS CONTROL (RBAC): ONLY bridge_admin CAN MANAGE USERS
 // ============================================================================
-const BUILTIN_PROTECTED_USERS = new Set(['damien', 'metro', 'rishi.damien', 'brady.admin', 'rishi.metro', 'pharmacist.damien']);
+const BUILTIN_PROTECTED_USERS = new Set(['damien', 'metro', 'rishi.damien', 'brady.admin', 'rishi.metro', 'pharmacist.damien', 'cmerski', 'bplunkett']);
 
 function isCallerBridgeAdmin(req) {
   const users = loadUsersDirectory();
