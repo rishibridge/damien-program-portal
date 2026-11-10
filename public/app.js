@@ -84,7 +84,7 @@ function updateAdminPreviewBannerUI() {
       badge.style.background = '#2563eb';
     }
     if (txt) {
-      txt.textContent = `A staged PowerPoint draft (${draftAsOf}) is ready for review. You are currently viewing the live published report.`;
+      txt.textContent = `A staged monthly report draft (${draftAsOf}) is ready for review. You are currently viewing the live published report.`;
     }
     if (btnToggle) {
       btnToggle.textContent = 'Enter Preview Mode';
@@ -1624,7 +1624,7 @@ async function refreshAdminPptxStatusUI() {
       }
       if (draftTitle) {
         draftTitle.style.color = '#92400e';
-        draftTitle.textContent = `Through ${draft.asOfDateFormatted} (${draft.stagedFilename || 'Staged Deck'})`;
+        draftTitle.textContent = `Through ${draft.asOfDateFormatted} (${draft.stagedFilename || 'Staged Report'})`;
       }
       if (draftMetrics) {
         draftMetrics.style.color = '#78350f';
@@ -1648,7 +1648,7 @@ async function refreshAdminPptxStatusUI() {
       }
       if (draftMetrics) {
         draftMetrics.style.color = '#64748b';
-        draftMetrics.textContent = 'Upload a 10-slide .pptx deck below to preview before publishing';
+        draftMetrics.textContent = 'Upload a monthly report file below to preview before publishing';
       }
       if (stagedBadge) {
         stagedBadge.style.background = '#e0f2fe';
@@ -1659,7 +1659,7 @@ async function refreshAdminPptxStatusUI() {
       if (actionBtns) actionBtns.style.display = 'none';
     }
   } catch (err) {
-    console.error('Error loading PPTX status:', err);
+    console.error('Error loading report status:', err);
   }
 }
 
@@ -1679,7 +1679,7 @@ async function handleUploadStagePptx() {
   if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
     if (msgEl) {
       msgEl.style.color = '#b91c1c';
-      msgEl.textContent = 'Please select a 10-slide PowerPoint (.pptx) file first.';
+      msgEl.textContent = 'Please select a monthly report file first.';
     }
     return;
   }
@@ -1687,7 +1687,7 @@ async function handleUploadStagePptx() {
   if (!/\.pptx$/i.test(file.name)) {
     if (msgEl) {
       msgEl.style.color = '#b91c1c';
-      msgEl.textContent = 'Only PowerPoint (.pptx) files are supported.';
+      msgEl.textContent = 'Unsupported report file format.';
     }
     return;
   }
@@ -1695,7 +1695,7 @@ async function handleUploadStagePptx() {
   try {
     if (btn) {
       btn.disabled = true;
-      btn.textContent = 'Parsing 10 Slides...';
+      btn.textContent = 'Staging Report...';
     }
     if (msgEl) {
       msgEl.style.color = '#2563eb';
@@ -1714,14 +1714,14 @@ async function handleUploadStagePptx() {
     if (!resp.ok || !data.ok) {
       if (msgEl) {
         msgEl.style.color = '#b91c1c';
-        msgEl.textContent = data.error || 'Failed to stage PowerPoint deck.';
+        msgEl.textContent = data.error || 'Failed to stage monthly report.';
       }
       return;
     }
 
     if (msgEl) {
       msgEl.style.color = '#059669';
-      msgEl.textContent = data.message || 'Staged PowerPoint draft in Preview Mode!';
+      msgEl.textContent = data.message || 'Staged monthly report in Preview Mode!';
     }
     fileInput.value = '';
     // Automatically switch admin session into Preview Mode so they can inspect all pages immediately
@@ -1730,7 +1730,7 @@ async function handleUploadStagePptx() {
   } catch (err) {
     if (msgEl) {
       msgEl.style.color = '#b91c1c';
-      msgEl.textContent = err.message || 'Error uploading PowerPoint file.';
+      msgEl.textContent = err.message || 'Error uploading monthly report file.';
     }
   } finally {
     if (btn) {

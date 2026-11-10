@@ -25,7 +25,7 @@ function getGeminiApiKey() {
 }
 
 const GCP_PROJECT_ID = process.env.GCP_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || 'dev-dispatch-331019';
-const VERTEX_GEMINI_MODEL = process.env.VERTEX_GEMINI_MODEL || 'gemini-3.7-flash';
+const VERTEX_GEMINI_MODEL = process.env.VERTEX_GEMINI_MODEL || 'gemini-2.5-flash';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || VERTEX_GEMINI_MODEL;
 const GCS_STATE_BUCKET = process.env.GCS_STATE_BUCKET || '';
 
@@ -561,9 +561,9 @@ function formatAuditSummary(eventType, details = {}) {
   if (et === 'MFA_CONFIG_UPDATED') return `Updated MFA settings for '${details.targetUsername}' (method: ${details.mfaMethod})`;
   if (et === 'PASSWORD_CHANGED') return 'Updated account password';
   if (et === 'UNAUTHORIZED_ADMIN_ATTEMPT') return `Blocked unauthorized admin call to ${details.endpoint || 'admin API'}`;
-  if (et === 'PPTX_DRAFT_UPLOADED') return `Staged PowerPoint draft '${details.filename || 'deck.pptx'}' (${details.asOfDateFormatted || 'new period'}, ${details.activeMembers || 0} active members)`;
-  if (et === 'PPTX_DRAFT_PUBLISHED') return `Published staged PowerPoint report (${details.asOfDateFormatted || 'new period'}, ${details.activeMembers || 0} active members) to all users`;
-  if (et === 'PPTX_DRAFT_DISCARDED') return `Discarded staged PowerPoint draft (${details.discardedAsOf || 'draft'})`;
+  if (et === 'PPTX_DRAFT_UPLOADED') return `Staged monthly report draft (${details.asOfDateFormatted || 'new period'}, ${details.activeMembers || 0} active members)`;
+  if (et === 'PPTX_DRAFT_PUBLISHED') return `Published staged monthly report (${details.asOfDateFormatted || 'new period'}, ${details.activeMembers || 0} active members) to all users`;
+  if (et === 'PPTX_DRAFT_DISCARDED') return `Discarded staged monthly report draft (${details.discardedAsOf || 'draft'})`;
   if (et === 'PII_INPUT_REJECTED') return `Rejected prohibited PII / non-hex input in ${details.field || 'worklist'} (${details.reason || 'policy'})`;
   return JSON.stringify(details || {});
 }
@@ -2827,6 +2827,20 @@ function buildMemberPrivacyGuardrailReply(state, rawQuestion) {
   };
 }
 
+const UNABLE_TO_ANSWER_MSG = 'I am unable to answer the question from the data available to me.';
+
+function isOutOfScopeQuery(rawQuestion) {
+  const ql = String(rawQuestion || '').toLowerCase();
+  return (
+    ql.includes('prescriber') || ql.includes('doctor') || ql.includes('townsend') ||
+    ql.includes('payer') || ql.includes('savings card') || ql.includes('insurance') ||
+    ql.includes('dose') || ql.includes('0.25') || ql.includes('2.4') ||
+    ql.includes('worklist') || ql.includes('to-do') || ql.includes('todo') ||
+    ql.includes('evansville') || ql.includes('employer group') ||
+    (/\b(make|margin|revenue|profit|price|proceeds)\b/i.test(ql) && /\b(injection|pen|pill|ozempic|wegovy)\b/i.test(ql) && !ql.includes('dispense') && !ql.includes('share') && !ql.includes('mix'))
+  );
+}
+
 function answerQuestion(state, rawQuestion) {
   const q = String(rawQuestion || '').trim();
   const ql = q.toLowerCase();
@@ -2852,44 +2866,10 @@ function answerQuestion(state, rawQuestion) {
     (ql.includes('revenue') && ql.includes('proceeds'));
 
   // 1. Out-of-Deck Granular Queries (Prescribers, Individual Employers, Payers/Savings Cards, Dose Strengths, Worklists)
-  if (
-    ql.includes('prescriber') || ql.includes('doctor') || ql.includes('townsend') ||
-    ql.includes('payer') || ql.includes('savings card') || ql.includes('insurance') ||
-    ql.includes('dose') || ql.includes('0.25') || ql.includes('2.4') ||
-    ql.includes('worklist') || ql.includes('to-do') || ql.includes('todo') ||
-    ql.includes('evansville') || ql.includes('employer group')
-  ) {
-    if (!wantsFullBreakdown) {
-      return {
-        question: q,
-        answer:
-          `**Ask Bridge AI** is powered strictly by the **${meta.programTitle}** executive report deck (Slides 1–10 through ${meta.asOfDateFormatted || 'September 30, 2026'}), which tracks **aggregate** program metrics and does not include granular prescriber names, individual employer companies, third-party insurance/savings cards, milligram dose strengths, or patient worklist queues. You can ask for aggregate **Patient Sources & Channel Economics** (EPIC, Paid Media, Employee, LHD, McGohan Brabender, Other) or **Medication Mix** (Wegovy Pen, Wegovy Pill, Ozempic) at any time.`
-      };
-    }
-    const srcRows = s4.table || [];
-    const tableLines = srcRows.map(r =>
-      `| **${r.source}** | ${r.enrolledSept} | **${r.enrolledYtd}** | ${r.share} | **${r.filled1stRx}** | ${r.refilled1to2} | ${r.glp1Fills.toLocaleString()} | **${r.grossMarginFmt}** |`
-    ).join('\n');
+  if (isOutOfScopeQuery(q)) {
     return {
       question: q,
-      answer:
-        `### **Executive Report Scope & Aggregate Channel Summary (${meta.client})**\n` +
-        `• **Report Scope**: **Ask Bridge AI** is powered strictly by the **${meta.programTitle}** executive report deck (Slides 1–10 through ${meta.asOfDateFormatted || 'September 30, 2026'}). Granular workbook breakouts (such as individual prescribers, specific employer companies, third-party payer/savings cards, milligram dose strengths, or patient worklist queues) are not part of the executive deck.\n` +
-        `• **Available Aggregate Channel & Program Analytics**: Below is the full channel enrollment, conversion, and gross margin breakdown from the executive report:\n\n` +
-        `| Source | Enrolled Sep | Enrolled YTD | Share | Filled 1st Rx | Refilled 1st→2nd | GLP-1 Fills | Gross Margin |\n` +
-        `| --- | --- | --- | --- | --- | --- | --- | --- |\n` +
-        `${tableLines}\n\n` +
-        `\`\`\`chart\n` +
-        JSON.stringify({
-          type: 'bar',
-          title: 'YTD Enrollments & GLP-1 Fills by Patient Source',
-          labels: srcRows.map(r => r.source),
-          datasets: [
-            { label: 'Enrolled YTD', data: srcRows.map(r => Number(r.enrolledYtd) || 0), backgroundColor: '#154672' },
-            { label: 'GLP-1 Fills', data: srcRows.map(r => Number(r.glp1Fills) || 0), backgroundColor: '#26abe4' }
-          ]
-        }) +
-        `\n\`\`\``
+      answer: UNABLE_TO_ANSWER_MSG
     };
   }
 
@@ -3341,6 +3321,12 @@ function answerQuestion(state, rawQuestion) {
   }
 
   // 9. Default Executive Overview & Membership Growth (Slide 2)
+  if (q && !/\b(overview|summary|perform|program|member|active|grow|headline|kpi|status|dashboard|report|september|ytd)\b/i.test(ql)) {
+    return {
+      question: q,
+      answer: UNABLE_TO_ANSWER_MSG
+    };
+  }
   const revRow = s3.ytdTable.find(r => r.item === 'Pharmacy revenue');
   const feesRow = s3.ytdTable.find(r => r.item === 'Membership fees collected');
   const procRow = s3.ytdTable.find(r => r.item === 'Program proceeds');
@@ -3375,10 +3361,13 @@ function answerQuestion(state, rawQuestion) {
 }
 
 function buildGeminiDataContext(state) {
-  // Strictly AGGREGATE PowerPoint deck context only (Slides 1–10)
+  const cleanMeta = { ...(state.meta || {}) };
+  delete cleanMeta._pptxMeta;
+  delete cleanMeta.sourceDeck;
+  delete cleanMeta.slides;
   return {
-    privacyPolicy: 'AGGREGATE_POWERPOINT_DECK_ONLY_NO_MEMBER_LEVEL_DATA',
-    meta: state.meta,
+    privacyPolicy: 'AGGREGATE_PROGRAM_DATA_ONLY_NO_MEMBER_LEVEL_DATA',
+    meta: cleanMeta,
     executiveSummary: state.slide2_summary,
     programFinancials: state.slide3_financials,
     patientSources: state.slide4_sources,
@@ -3406,54 +3395,37 @@ async function askGeminiWithFullData(state, question, history = []) {
       answer: blockedReply.answer
     };
   }
+  if (isOutOfScopeQuery(question)) {
+    return {
+      question,
+      clientId: meta.clientId,
+      aiPowered: true,
+      aiModel: VERTEX_GEMINI_MODEL,
+      memberLevelBlocked: false,
+      reply: UNABLE_TO_ANSWER_MSG,
+      answer: UNABLE_TO_ANSWER_MSG
+    };
+  }
 
   const contextData = buildGeminiDataContext(state);
-  const s2 = state.slide2_summary || {};
-  const s3 = state.slide3_financials || {};
 
-  const activeSep = s2.kpis?.find(k => k.id === 'active_sep')?.value || '862';
-  const fillsSep = s2.kpis?.find(k => k.id === 'fills_sep')?.value || '673';
-  const sepProceedsVal = s3.monthlyProceeds?.values?.[s3.monthlyProceeds.values.length - 1] || 371214;
-  const ytdProceedsFmt = s3.ytdTable?.find(r => r.item === 'Program proceeds')?.formatted || '$961,691';
-  const ytdRevFmt = s3.ytdTable?.find(r => r.item === 'Pharmacy revenue')?.formatted || '$2,336,983';
-  const ytdFeesFmt = s3.ytdTable?.find(r => r.item === 'Membership fees collected')?.formatted || '$44,164';
+  const systemInstruction = `You are a sharp, insightful healthcare analytics assistant at Bridge Health Hub supporting the ${meta.programTitle || 'GLP-1 Weight Loss Program'} for ${meta.client || 'our client'} and ${meta.pharmacyPartner || 'the pharmacy'} (data through ${meta.asOfDateFormatted || 'September 30, 2026'}).
 
-  const systemInstruction = `You are a sharp, insightful, executive-level healthcare analytics strategist at Bridge Health Hub supporting the ${meta.programTitle || 'GLP-1 Weight Loss Program'} for ${meta.client || 'our client'} and ${meta.pharmacyPartner || 'the pharmacy'} (data through ${meta.asOfDateFormatted || 'September 30, 2026'}).
-
-You are having an intelligent, natural, executive-ready conversation with a stakeholder or pharmacy/program leader.
-
-STRICT POWERPOINT-ONLY SCOPE & AGGREGATE PRIVACY RULE:
-- Your ENTIRE source of truth is the executive PowerPoint report deck (Slides 1–10) provided in \`contextData\`:
-  1. Executive Summary & Monthly Active Membership Growth (Jan–Sep 2026)
-  2. Program Financials & YTD P&L + Monthly Net Program Proceeds (after ad spend & fees)
-  3. Patient Sources & Channel Economics (EPIC, Paid Media, Employee, LHD, McGohan Brabender, Other)
-  4. Paid Media ROI & Monthly Sign-Up Cohort Performance
-  5. First-Fill Conversion Funnel (Enrolled -> Saw a provider -> Prescribed -> Filled 1st Rx), Drop-Offs & Median Step Timing
-  6. Refill Persistence (Fill 1 through Fill 8) & Step-to-Step Continuation Rates
-  7. Medication Mix (Wegovy Pen, Wegovy Pill, Ozempic monthly dispenses & September share)
-  8. Program Definitions, Methodology & Fills Reconciliation (1,952 matched member fills out of 2,034 total P&L fills; 51 no ID, 20 unmatched ID; $40/fill cost; 30-day funnel & 45-day refill cutoffs)
-  9. Member Cohort Retention Matrix by Joining Month (M0 through M8)
-- NEVER invent, guess, or hallucinate numbers outside \`contextData\`.
-- If a user asks about granular data not included in the executive PowerPoint report deck (such as individual employer company names, specific prescriber names, third-party insurance/payer/savings cards, milligram dose strengths like 0.25mg vs 2.4mg, or individual patient worklist queues), concisely explain in 1–2 sentences that the portal is powered strictly by the executive report deck and mention what aggregate metrics are available (only include a table/chart if the user explicitly asked for a channel or program breakdown).
-- If someone asks to look up a specific member ID or individual patient record, politely explain in 1 sentence that for member privacy, Ask Bridge AI only provides aggregate analytics.
-
-PROPORTIONAL RESPONSE CALIBRATION — ANSWER EXACTLY WHAT WAS ASKED (ZERO WORD VOMIT):
-- Tailor your response length and formatting strictly to the scope of the user's question:
-  1. **Simple, Direct, Single-Fact Questions** (e.g., "How many active members were there in September?", "What is the cost to fill?", "How many Ozempic fills were in September?", "What was the Paid Media ROAS in June?", "How long does it take from provider visit to prescription?", "How many patients enrolled via LHD in September?"):
-     - Answer directly in **1–2 crisp sentences** (under ~45 words) with the exact figure in the very first sentence.
-     - **DO NOT** include section headers (\`### ...\`), bullet lists, Markdown pipe tables, or \`\`\`chart\`\`\` blocks for a simple single-fact question.
-     - **DO NOT** dump unrequested metrics.
-  2. **Multi-Metric, Comparison, Trend, or Full-Breakdown Questions** (e.g., "What are our YTD pharmacy revenue, membership fees, and September and YTD net program proceeds?", "What are our total pharmacy revenue and net program proceeds?", "Compare our EPIC vs Paid Media channels...", "What are the refill persistence rates from Fill 1 to Fill 3, and how does the June cohort retain from M0 to M3?", "Break down our monthly program proceeds"):
-     - When asked about overall pharmacy revenue and net program proceeds, cite YTD pharmacy revenue (${ytdRevFmt}), YTD membership fees (${ytdFeesFmt}), September net program proceeds ($${sepProceedsVal.toLocaleString()}), and YTD net program proceeds (${ytdProceedsFmt}).
-     - Structure multi-metric / comparison / breakdown answers with:
-       a) Concise bullet points answering the specific metrics requested.
-       b) A focused **Markdown Pipe Table** (\`| Metric | ... |\`) with only the relevant rows/columns.
-       c) An **Interactive Chart Block (\`\`\`chart ... \`\`\`)** using valid JSON Chart.js format:
+STRICT RULES:
+1. Answer ONLY what the user asked using strictly the program analytics data provided in \`contextData\`. Never invent, guess, or extrapolate numbers not present in \`contextData\`.
+2. If a question cannot be answered from the data in \`contextData\` (for example: profit/margin/revenue on high-dose or specific-dose injections, milligram dose strengths, monthly pharmacy revenue when only YTD total pharmacy revenue and monthly net program proceeds are tracked, individual prescriber names, specific employer companies, third-party insurance/savings cards, individual patient queues, or any other unavailable metric), respond with ONLY this exact sentence and nothing else:
+"I am unable to answer the question from the data available to me."
+3. If someone asks to look up a specific member ID or individual patient record, politely explain in 1 sentence that for member privacy, Ask Bridge AI only provides aggregate program analytics.
+4. Match your response length and format strictly to what the user asked (zero filler or unrequested metrics):
+   - **Simple or Direct Questions**: Answer directly in **1–2 concise sentences** with the exact figure in the first sentence. Do NOT include section headers (\`### ...\`), bullet lists, Markdown pipe tables, or \`\`\`chart\`\`\` blocks. Do NOT dump unrequested metrics.
+   - **Chart-Only Requests** (e.g., "show a chart of active members by month" or "chart monthly net program proceeds"): Provide a 1-sentence caption and the \`\`\`chart ... \`\`\` JSON block ONLY (do NOT add a table or bullet dump).
+   - **Table-Only Requests**: Provide a 1-sentence caption and the Markdown pipe table (\`| Col | Value |\`) ONLY (do NOT add a chart).
+   - **Both Chart & Table / Full Breakdown Requests**: Provide a brief summary, a focused Markdown pipe table (\`| Col | Value |\`), and an interactive chart block (\`\`\`chart ... \`\`\`):
 \`\`\`chart
 {"type":"bar","title":"Chart Title Here","labels":["Label 1","Label 2"],"datasets":[{"label":"Series 1","data":[100,200],"backgroundColor":"#2563eb"}]}
 \`\`\`
-       (Use numeric values only inside \`data\` arrays—no dollar signs or commas).
-- Never cite slide numbers ("Slide 3") or raw JSON key names.`;
+   (Use raw numeric values only inside \`data\` arrays—no dollar signs or commas).
+5. Never mention files, presentations, decks, slides, or raw JSON key names.`;
 
   const conversationTurns = [];
   if (Array.isArray(history)) {
@@ -3476,7 +3448,7 @@ PROPORTIONAL RESPONSE CALIBRATION — ANSWER EXACTLY WHAT WAS ASKED (ZERO WORD V
     systemInstruction: { parts: [{ text: systemInstruction }] },
     contents: conversationTurns,
     generationConfig: {
-      temperature: 0.25,
+      temperature: 0.2,
       maxOutputTokens: 2048,
       thinkingConfig: { thinkingBudget: 256 }
     }
@@ -3539,8 +3511,21 @@ PROPORTIONAL RESPONSE CALIBRATION — ANSWER EXACTLY WHAT WAS ASKED (ZERO WORD V
   }
 
   let cleanReply = rawText.trim();
-  const explicitTableOrChart = /\b(table|chart|graph|visual|plot)\b/i.test(String(question || ''));
-  if (explicitTableOrChart) {
+  if (/unable to answer the question from the data available/i.test(cleanReply)) {
+    return {
+      question,
+      clientId: meta.clientId,
+      aiPowered: true,
+      aiModel: usedModel,
+      memberLevelBlocked: memberBlockedFlag,
+      reply: UNABLE_TO_ANSWER_MSG,
+      answer: UNABLE_TO_ANSWER_MSG
+    };
+  }
+
+  const explicitTable = /\b(table|tabular)\b/i.test(String(question || ''));
+  const explicitChart = /\b(chart|graph|visual|plot)\b/i.test(String(question || ''));
+  if (explicitTable || explicitChart) {
     const hasTable = /\|[\s:-]+\|/.test(cleanReply);
     let hasValidChart = false;
     const existingChartMatch = cleanReply.match(/```(?:chart|json-chart|chartjs)\s*([\s\S]*?)```/i);
@@ -3557,19 +3542,21 @@ PROPORTIONAL RESPONSE CALIBRATION — ANSWER EXACTLY WHAT WAS ASKED (ZERO WORD V
         hasValidChart = false;
       }
     }
-    if (!hasTable || !hasValidChart) {
+    if ((explicitTable && !hasTable) || (explicitChart && !hasValidChart)) {
       const detFallback = answerQuestion(state, `${question} breakdown table chart`).answer || '';
-      if (!hasTable) {
-        const tblLines = detFallback.split('\n').filter(l => l.trim().startsWith('|') && l.trim().endsWith('|'));
-        if (tblLines.length >= 2) {
-          cleanReply += `\n\n${tblLines.join('\n')}`;
+      if (detFallback !== UNABLE_TO_ANSWER_MSG) {
+        if (explicitTable && !hasTable) {
+          const tblLines = detFallback.split('\n').filter(l => l.trim().startsWith('|') && l.trim().endsWith('|'));
+          if (tblLines.length >= 2) {
+            cleanReply += `\n\n${tblLines.join('\n')}`;
+          }
         }
-      }
-      if (!hasValidChart) {
-        cleanReply = cleanReply.replace(/```(?:chart|json-chart|chartjs)[\s\S]*?```/gi, '').trim();
-        const chartMatch = detFallback.match(/```chart[\s\S]*?```/i);
-        if (chartMatch) {
-          cleanReply += `\n\n${chartMatch[0]}`;
+        if (explicitChart && !hasValidChart) {
+          cleanReply = cleanReply.replace(/```(?:chart|json-chart|chartjs)[\s\S]*?```/gi, '').trim();
+          const chartMatch = detFallback.match(/```chart[\s\S]*?```/i);
+          if (chartMatch) {
+            cleanReply += `\n\n${chartMatch[0]}`;
+          }
         }
       }
     }
